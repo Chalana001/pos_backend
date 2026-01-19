@@ -1,0 +1,26 @@
+package com.chala.posapp.dto;
+
+import com.chala.posapp.entity.DiscountType;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+@Data
+public class OrderItemRequest {
+
+    @NotNull
+    private Long itemId;
+
+    @Min(1)
+    private int qty;
+
+    // default: item sellingPrice
+    @Min(0)
+    private double unitPrice;
+
+    @NotNull
+    private DiscountType discountType; // NONE/PERCENT/FIXED
+
+    @Min(0)
+    private double discountValue;
+}

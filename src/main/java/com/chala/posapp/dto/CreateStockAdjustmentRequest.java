@@ -1,0 +1,30 @@
+package com.chala.posapp.dto;
+
+import com.chala.posapp.entity.StockAdjustmentType;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.Data;
+
+@Data
+public class CreateStockAdjustmentRequest {
+
+    @NotNull
+    private Long branchId;
+
+    @NotNull
+    private Long itemId;
+
+    @NotNull
+    private StockAdjustmentType type;
+
+    /**
+     * qty: always positive number from UI
+     * service will convert to +/- based on adjustment type
+     */
+    @Min(1)
+    private int qty;
+
+    @NotBlank
+    private String reason;
+}
