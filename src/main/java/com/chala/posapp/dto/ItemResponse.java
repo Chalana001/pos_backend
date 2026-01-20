@@ -15,6 +15,7 @@ public class ItemResponse {
     private String category;
     private double costPrice;
     private double sellingPrice;
+    private Double availableQty;
     private int reorderLevel;
     private String imageUrl;
     private boolean active;

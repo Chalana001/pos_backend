@@ -30,25 +30,43 @@ public class ItemController {
         return ResponseEntity.ok(itemService.getItem(id));
     }
 
-    // billing side: /items/barcode/12345
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/barcode/{barcode}")
-    public ResponseEntity<ItemResponse> getByBarcode(@PathVariable String barcode) {
-        return ResponseEntity.ok(itemService.getByBarcode(barcode));
+    public ResponseEntity<ItemResponse> getByBarcode(
+            @PathVariable String barcode,
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.getByBarcode(barcode, branchId));
     }
+
+    @GetMapping("/search")
+    public ResponseEntity<List<ItemResponse>> search(
+            @RequestParam String name,
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.searchByName(name, branchId));
+    }
+
+
+
+//    // billing side: /items/barcode/12345
+//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+//    @GetMapping("/barcode/{barcode}")
+//    public ResponseEntity<ItemResponse> getByBarcode(@PathVariable String barcode) {
+//        return ResponseEntity.ok(itemService.getByBarcode(barcode));
+//    }
+//
+//    // /items/search?name=shirt
+//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+//    @GetMapping("/search")
+//    public ResponseEntity<List<ItemResponse>> search(@RequestParam String name) {
+//        return ResponseEntity.ok(itemService.searchByName(name));
+//    }
 
     // /items?activeOnly=true
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
     public ResponseEntity<List<ItemResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
         return ResponseEntity.ok(itemService.listAll(activeOnly));
-    }
-
-    // /items/search?name=shirt
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-    @GetMapping("/search")
-    public ResponseEntity<List<ItemResponse>> search(@RequestParam String name) {
-        return ResponseEntity.ok(itemService.searchByName(name));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
