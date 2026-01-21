@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.format.annotation.DateTimeFormat;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,21 +23,38 @@ public class ReportController {
     @GetMapping("/sales-summary")
     public ResponseEntity<SalesSummaryResponse> salesSummary(
             @RequestParam(required = false) Long branchId,
-            @RequestParam LocalDateTime from,
-            @RequestParam LocalDateTime to
+            @RequestParam Instant from,
+            @RequestParam Instant to
     ) {
-        return ResponseEntity.ok(reportService.salesSummary(branchId, from, to));
+        return ResponseEntity.ok(
+                reportService.salesSummary(branchId, from, to)
+        );
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/top-selling")
     public ResponseEntity<List<TopSellingItemResponse>> topSelling(
             @RequestParam(required = false) Long branchId,
-            @RequestParam LocalDateTime from,
-            @RequestParam LocalDateTime to,
+            @RequestParam Instant from,
+            @RequestParam Instant to,
             @RequestParam(defaultValue = "10") int limit
     ) {
-        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit));
+        return ResponseEntity.ok(
+                reportService.topSelling(branchId, from, to, limit)
+        );
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/profit")
+    public ResponseEntity<List<ProfitReportResponse>> profit(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam Instant from,
+            @RequestParam Instant to,
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        return ResponseEntity.ok(
+                reportService.profitReport(branchId, from, to, limit)
+        );
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -51,17 +69,6 @@ public class ReportController {
     @GetMapping("/credit-due")
     public ResponseEntity<List<CreditDueResponse>> creditDue() {
         return ResponseEntity.ok(reportService.creditDueList());
-    }
-
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @GetMapping("/profit")
-    public ResponseEntity<List<ProfitReportResponse>> profit(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            @RequestParam(defaultValue = "50") int limit
-    ) {
-        return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit));
     }
 
 }

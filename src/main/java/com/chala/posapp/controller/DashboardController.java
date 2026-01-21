@@ -25,9 +25,7 @@ public class DashboardController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/kpis")
-    public ResponseEntity<DashboardKpiResponse> todayKpis(
-            @RequestParam(required = false) Long branchId
-    ) {
+    public ResponseEntity<DashboardKpiResponse> todayKpis(@RequestParam(required = false) Long branchId) {
         return ResponseEntity.ok(dashboardService.todayKpis(branchId));
     }
 

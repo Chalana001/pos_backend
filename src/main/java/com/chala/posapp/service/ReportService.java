@@ -11,7 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -45,15 +47,21 @@ public class ReportService {
         throw new RuntimeException("Not allowed");
     }
 
-    public SalesSummaryResponse salesSummary(Long requestedBranchId, LocalDateTime from, LocalDateTime to) {
+    public SalesSummaryResponse salesSummary(Long requestedBranchId, Instant from, Instant to) {
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
 
-        double total = reportRepository.totalSales(branchId, from, to);
-        double cash = reportRepository.cashSales(branchId, from, to);
-        double credit = reportRepository.creditSales(branchId, from, to);
-        double discount = reportRepository.totalDiscount(branchId, from, to);
-        long orders = reportRepository.totalOrders(branchId, from, to);
+        ZoneId zone = ZoneId.systemDefault(); // or ZoneId.of("Asia/Colombo")
+
+        LocalDateTime fromLdt = LocalDateTime.ofInstant(from, zone);
+        LocalDateTime toLdt = LocalDateTime.ofInstant(to, zone);
+
+
+        double total = reportRepository.totalSales(branchId, fromLdt, toLdt);
+        double cash = reportRepository.cashSales(branchId, fromLdt, toLdt);
+        double credit = reportRepository.creditSales(branchId, fromLdt, toLdt);
+        double discount = reportRepository.totalDiscount(branchId, fromLdt, toLdt);
+        long orders = reportRepository.totalOrders(branchId, fromLdt, toLdt);
 
         return SalesSummaryResponse.builder()
                 .totalSales(total)
@@ -64,9 +72,14 @@ public class ReportService {
                 .build();
     }
 
-    public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDateTime from, LocalDateTime to, int limit) {
+    public List<TopSellingItemResponse> topSelling(Long requestedBranchId, Instant fromLdt, Instant toLdt, int limit) {
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
+
+        ZoneId zone = ZoneId.systemDefault(); // or ZoneId.of("Asia/Colombo")
+
+        LocalDateTime from = LocalDateTime.ofInstant(fromLdt, zone);
+        LocalDateTime to = LocalDateTime.ofInstant(toLdt, zone);
 
         int safeLimit = Math.max(1, Math.min(limit, 100));
 
@@ -108,13 +121,15 @@ public class ReportService {
                 .toList();
     }
 
-    public List<ProfitReportResponse> profitReport(Long requestedBranchId,
-                                                   LocalDateTime from,
-                                                   LocalDateTime to,
-                                                   int limit) {
+    public List<ProfitReportResponse> profitReport(Long requestedBranchId, Instant fromLdt, Instant toLdt, int limit) {
 
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
+
+        ZoneId zone = ZoneId.systemDefault(); // or ZoneId.of("Asia/Colombo")
+
+        LocalDateTime from = LocalDateTime.ofInstant(fromLdt, zone);
+        LocalDateTime to = LocalDateTime.ofInstant(toLdt, zone);
 
         int safeLimit = Math.max(1, Math.min(limit, 200));
 

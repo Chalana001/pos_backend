@@ -71,6 +71,10 @@ public class UserManagementService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
+        if (userId == 1L || user.getRole() == Role.ADMIN) {
+            throw new RuntimeException("Admin user cannot assign branch");
+        }
+
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new RuntimeException("Branch not found"));
 
@@ -83,8 +87,13 @@ public class UserManagementService {
 
     @Transactional
     public String updateUserStatus(Long userId, UpdateUserStatusRequest request) {
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (userId == 1L || user.getRole() == Role.ADMIN) {
+            throw new RuntimeException("Admin user cannot be disabled");
+        }
 
         user.setEnabled(request.getEnabled());
         return "User status updated";

@@ -51,6 +51,7 @@ public class DashboardService {
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
 
+
         LocalDate today = LocalDate.now();
         LocalDateTime from = today.atStartOfDay();
         LocalDateTime to = today.atTime(23, 59, 59);

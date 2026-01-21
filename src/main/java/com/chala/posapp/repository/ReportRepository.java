@@ -14,7 +14,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -26,7 +26,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.order_type = 'CASH'
           AND o.created_at BETWEEN :fromDate AND :toDate
@@ -39,7 +39,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.order_type = 'CREDIT'
           AND o.created_at BETWEEN :fromDate AND :toDate
@@ -52,7 +52,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(o.bill_discount),0)
         FROM orders o
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -64,7 +64,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COUNT(*)
         FROM orders o
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -81,7 +81,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(oi.line_total),0) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
-        WHERE o.branch_id = :branchId
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY oi.item_id, oi.item_name
@@ -104,7 +104,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     JOIN items i ON i.id = oi.item_id
-    WHERE o.branch_id = :branchId
+    WHERE (:branchId = 0 OR o.branch_id = :branchId)
       AND o.status = 'COMPLETED'
       AND o.created_at BETWEEN :fromDate AND :toDate
     GROUP BY oi.item_id, oi.item_name
