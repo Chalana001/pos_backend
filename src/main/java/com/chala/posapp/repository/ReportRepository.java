@@ -116,4 +116,22 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                    @Param("toDate") LocalDateTime toDate,
                                    @Param("limitValue") int limitValue);
 
+
+    @Query(value = """
+    SELECT 
+        DATE(o.created_at) AS date,
+        COALESCE(SUM(o.grand_total),0) AS sales,
+        COUNT(o.id) AS orders
+    FROM orders o
+    WHERE o.status = 'COMPLETED'
+      AND (:branchId = 0 OR o.branch_id = :branchId)
+      AND o.created_at BETWEEN :fromDate AND :toDate
+    GROUP BY DATE(o.created_at)
+    ORDER BY DATE(o.created_at)
+""", nativeQuery = true)
+    List<Object[]> salesTrendRaw(@Param("branchId") Long branchId,
+                                 @Param("fromDate") LocalDateTime fromDate,
+                                 @Param("toDate") LocalDateTime toDate);
+
+
 }

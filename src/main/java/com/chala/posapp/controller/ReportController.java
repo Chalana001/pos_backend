@@ -71,4 +71,13 @@ public class ReportController {
         return ResponseEntity.ok(reportService.creditDueList());
     }
 
+    @GetMapping("/sales-trend")
+    public ResponseEntity<List<SalesTrendPoint>> salesTrend(
+            @RequestParam Long branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
+    ) {
+        return ResponseEntity.ok(reportService.salesTrend(branchId, from, to));
+    }
+
 }

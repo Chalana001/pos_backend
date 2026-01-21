@@ -145,4 +145,14 @@ public class ReportService {
                 .toList();
     }
 
+    public List<SalesTrendPoint> salesTrend(Long branchId, LocalDateTime from, LocalDateTime to) {
+        List<Object[]> rows = reportRepository.salesTrendRaw(branchId, from, to);
+
+        return rows.stream().map(r -> new SalesTrendPoint(
+                ((java.sql.Date) r[0]).toLocalDate(),
+                ((Number) r[1]).doubleValue(),
+                ((Number) r[2]).longValue()
+        )).toList();
+    }
+
 }
