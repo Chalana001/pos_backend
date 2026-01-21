@@ -11,6 +11,8 @@ import java.util.List;
 @Data
 public class CreateOrderRequest {
 
+    private Long branchId;
+
     @NotNull
     private OrderType orderType; // CASH or CREDIT
 

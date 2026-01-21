@@ -12,6 +12,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.chala.posapp.entity.Role.CASHIER;
+
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -23,6 +25,8 @@ public class OrderService {
     private final UserRepository userRepository;
     private final InvoiceService invoiceService;
     private final CustomerRepository customerRepository;
+    private final ShiftService shiftService;
+    private final AuthService authService;
 
 
     @Transactional
@@ -30,13 +34,16 @@ public class OrderService {
 
         // Get logged user
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        User cashier = userRepository.findByUsername(username)
+        User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("Cashier not found"));
 
-        if (cashier.getBranchId() == null)
-            throw new RuntimeException("Cashier branch not assigned");
-
-        Long branchId = cashier.getBranchId();
+        Long branchId;
+        if (user.getRole() == CASHIER) {
+            branchId = user.getBranchId();
+        } else {
+            if (request.getBranchId() == null) throw new RuntimeException("BranchId required");
+            branchId = request.getBranchId();
+        }
 
         if (request.getItems() == null || request.getItems().isEmpty())
             throw new RuntimeException("Order items required");
@@ -117,7 +124,7 @@ public class OrderService {
         Order order = Order.builder()
                 .invoiceNo(invoiceNo)
                 .branchId(branchId)
-                .cashierUserId(cashier.getId())
+                .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
                 .orderType(request.getOrderType())
                 .status(OrderStatus.COMPLETED)
@@ -163,6 +170,10 @@ public class OrderService {
         }
 
         // TODO later: if CREDIT -> customer due add (when we build customer module)
+        //update shift
+        if (request.getOrderType() == OrderType.CASH) {
+            shiftService.addCashSale(branchId, request.getPaidAmount());
+        }
 
         return buildOrderResponse(savedOrder, orderItemsToSave);
     }

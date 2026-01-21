@@ -36,7 +36,7 @@ public class CashShift {
     private double totalCashDrops;
 
     @Column(nullable = false)
-    private double cashSales;
+    private Double cashSales;
 
     // closing
     private Double countedCash;
@@ -55,6 +55,6 @@ public class CashShift {
         if (status == null) status = ShiftStatus.OPEN;
         totalExpenses = 0;
         totalCashDrops = 0;
-        cashSales = 0;
+        cashSales = 0.0;
     }
 }

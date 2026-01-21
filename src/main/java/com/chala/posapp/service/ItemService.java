@@ -2,6 +2,8 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ public class ItemService {
 
     private final ItemRepository itemRepository;
     private final StockRepository stockRepository;
+    private final AuthService authService;
 
     public ItemResponse createItem(ItemCreateRequest request) {
         String barcode = request.getBarcode().trim();
@@ -135,4 +138,45 @@ public class ItemService {
                 .build();
     }
 
+    public List<ItemWithStockResponse> itemsWithStock(Long branchId) {
+
+        User user = authService.getLoggedUser();
+
+        // cashier must use own branch
+        if (user.getRole() == Role.CASHIER) {
+            if (user.getBranchId() == null) throw new RuntimeException("Cashier branch not assigned");
+            branchId = user.getBranchId();
+        }
+
+        // manager default own branch if not provided
+        if (user.getRole() == Role.MANAGER) {
+            if (user.getBranchId() == null) throw new RuntimeException("Manager branch not assigned");
+            branchId = user.getBranchId();
+        }
+
+        // admin logic:
+        // - if branchId provided => branch stock
+        // - if no branchId => total stock
+        List<Object[]> raw;
+        if (branchId != null) {
+            raw = itemRepository.itemsWithBranchStockRaw(branchId);
+        } else {
+            if (user.getRole() != Role.ADMIN)
+                throw new RuntimeException("Only admin can view all branches total stock");
+            raw = itemRepository.itemsWithTotalStockRaw();
+        }
+
+        return raw.stream().map(r -> ItemWithStockResponse.builder()
+                .id(((Number) r[0]).longValue())
+                .barcode((String) r[1])
+                .name((String) r[2])
+                .category((String) r[3])
+                .costPrice(((Number) r[4]).doubleValue())
+                .sellingPrice(((Number) r[5]).doubleValue())
+                .reorderLevel(((Number) r[6]).intValue())
+                .active(Boolean.TRUE.equals(r[7]))
+                .quantity(((Number) r[8]).intValue())
+                .build()
+        ).toList();
+    }
 }

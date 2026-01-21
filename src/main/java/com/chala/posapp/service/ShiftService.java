@@ -3,7 +3,6 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.repository.*;
-import jakarta.persistence.Column;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -20,6 +19,7 @@ public class ShiftService {
     private final CashDropRepository cashDropRepository;
     private final UserRepository userRepository;
     private final OrderRepository orderRepository;
+    private final AuthService authService;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -67,6 +67,7 @@ public class ShiftService {
         CashShift shift = cashShiftRepository.findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(user.getBranchId(), user.getId())
                 .orElseThrow(() -> new RuntimeException("No shift found"));
 
+        System.out.println(shift.getCashSales());
         return map(shift);
     }
 
@@ -297,6 +298,20 @@ public class ShiftService {
         return map(shift);
     }
 
+    @Transactional
+    public void addCashSale(Long branchId, Double amount) {
+        User user = authService.getLoggedUser();
 
+        CashShift shift = cashShiftRepository
+                .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
+                .orElseThrow(() -> new RuntimeException("No active shift for this branch"));
 
+        if (!shift.getStatus().equals(ShiftStatus.OPEN)) {
+            throw new RuntimeException("Shift is not open");
+        }
+
+        shift.setCashSales((shift.getCashSales() == null ? 0.0 : shift.getCashSales()) + amount);
+
+        cashShiftRepository.save(shift);
+    }
 }

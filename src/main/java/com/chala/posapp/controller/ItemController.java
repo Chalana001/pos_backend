@@ -30,6 +30,7 @@ public class ItemController {
         return ResponseEntity.ok(itemService.getItem(id));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/barcode/{barcode}")
     public ResponseEntity<ItemResponse> getByBarcode(
             @PathVariable String barcode,
@@ -38,6 +39,7 @@ public class ItemController {
         return ResponseEntity.ok(itemService.getByBarcode(barcode, branchId));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/search")
     public ResponseEntity<List<ItemResponse>> search(
             @RequestParam String name,
@@ -67,6 +69,14 @@ public class ItemController {
     @GetMapping
     public ResponseEntity<List<ItemResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
         return ResponseEntity.ok(itemService.listAll(activeOnly));
+    }
+
+    @GetMapping("/with-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    public ResponseEntity<List<ItemWithStockResponse>> listWithStock(
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.itemsWithStock(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
