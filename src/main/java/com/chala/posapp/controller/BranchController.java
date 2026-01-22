@@ -33,7 +33,7 @@ public class BranchController {
 
     // ADMIN/MANAGER can list
     // /branches?activeOnly=true
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping
     public ResponseEntity<List<BranchResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
         return ResponseEntity.ok(branchService.getAllBranches(activeOnly));

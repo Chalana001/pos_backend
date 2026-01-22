@@ -49,7 +49,7 @@ public class AuthService {
         if (!user.isEnabled()) throw new RuntimeException("User disabled");
 
         String token = jwtService.generateToken(user.getUsername(), user.getRole().name());
-        return new AuthResponse(token, user.getUsername(), user.getRole().name());
+        return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId());
     }
     public User getLoggedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

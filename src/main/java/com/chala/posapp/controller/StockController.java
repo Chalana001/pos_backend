@@ -2,6 +2,7 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.LowStockResponse;
 import com.chala.posapp.dto.StockResponse;
+import com.chala.posapp.dto.StockResponseWithItems;
 import com.chala.posapp.dto.StockUpsertRequest;
 import com.chala.posapp.service.StockService;
 import jakarta.validation.Valid;
@@ -28,9 +29,10 @@ public class StockController {
 
     // list stock for branch
     // /stock/branch/1
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/branch/{branchId}")
-    public ResponseEntity<List<StockResponse>> listBranchStock(@PathVariable Long branchId) {
+    public ResponseEntity<List<StockResponseWithItems>> listBranchStock(@PathVariable Long branchId) {
+        System.out.println("braanch iddd"+branchId);
         return ResponseEntity.ok(stockService.listBranchStock(branchId));
     }
 
