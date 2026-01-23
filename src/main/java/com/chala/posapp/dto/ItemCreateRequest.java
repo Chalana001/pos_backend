@@ -29,4 +29,6 @@ public class ItemCreateRequest {
     // optional image url (we will control via setting later)
     @Size(max = 500)
     private String imageUrl;
+
+    private Boolean active;
 }

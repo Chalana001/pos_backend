@@ -24,6 +24,21 @@ public class ItemController {
         return ResponseEntity.ok(itemService.createItem(request));
     }
 
+    @PostMapping("/create-with-stocks")
+    public ResponseEntity<ItemResponse> createWithStocks(
+            @Valid @RequestBody ItemCreateWithStocksRequest request
+    ) {
+        return ResponseEntity.ok(itemService.createWithStocks(request));
+    }
+
+    @GetMapping("/with-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    public ResponseEntity<List<ItemWithStockResponse>> listWithStock(
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.itemsWithStock(branchId));
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{id}")
     public ResponseEntity<ItemResponse> get(@PathVariable Long id) {
@@ -48,35 +63,11 @@ public class ItemController {
         return ResponseEntity.ok(itemService.searchByName(name, branchId));
     }
 
-
-
-//    // billing side: /items/barcode/12345
-//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-//    @GetMapping("/barcode/{barcode}")
-//    public ResponseEntity<ItemResponse> getByBarcode(@PathVariable String barcode) {
-//        return ResponseEntity.ok(itemService.getByBarcode(barcode));
-//    }
-//
-//    // /items/search?name=shirt
-//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-//    @GetMapping("/search")
-//    public ResponseEntity<List<ItemResponse>> search(@RequestParam String name) {
-//        return ResponseEntity.ok(itemService.searchByName(name));
-//    }
-
     // /items?activeOnly=true
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
     public ResponseEntity<List<ItemResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
         return ResponseEntity.ok(itemService.listAll(activeOnly));
-    }
-
-    @GetMapping("/with-stock")
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-    public ResponseEntity<List<ItemWithStockResponse>> listWithStock(
-            @RequestParam(required = false) Long branchId
-    ) {
-        return ResponseEntity.ok(itemService.itemsWithStock(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

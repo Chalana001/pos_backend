@@ -3,13 +3,21 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.Stock;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 import java.util.List;
 
 @Service
@@ -38,6 +46,35 @@ public class ItemService {
                 .build();
 
         return map(itemRepository.save(item));
+    }
+
+    @Transactional
+    public @Nullable ItemResponse createWithStocks(@Valid ItemCreateWithStocksRequest request) {
+
+        String barcode = request.getItemCreateRequest().getBarcode().trim();
+
+        if (itemRepository.existsByBarcode(barcode)) {
+            throw new RuntimeException("Barcode already exists: " + barcode);
+        }
+
+        // ✅ 1) create item
+        ItemResponse item = createItem(request.getItemCreateRequest());
+
+        // ✅ 2) create/update stocks per branch
+        for (StockLineRequest s : request.getStocks()) {
+
+            Stock stock = stockRepository
+                    .findByBranchIdAndItemId(s.getBranchId(), item.getId())
+                    .orElseGet(() -> Stock.builder()
+                            .branchId(s.getBranchId())
+                            .itemId(item.getId())
+                            .quantity(0)
+                            .build());
+
+            stock.setQuantity(Math.max(0, s.getQuantity())); // ✅ avoid negative qty
+            stockRepository.save(stock);
+        }
+        return item;
     }
 
     public ItemResponse getItem(Long id) {
@@ -166,17 +203,54 @@ public class ItemService {
             raw = itemRepository.itemsWithTotalStockRaw();
         }
 
-        return raw.stream().map(r -> ItemWithStockResponse.builder()
-                .id(((Number) r[0]).longValue())
-                .barcode((String) r[1])
-                .name((String) r[2])
-                .category((String) r[3])
-                .costPrice(((Number) r[4]).doubleValue())
-                .sellingPrice(((Number) r[5]).doubleValue())
-                .reorderLevel(((Number) r[6]).intValue())
-                .active(Boolean.TRUE.equals(r[7]))
-                .quantity(((Number) r[8]).intValue())
-                .build()
-        ).toList();
+        return raw.stream().map(obj -> {
+            Object[] r = (Object[]) obj;
+
+            return ItemWithStockResponse.builder()
+                    .id(((Number) r[0]).longValue())
+                    .barcode((String) r[1])
+                    .name((String) r[2])
+                    .category((String) r[3])
+                    .costPrice(((Number) r[4]).doubleValue())
+                    .sellingPrice(((Number) r[5]).doubleValue())
+                    .reorderLevel(((Number) r[6]).intValue())
+                    .active(Boolean.TRUE.equals(r[7]))
+                    .createdAt(toLocalDateTime(r[8]))
+                    .quantity(r.length >= 10 && r[9] != null ? ((Number) r[9]).intValue() : 0)
+                    .build();
+        }).toList();
     }
+
+
+    private LocalDateTime toLocalDateTime(Object v) {
+        if (v == null) return null;
+
+        if (v instanceof LocalDateTime ldt) return ldt;
+
+        if (v instanceof Timestamp ts) return ts.toLocalDateTime();
+
+        if (v instanceof java.sql.Date d) return d.toLocalDate().atStartOfDay();
+
+        if (v instanceof Date d) return Instant.ofEpochMilli(d.getTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
+
+        // ✅ Some DB drivers return numeric epoch time
+        if (v instanceof Number n) {
+            long epoch = n.longValue();
+
+            // epoch seconds vs millis heuristic
+            if (epoch < 100000000000L) { // < ~1973 in ms, so likely seconds
+                return Instant.ofEpochSecond(epoch)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime();
+            }
+            return Instant.ofEpochMilli(epoch)
+                    .atZone(ZoneId.systemDefault())
+                    .toLocalDateTime();
+        }
+
+        throw new IllegalArgumentException("Unsupported created_at type: " + v.getClass());
+    }
+
 }

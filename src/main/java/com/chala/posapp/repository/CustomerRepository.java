@@ -1,9 +1,11 @@
 package com.chala.posapp.repository;
 
 import com.chala.posapp.entity.Customer;
+import com.chala.posapp.entity.CustomerNote;
 import org.springframework.data.jpa.repository.JpaRepository;
-import com.chala.posapp.dto.report.CreditDueResponse;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;

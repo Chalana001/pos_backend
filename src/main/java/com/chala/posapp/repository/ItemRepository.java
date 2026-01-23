@@ -16,14 +16,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     //Branch qty list
     @Query(value = """
-    SELECT 
-        i.id, i.barcode, i.name, i.category,
-        i.cost_price, i.selling_price, i.reorder_level, i.active,
-        COALESCE(s.quantity,0) AS qty
-    FROM items i
-    LEFT JOIN stock s 
-        ON s.item_id = i.id AND s.branch_id = :branchId
-    ORDER BY i.id DESC
+            SELECT\s
+                                i.id, i.barcode, i.name, i.category,
+                                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
+                                s.quantity AS qty
+                            FROM items i
+                            INNER JOIN stock s\s
+                                ON s.item_id = i.id AND s.branch_id = :branchId
+                            ORDER BY i.id DESC
+            
 """, nativeQuery = true)
     List<Object[]> itemsWithBranchStockRaw(@Param("branchId") Long branchId);
 

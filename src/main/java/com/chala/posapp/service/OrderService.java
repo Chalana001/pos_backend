@@ -4,6 +4,8 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -285,6 +287,37 @@ public class OrderService {
                 .note(order.getNote())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
+                .build();
+    }
+
+    public Page<CustomerOrderListResponse> list(Long customerId, String orderType, Pageable pageable) {
+        customerRepository.findById(customerId)
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
+
+        Page<Order> page;
+
+        if (orderType == null || orderType.equalsIgnoreCase("ALL")) {
+            page = orderRepository.findByCustomerId(customerId, pageable);
+        } else {
+            OrderType type = OrderType.valueOf(orderType.toUpperCase());
+            page = orderRepository.findByCustomerIdAndOrderType(customerId, type, pageable);
+        }
+        System.out.println("kooooooooooooooooooooooo");
+        System.out.println(page.map(this::map));
+        return page.map(this::map);
+    }
+
+    private CustomerOrderListResponse map(Order o) {
+        return CustomerOrderListResponse.builder()
+                .id(o.getId())
+                .invoiceNo(o.getInvoiceNo())
+                .branchId(o.getBranchId())
+                .orderType(o.getOrderType())
+                .status(o.getStatus())
+                .grandTotal(o.getGrandTotal())
+                .paidAmount(o.getPaidAmount())
+                .dueAmount(o.getDueAmount())
+                .createdAt(o.getCreatedAt())
                 .build();
     }
 }
