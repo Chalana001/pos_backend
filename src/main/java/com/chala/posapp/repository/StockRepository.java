@@ -2,10 +2,11 @@ package com.chala.posapp.repository;
 
 import com.chala.posapp.dto.LowStockView;
 import com.chala.posapp.entity.Stock;
+import com.chala.posapp.repository.projection.ItemQtyProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import com.chala.posapp.dto.report.LowStockResponse;
+
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +16,13 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     Optional<Stock> findByBranchIdAndItemId(Long branchId, Long itemId);
 
     List<Stock> findByBranchId(Long branchId);
+
+    @Query("""
+           SELECT s.itemId as itemId, SUM(s.quantity) as qty
+           FROM Stock s
+           GROUP BY s.itemId
+           """)
+    List<ItemQtyProjection> sumQtyGroupByItem();
 
     // ✅ Optimized Low Stock Query (NO N+1)
     @Query("""

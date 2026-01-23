@@ -10,6 +10,7 @@ import com.chala.posapp.entity.Stock;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockRepository;
+import com.chala.posapp.repository.projection.ItemQtyProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,11 +60,82 @@ public class StockService {
                 throw new RuntimeException("Cashier branch not assigned");
             branchId = user.getBranchId();
         }
+        if (branchId == 0) {
+            return listAllBranchesMerged();
+        } else {
+            return listSingleBranch(branchId);
+        }
 
-        List<Stock> stockList = (branchId == 0)
-                ? stockRepository.findAll()
-                : stockRepository.findByBranchId(branchId);
+//        List<Stock> stockList = (branchId == 0)
+//                ? stockRepository.findAll()
+//                : stockRepository.findByBranchId(branchId);
+//
+//        if (stockList.isEmpty()) return List.of();
+//
+//        List<Long> itemIds = stockList.stream()
+//                .map(Stock::getItemId)
+//                .distinct()
+//                .toList();
+//
+//        Map<Long, Item> itemMap = itemRepository.findAllById(itemIds).stream()
+//                .collect(Collectors.toMap(Item::getId, i -> i, (a, b) -> a));
+//
+//        List<StockResponseWithItems> response = new ArrayList<>();
+//
+//        for (Stock stock : stockList) {
+//            Item item = itemMap.get(stock.getItemId());
+//            if (item == null) continue;
+//
+//            response.add(new StockResponseWithItems(
+//                    stock.getId(),
+//                    stock.getItemId(),
+//                    item.getBarcode(),
+//                    item.getName(),
+//                    item.getCostPrice(),
+//                    item.getSellingPrice(),
+//                    stock.getQuantity(),
+//                    stock.getUpdatedAt()
+//            ));
+//        }
+//
+//        return response;
+    }
 
+    private List<StockResponseWithItems> listAllBranchesMerged() {
+        List<ItemQtyProjection> rows = stockRepository.sumQtyGroupByItem();
+        if (rows.isEmpty()) return List.of();
+
+        List<Long> itemIds = rows.stream()
+                .map(ItemQtyProjection::getItemId)
+                .toList();
+
+        Map<Long, Item> itemMap = itemRepository.findAllById(itemIds).stream()
+                .collect(Collectors.toMap(Item::getId, i -> i));
+
+        List<StockResponseWithItems> response = new ArrayList<>();
+
+        for (ItemQtyProjection row : rows) {
+            Item item = itemMap.get(row.getItemId());
+            if (item == null) continue;
+
+            response.add(new StockResponseWithItems(
+                    null, // stockId meaningless now (merged)
+                    row.getItemId(),
+                    item.getBarcode(),
+                    item.getName(),
+                    item.getCostPrice(),
+                    item.getSellingPrice(),
+                    row.getQty(), // ✅ summed quantity
+                    null  // updatedAt meaningless now (merged)
+            ));
+        }
+
+        return response;
+    }
+
+    private List<StockResponseWithItems> listSingleBranch(Long branchId) {
+
+        List<Stock> stockList = stockRepository.findByBranchId(branchId);
         if (stockList.isEmpty()) return List.of();
 
         List<Long> itemIds = stockList.stream()
@@ -72,7 +144,7 @@ public class StockService {
                 .toList();
 
         Map<Long, Item> itemMap = itemRepository.findAllById(itemIds).stream()
-                .collect(Collectors.toMap(Item::getId, i -> i, (a, b) -> a));
+                .collect(Collectors.toMap(Item::getId, i -> i));
 
         List<StockResponseWithItems> response = new ArrayList<>();
 
@@ -94,7 +166,6 @@ public class StockService {
 
         return response;
     }
-
 
 
     public StockResponse getStock(Long branchId, Long itemId) {

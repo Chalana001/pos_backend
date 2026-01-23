@@ -31,6 +31,13 @@ public class ItemController {
         return ResponseEntity.ok(itemService.createWithStocks(request));
     }
 
+    @PostMapping("/bulk")
+    public ResponseEntity<?> bulkCreate(@Valid @RequestBody ItemBulkCreateRequest request) {
+        itemService.bulkCreate(request);
+        return ResponseEntity.ok().build();
+    }
+
+
     @GetMapping("/with-stock")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     public ResponseEntity<List<ItemWithStockResponse>> listWithStock(

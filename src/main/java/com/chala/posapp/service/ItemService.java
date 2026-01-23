@@ -76,6 +76,12 @@ public class ItemService {
         }
         return item;
     }
+    @Transactional
+    public void bulkCreate(@Valid ItemBulkCreateRequest request) {
+        for (ItemCreateWithStocksRequest req : request.getItems()) {
+            createWithStocks(req);
+        }
+    }
 
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
@@ -252,5 +258,4 @@ public class ItemService {
 
         throw new IllegalArgumentException("Unsupported created_at type: " + v.getClass());
     }
-
 }
