@@ -36,5 +36,5 @@ public class Supplier {
 
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SupplierItem> suppliedItems = new ArrayList<>();
-
+//s
 }
