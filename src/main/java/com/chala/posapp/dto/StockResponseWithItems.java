@@ -1,19 +1,18 @@
 package com.chala.posapp.dto;
 
-import java.time.LocalDateTime;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
 
 @Data
-@Builder
 @AllArgsConstructor
 @NoArgsConstructor
 public class StockResponseWithItems {
-    private Long id;
     private Long itemId;
     private String barcode;
-    private String name;
-    private double costPrice;
-    private double sellingPrice;
-    private int quantity;
-    private LocalDateTime updatedAt;
+    private String itemName;
+    private BigDecimal costPrice;    // Item Master එකේ තියෙන Default Price එක
+    private BigDecimal sellingPrice;
+    private Long totalQuantity;      // All Branches Total
 }

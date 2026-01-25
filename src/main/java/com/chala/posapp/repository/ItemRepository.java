@@ -9,37 +9,43 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ItemRepository extends JpaRepository<Item, Long> {
+
     boolean existsByBarcode(String barcode);
+
     Optional<Item> findByBarcode(String barcode);
+
+    // Bulk Validation සඳහා (එක පාර Barcode ගොඩක් check කරන්න)
+    List<Item> findAllByBarcodeIn(List<String> barcodes);
 
     List<Item> findByNameContainingIgnoreCase(String name);
 
-    //Branch qty list
+    // ✅ 1. Branch Stock Query (Updated for StockBatch)
+    // stock table එක වෙනුවට stock_batches පාවිච්චි කරලා SUM එක ගන්නවා.
+    // LEFT JOIN දැම්මා, එතකොට Stock නැති (0 තියෙන) Items වුනත් List එකේ පෙන්නනවා.
     @Query(value = """
-            SELECT\s
-                                i.id, i.barcode, i.name, i.category,
-                                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
-                                s.quantity AS qty
-                            FROM items i
-                            INNER JOIN stock s\s
-                                ON s.item_id = i.id AND s.branch_id = :branchId
-                            ORDER BY i.id DESC
-            
-""", nativeQuery = true)
+            SELECT 
+                i.id, i.barcode, i.name, i.category,
+                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
+                COALESCE(SUM(sb.quantity), 0) AS qty
+            FROM items i
+            LEFT JOIN stock_batches sb 
+                ON sb.item_id = i.id AND sb.branch_id = :branchId
+            GROUP BY i.id, i.barcode, i.name, i.category, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
+            ORDER BY i.id DESC
+            """, nativeQuery = true)
     List<Object[]> itemsWithBranchStockRaw(@Param("branchId") Long branchId);
 
-    //Total qty (All branches)
+    // ✅ 2. Total Stock Query (All Branches)
+    // මෙතන කලින් code එකේ i.created_at මග ඇරිලා තිබුනා. එකත් දැම්මා (index 8).
     @Query(value = """
-    SELECT 
-        i.id, i.barcode, i.name, i.category,
-        i.cost_price, i.selling_price, i.reorder_level, i.active,
-        COALESCE(SUM(s.quantity),0) AS qty
-    FROM items i
-    LEFT JOIN stock s ON s.item_id = i.id
-    GROUP BY i.id, i.barcode, i.name, i.category, i.cost_price, i.selling_price, i.reorder_level, i.active
-    ORDER BY i.id DESC
-""", nativeQuery = true)
+            SELECT 
+                i.id, i.barcode, i.name, i.category,
+                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
+                COALESCE(SUM(sb.quantity), 0) AS qty
+            FROM items i
+            LEFT JOIN stock_batches sb ON sb.item_id = i.id
+            GROUP BY i.id, i.barcode, i.name, i.category, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
+            ORDER BY i.id DESC
+            """, nativeQuery = true)
     List<Object[]> itemsWithTotalStockRaw();
-
-
 }

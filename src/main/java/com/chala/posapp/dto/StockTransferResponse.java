@@ -15,13 +15,20 @@ public class StockTransferResponse {
     private Long id;
     private String transferNo;
 
+    // IDs විතරක් නෙමෙයි, නම් ටිකත් යවන්න
     private Long fromBranchId;
+    private String fromBranchName; // ✨ New
+
     private Long toBranchId;
+    private String toBranchName;   // ✨ New
 
     private StockTransferStatus status;
 
     private Long requestedByUserId;
+    private String requestedByUserName; // ✨ New (Optional)
+
     private Long receivedByUserId;
+    private String receivedByUserName;  // ✨ New (Optional)
 
     private String note;
     private String cancelReason;

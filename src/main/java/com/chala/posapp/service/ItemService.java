@@ -3,16 +3,14 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.Role;
-import com.chala.posapp.entity.Stock;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.repository.ItemRepository;
-import com.chala.posapp.repository.StockRepository;
-import jakarta.validation.Valid;
+import com.chala.posapp.repository.StockBatchRepository; // ✅ New Import
 import lombok.RequiredArgsConstructor;
-import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -25,8 +23,10 @@ import java.util.List;
 public class ItemService {
 
     private final ItemRepository itemRepository;
-    private final StockRepository stockRepository;
+    private final StockBatchRepository stockBatchRepository; // ✅ Stock Batches වලින් Qty ගන්න
     private final AuthService authService;
+
+    // --- CREATE ---
 
     public ItemResponse createItem(ItemCreateRequest request) {
         String barcode = request.getBarcode().trim();
@@ -38,104 +38,110 @@ public class ItemService {
                 .barcode(barcode)
                 .name(request.getName().trim())
                 .category(request.getCategory())
-                .costPrice(request.getCostPrice())
-                .sellingPrice(request.getSellingPrice())
+                .costPrice(BigDecimal.valueOf(request.getCostPrice()))
+                .sellingPrice(BigDecimal.valueOf(request.getSellingPrice()))
                 .reorderLevel(request.getReorderLevel())
                 .imageUrl(request.getImageUrl())
                 .active(true)
                 .build();
-
-        return map(itemRepository.save(item));
+        return mapToResponse(itemRepository.save(item));
     }
 
     @Transactional
-    public @Nullable ItemResponse createWithStocks(@Valid ItemCreateWithStocksRequest request) {
+    public List<ItemResponse> bulkCreate(List<ItemCreateRequest> requestList) {
+        // 1. DUPLICATE CHECK
+        List<String> incomingBarcodes = requestList.stream()
+                .map(ItemCreateRequest::getBarcode)
+                .toList();
 
-        String barcode = request.getItemCreateRequest().getBarcode().trim();
+        List<Item> existingItems = itemRepository.findAllByBarcodeIn(incomingBarcodes);
 
-        if (itemRepository.existsByBarcode(barcode)) {
-            throw new RuntimeException("Barcode already exists: " + barcode);
+        if (!existingItems.isEmpty()) {
+            List<String> existingCodes = existingItems.stream().map(Item::getBarcode).toList();
+            throw new RuntimeException("Items already exist: " + existingCodes);
         }
 
-        // ✅ 1) create item
-        ItemResponse item = createItem(request.getItemCreateRequest());
+        // 2. MAPPING
+        List<Item> newItemList = requestList.stream()
+                .map(req -> Item.builder()
+                        .name(req.getName())
+                        .barcode(req.getBarcode())
+                        .costPrice(BigDecimal.valueOf(req.getCostPrice()))
+                        .sellingPrice(BigDecimal.valueOf(req.getSellingPrice()))
+                        .reorderLevel(req.getReorderLevel())
+                        .category(req.getCategory())
+                        .active(true)
+                        .build())
+                .toList();
 
-        // ✅ 2) create/update stocks per branch
-        for (StockLineRequest s : request.getStocks()) {
+        // 3. BULK SAVE
+        List<Item> savedItems = itemRepository.saveAll(newItemList);
 
-            Stock stock = stockRepository
-                    .findByBranchIdAndItemId(s.getBranchId(), item.getId())
-                    .orElseGet(() -> Stock.builder()
-                            .branchId(s.getBranchId())
-                            .itemId(item.getId())
-                            .quantity(0)
-                            .build());
-
-            stock.setQuantity(Math.max(0, s.getQuantity())); // ✅ avoid negative qty
-            stockRepository.save(stock);
-        }
-        return item;
+        return savedItems.stream()
+                .map(this::mapToResponse)
+                .toList();
     }
-    @Transactional
-    public void bulkCreate(@Valid ItemBulkCreateRequest request) {
-        for (ItemCreateWithStocksRequest req : request.getItems()) {
-            createWithStocks(req);
-        }
-    }
+
+    // --- READ / SEARCH ---
 
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Item not found"));
-        return map(item);
+        return mapToResponse(item);
     }
+
+    // ✅ Fixed: Branch ID එකක් ආවොත් Stock එක Batch එකෙන් ගන්නවා
     public ItemResponse getByBarcode(String barcode, Long branchId) {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new RuntimeException("Item not found"));
 
-        if (branchId == null) return map(item);
-        return map(item, branchId);
+        if (branchId == null) {
+            return mapToResponse(item);
+        } else {
+            // Batch System Logic: Total quantity for this item in this branch
+            Integer totalQty = stockBatchRepository.getTotalQuantityByItemAndBranch(branchId, item.getId());
+            return mapToResponse(item, totalQty != null ? totalQty.doubleValue() : 0.0);
+        }
     }
 
+    // ✅ Fixed: List එකක් එනකොටත් Branch ID තිබුනොත් Stock එක ගන්නවා
     public List<ItemResponse> searchByName(String name, Long branchId) {
-        var items = itemRepository.findByNameContainingIgnoreCase(name.trim());
+        List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
 
-        if (branchId == null) return items.stream().map(this::map).toList();
-        return items.stream().map(i -> map(i, branchId)).toList();
+        if (branchId == null) {
+            return items.stream().map(this::mapToResponse).toList();
+        } else {
+            return items.stream().map(item -> {
+                Integer totalQty = stockBatchRepository.getTotalQuantityByItemAndBranch(branchId, item.getId());
+                return mapToResponse(item, totalQty != null ? totalQty.doubleValue() : 0.0);
+            }).toList();
+        }
     }
-
-
-//    public ItemResponse getByBarcode(String barcode) {
-//        Item item = itemRepository.findByBarcode(barcode.trim())
-//                .orElseThrow(() -> new RuntimeException("Item not found"));
-//        return map(item);
-//    }
 
     public List<ItemResponse> listAll(Boolean activeOnly) {
         return itemRepository.findAll().stream()
                 .filter(i -> activeOnly == null || !activeOnly || i.isActive())
-                .map(this::map)
+                .map(this::mapToResponse)
                 .toList();
     }
 
-//    public List<ItemResponse> searchByName(String name) {
-//        return itemRepository.findByNameContainingIgnoreCase(name.trim())
-//                .stream().map(this::map).toList();
-//    }
+    // --- UPDATE ---
 
     @Transactional
     public ItemResponse updateItem(Long id, ItemUpdateRequest request) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Item not found"));
 
-        if (request.getName() != null) item.setName(request.getName().trim());
-        if (request.getCategory() != null) item.setCategory(request.getCategory());
+        if (request.getName() != null && !request.getName().isBlank()) item.setName(request.getName().trim());
+        if (request.getCategory() != null) item.setCategory(request.getCategory().trim());
         if (request.getCostPrice() != null) item.setCostPrice(request.getCostPrice());
         if (request.getSellingPrice() != null) item.setSellingPrice(request.getSellingPrice());
         if (request.getReorderLevel() != null) item.setReorderLevel(request.getReorderLevel());
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
         if (request.getActive() != null) item.setActive(request.getActive());
 
-        return map(item);
+        Item savedItem = itemRepository.save(item);
+        return mapToResponse(savedItem);
     }
 
     public void deactivateItem(Long id) {
@@ -145,63 +151,24 @@ public class ItemService {
         itemRepository.save(item);
     }
 
-    private ItemResponse map(Item item) {
-        return ItemResponse.builder()
-                .id(item.getId())
-                .barcode(item.getBarcode())
-                .name(item.getName())
-                .category(item.getCategory())
-                .costPrice(item.getCostPrice())
-                .sellingPrice(item.getSellingPrice())
-                .reorderLevel(item.getReorderLevel())
-                .imageUrl(item.getImageUrl())
-                .active(item.isActive())
-                .createdAt(item.getCreatedAt())
-                .availableQty(0.0) // or 0
-                .build();
-    }
-
-    private ItemResponse map(Item item, Long branchId) {
-        Double qty = stockRepository.findByBranchIdAndItemId(branchId, item.getId())
-                .map(stock -> (double) stock.getQuantity())
-                .orElse(0.0);
-
-        return ItemResponse.builder()
-                .id(item.getId())
-                .barcode(item.getBarcode())
-                .name(item.getName())
-                .category(item.getCategory())
-                .costPrice(item.getCostPrice())
-                .sellingPrice(item.getSellingPrice())
-                .reorderLevel(item.getReorderLevel())
-                .imageUrl(item.getImageUrl())
-                .active(item.isActive())
-                .createdAt(item.getCreatedAt())
-                .availableQty(qty)
-                .build();
-    }
+    // --- REPORTING (Items With Stock) ---
 
     public List<ItemWithStockResponse> itemsWithStock(Long branchId) {
-
         User user = authService.getLoggedUser();
 
-        // cashier must use own branch
+        // Security Checks
         if (user.getRole() == Role.CASHIER) {
             if (user.getBranchId() == null) throw new RuntimeException("Cashier branch not assigned");
             branchId = user.getBranchId();
         }
-
-        // manager default own branch if not provided
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null) throw new RuntimeException("Manager branch not assigned");
             branchId = user.getBranchId();
         }
 
-        // admin logic:
-        // - if branchId provided => branch stock
-        // - if no branchId => total stock
         List<Object[]> raw;
         if (branchId != null) {
+            // ⚠️ Repository Query එක අනිවාර්යයෙන් වෙනස් කරන්න ඕන Batch Table එකට (SUM)
             raw = itemRepository.itemsWithBranchStockRaw(branchId);
         } else {
             if (user.getRole() != Role.ADMIN)
@@ -211,7 +178,6 @@ public class ItemService {
 
         return raw.stream().map(obj -> {
             Object[] r = (Object[]) obj;
-
             return ItemWithStockResponse.builder()
                     .id(((Number) r[0]).longValue())
                     .barcode((String) r[1])
@@ -227,35 +193,44 @@ public class ItemService {
         }).toList();
     }
 
+    // --- MAPPERS ---
 
+    // 1. Stock නැතුව යවන එක
+    private ItemResponse mapToResponse(Item item) {
+        return mapToResponse(item, null);
+    }
+
+    // 2. Stock එක්ක යවන එක (Overloaded Method) ✅
+    private ItemResponse mapToResponse(Item item, Double qty) {
+        return ItemResponse.builder()
+                .id(item.getId())
+                .barcode(item.getBarcode())
+                .name(item.getName())
+                .category(item.getCategory())
+                .costPrice(item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0)
+                .sellingPrice(item.getSellingPrice() != null ? item.getSellingPrice().doubleValue() : 0.0)
+                .reorderLevel(item.getReorderLevel())
+                .imageUrl(item.getImageUrl())
+                .active(item.isActive())
+                .createdAt(item.getCreatedAt())
+                .availableQty(qty) // මෙතනට Qty පාස් කරනවා
+                .build();
+    }
+
+    // --- UTIL ---
     private LocalDateTime toLocalDateTime(Object v) {
         if (v == null) return null;
-
         if (v instanceof LocalDateTime ldt) return ldt;
-
         if (v instanceof Timestamp ts) return ts.toLocalDateTime();
-
         if (v instanceof java.sql.Date d) return d.toLocalDate().atStartOfDay();
-
-        if (v instanceof Date d) return Instant.ofEpochMilli(d.getTime())
-                .atZone(ZoneId.systemDefault())
-                .toLocalDateTime();
-
-        // ✅ Some DB drivers return numeric epoch time
+        if (v instanceof Date d) return Instant.ofEpochMilli(d.getTime()).atZone(ZoneId.systemDefault()).toLocalDateTime();
         if (v instanceof Number n) {
             long epoch = n.longValue();
-
-            // epoch seconds vs millis heuristic
-            if (epoch < 100000000000L) { // < ~1973 in ms, so likely seconds
-                return Instant.ofEpochSecond(epoch)
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime();
+            if (epoch < 100000000000L) {
+                return Instant.ofEpochSecond(epoch).atZone(ZoneId.systemDefault()).toLocalDateTime();
             }
-            return Instant.ofEpochMilli(epoch)
-                    .atZone(ZoneId.systemDefault())
-                    .toLocalDateTime();
+            return Instant.ofEpochMilli(epoch).atZone(ZoneId.systemDefault()).toLocalDateTime();
         }
-
         throw new IllegalArgumentException("Unsupported created_at type: " + v.getClass());
     }
 }

@@ -3,9 +3,11 @@ package com.chala.posapp.controller;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.service.ItemService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -13,6 +15,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/items")
 @RequiredArgsConstructor
+@Validated
 public class ItemController {
 
     private final ItemService itemService;
@@ -24,17 +27,13 @@ public class ItemController {
         return ResponseEntity.ok(itemService.createItem(request));
     }
 
-    @PostMapping("/create-with-stocks")
-    public ResponseEntity<ItemResponse> createWithStocks(
-            @Valid @RequestBody ItemCreateWithStocksRequest request
-    ) {
-        return ResponseEntity.ok(itemService.createWithStocks(request));
-    }
-
     @PostMapping("/bulk")
-    public ResponseEntity<?> bulkCreate(@Valid @RequestBody ItemBulkCreateRequest request) {
-        itemService.bulkCreate(request);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<List<ItemResponse>> bulkCreate(
+            @RequestBody @NotEmpty(message = "List cannot be empty")
+            List<@Valid ItemCreateRequest> requestList) { // @Valid දාන්නේ List එක ඇතුලේ ඒවට
+
+        List<ItemResponse> responses = itemService.bulkCreate(requestList);
+        return ResponseEntity.ok(responses);
     }
 
 

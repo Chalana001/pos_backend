@@ -4,9 +4,15 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
-@Table(name = "stock_transfers")
+@Table(name = "stock_transfers", indexes = {
+        @Index(name = "idx_transfer_no", columnList = "transferNo"), // Search by No
+        @Index(name = "idx_transfer_branches", columnList = "fromBranchId, toBranchId"), // Filter by Branch
+        @Index(name = "idx_transfer_status", columnList = "status") // Filter by Status (Pending/Completed)
+})
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class StockTransfer {
@@ -31,7 +37,7 @@ public class StockTransfer {
     @Column(nullable = false)
     private Long requestedByUserId;
 
-    private Long receivedByUserId;
+    private Long receivedByUserId; // බඩු භාරගත්ත කෙනා (Accept කරද්දී update වෙනවා)
 
     @Column(length = 255)
     private String note;
@@ -39,13 +45,24 @@ public class StockTransfer {
     @Column(length = 255)
     private String cancelReason;
 
-    private LocalDateTime requestedAt;
-    private LocalDateTime receivedAt;
-    private LocalDateTime canceledAt;
+    // --- Audit Timestamps ---
+
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime requestedAt; // හැදුව දිනය
+
+    private LocalDateTime receivedAt;  // බඩු ලැබුන දිනය
+    private LocalDateTime canceledAt;  // Cancel කරපු දිනය
+
+    // --- Relationship (Optional) ---
+    // මේක දැම්මොත් Transfer එක ගන්නකොටම ඒකේ Items ටිකත් එනවා.
+    // නැත්නම් TransferItemRepository එකෙන් වෙනම අදින්න වෙනවා.
+    @OneToMany(mappedBy = "transferId", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<StockTransferItem> items = new ArrayList<>();
 
     @PrePersist
     void onCreate() {
         requestedAt = LocalDateTime.now();
-        if (status == null) status = StockTransferStatus.REQUESTED;
+        // Service එකෙන් Status එක එව්වේ නැත්නම් විතරක් Default දාන්න
+        if (status == null) status = StockTransferStatus.IN_TRANSIT;
     }
 }

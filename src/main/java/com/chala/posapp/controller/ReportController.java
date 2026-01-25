@@ -1,5 +1,6 @@
 package com.chala.posapp.controller;
 
+import com.chala.posapp.dto.LowStockResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.service.ReportService;
 import lombok.RequiredArgsConstructor;

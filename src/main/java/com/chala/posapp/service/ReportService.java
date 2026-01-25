@@ -1,12 +1,10 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.dto.LowStockResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
-import com.chala.posapp.repository.CustomerRepository;
-import com.chala.posapp.repository.ReportRepository;
-import com.chala.posapp.repository.StockRepository;
-import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -21,9 +19,9 @@ import java.util.List;
 public class ReportService {
 
     private final ReportRepository reportRepository;
-    private final StockRepository stockRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final StockBatchRepository stockBatchRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -96,15 +94,7 @@ public class ReportService {
     public List<LowStockResponse> lowStock(Long requestedBranchId) {
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
-
-        return stockRepository.lowStockRaw(branchId).stream()
-                .map(r -> LowStockResponse.builder()
-                        .itemId(((Number) r[0]).longValue())
-                        .itemName((String) r[1])
-                        .quantity(((Number) r[2]).intValue())
-                        .reorderLevel(((Number) r[3]).intValue())
-                        .build())
-                .toList();
+        return stockBatchRepository.findLowStockItems(branchId);
     }
 
     public List<CreditDueResponse> creditDueList() {
