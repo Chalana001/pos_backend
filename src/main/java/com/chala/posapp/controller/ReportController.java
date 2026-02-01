@@ -30,6 +30,16 @@ public class ReportController {
         return ResponseEntity.ok(reportService.salesSummary(branchId, from, to));
     }
 
+    // --- NEW SUMMARY ENDPOINT ---
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/profit-summary")
+    public ResponseEntity<ProfitSummaryResponse> profitSummary(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to) {
+        return ResponseEntity.ok(reportService.getProfitSummary(branchId, from, to));
+    }
+
     // --- LISTS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/top-selling")
@@ -57,8 +67,11 @@ public class ReportController {
     public ResponseEntity<List<SalesTrendPoint>> salesTrend(
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "from") Instant from,
-            @RequestParam(name = "to") Instant to) {
-        return ResponseEntity.ok(reportService.salesTrend(branchId, from, to));
+            @RequestParam(name = "to") Instant to,
+            @RequestParam(name = "type", defaultValue = "DAILY") String type) { // 🔥 New Parameter
+
+        // Service එකට type එක යවනවා
+        return ResponseEntity.ok(reportService.salesTrend(branchId, from, to, type));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

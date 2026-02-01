@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -100,15 +101,64 @@ public class ReportService {
                 .toList();
     }
 
-    public List<SalesTrendPoint> salesTrend(Long requestedBranchId, Instant from, Instant to) {
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        List<Object[]> rows = reportRepository.salesTrendRaw(branchId, toLDT(from), toLDT(to));
+//    public List<SalesTrendPoint> salesTrend(Long requestedBranchId, Instant from, Instant to) {
+//        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+//        List<Object[]> rows = reportRepository.salesTrendRaw(branchId, toLDT(from), toLDT(to));
+//
+//        return rows.stream().map(r -> new SalesTrendPoint(
+//                ((java.sql.Date) r[0]).toLocalDate(),
+//                ((Number) r[1]).doubleValue(),
+//                ((Number) r[2]).longValue()
+//        )).toList();
+//    }
 
-        return rows.stream().map(r -> new SalesTrendPoint(
-                ((java.sql.Date) r[0]).toLocalDate(),
-                ((Number) r[1]).doubleValue(),
-                ((Number) r[2]).longValue()
-        )).toList();
+    public List<SalesTrendPoint> salesTrend(Long requestedBranchId, Instant from, Instant to, String type) {
+        User user = getLoggedUser();
+        Long branchId = resolveBranchId(user, requestedBranchId);
+
+        // Repository එකට යවන්න 0 හෝ Branch ID එක සකසා ගැනීම
+        // (ඔයාගේ Query එකේ ':branchId = 0' කියල තියෙන නිසා, null ආවොත් 0 යවන්න ඕන)
+        Long effectiveBranchId = (branchId == null) ? 0L : branchId;
+
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDateTime fromDt = LocalDateTime.ofInstant(from, zone);
+        LocalDateTime toDt = LocalDateTime.ofInstant(to, zone);
+
+        if ("MONTHLY".equalsIgnoreCase(type)) {
+            // 🔥 MONTHLY: දැනට තියෙන monthlySalesRaw එක පාවිච්චි කිරීම
+            // Return වෙන්නේ: [String("2026-02"), Double(Sales)]
+            List<Object[]> rows = reportRepository.monthlySalesRaw(effectiveBranchId, fromDt, toDt);
+
+            return rows.stream().map(r -> {
+                String monthStr = (String) r[0]; // "2026-02" වගේ එනවා
+                double amount = ((Number) r[1]).doubleValue();
+
+                // Chart එකට පෙන්නන්න මේ String එක දිනයක් බවට හරවන්න ඕන ("2026-02" -> "2026-02-01")
+                LocalDate date = LocalDate.parse(monthStr + "-01");
+
+                // Order Count එක Query එකේ නැති නිසා 0 යවනවා
+                return new SalesTrendPoint(date, amount, 0);
+            }).toList();
+
+        } else {
+            // 🔥 DAILY: දැනට තියෙන dailySalesRaw එක පාවිච්චි කිරීම
+            // Return වෙන්නේ: [Date("2026-02-01"), Double(Sales)]
+            List<Object[]> rows = reportRepository.dailySalesRaw(effectiveBranchId, fromDt, toDt);
+
+            return rows.stream().map(r -> {
+                // SQL Date එක LocalDate එකට හරවනවා
+                LocalDate date;
+                if (r[0] instanceof java.sql.Date) {
+                    date = ((java.sql.Date) r[0]).toLocalDate();
+                } else {
+                    date = LocalDate.parse(r[0].toString()); // String එකක් ආවොත්
+                }
+
+                double amount = ((Number) r[1]).doubleValue();
+
+                return new SalesTrendPoint(date, amount, 0);
+            }).toList();
+        }
     }
 
     // 🔥 NEW: Category Sales (Pie Chart)

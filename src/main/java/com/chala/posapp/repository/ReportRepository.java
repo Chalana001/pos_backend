@@ -167,13 +167,44 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 """, nativeQuery = true)
     List<Object[]> topSuppliersRaw(@Param("limitValue") int limitValue);
 
+    // ReportRepository.java
+
     @Query(value = """
     SELECT COALESCE(SUM(amount), 0)
     FROM expenses
-    WHERE (:branchId IS NULL OR branch_id = :branchId)
-      AND date_time BETWEEN :fromDate AND :toDate
+    WHERE (:branchId = 0 OR branch_id = :branchId)
+      AND created_at BETWEEN :fromDate AND :toDate
 """, nativeQuery = true)
     double getTotalExpenses(@Param("branchId") Long branchId,
                             @Param("fromDate") LocalDateTime fromDate,
                             @Param("toDate") LocalDateTime toDate);
+
+    // ✅ Daily Sales
+    @Query(value = """
+    SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
+    FROM orders o
+    WHERE (:branchId = 0 OR o.branch_id = :branchId)
+      AND o.status = 'COMPLETED'
+      AND o.created_at BETWEEN :fromDate AND :toDate
+    GROUP BY DATE(o.created_at)
+    ORDER BY day
+""", nativeQuery = true)
+    List<Object[]> dailySalesRaw(@Param("branchId") Long branchId,
+                                 @Param("fromDate") LocalDateTime fromDate,
+                                 @Param("toDate") LocalDateTime toDate);
+
+
+    // ✅ Monthly Sales
+    @Query(value = """
+    SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
+    FROM orders o
+    WHERE (:branchId = 0 OR o.branch_id = :branchId)
+      AND o.status = 'COMPLETED'
+      AND o.created_at BETWEEN :fromDate AND :toDate
+    GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
+    ORDER BY month
+""", nativeQuery = true)
+    List<Object[]> monthlySalesRaw(@Param("branchId") Long branchId,
+                                   @Param("fromDate") LocalDateTime fromDate,
+                                   @Param("toDate") LocalDateTime toDate);
 }

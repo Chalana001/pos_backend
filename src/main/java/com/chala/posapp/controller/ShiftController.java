@@ -51,47 +51,44 @@ public class ShiftController {
     }
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/active")
-    public ResponseEntity<ShiftResponse> activeShift(@RequestParam Long branchId) {
+    // ✅ (name = "branchId") එකතු කළා
+    public ResponseEntity<ShiftResponse> activeShift(@RequestParam(name = "branchId") Long branchId) {
         return ResponseEntity.ok(shiftService.getActiveShiftByBranch(branchId));
     }
-    // ✅ ADMIN/MANAGER open shift for selected branch
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/branch/open")
     public ResponseEntity<ShiftResponse> openByBranch(
-            @RequestParam Long branchId,
+            @RequestParam(name = "branchId") Long branchId, // ✅ නම සඳහන් කළා
             @Valid @RequestBody OpenShiftRequest request
     ) {
         return ResponseEntity.ok(shiftService.openShiftByBranch(branchId, request));
     }
 
-    // ✅ ADMIN/MANAGER close by shift id
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{shiftId}/close")
     public ResponseEntity<ShiftResponse> closeById(
-            @PathVariable Long shiftId,
+            @PathVariable(name = "shiftId") Long shiftId, // ✅ PathVariable එකට නම සඳහන් කළා
             @Valid @RequestBody CloseShiftRequest request
     ) {
         return ResponseEntity.ok(shiftService.closeShiftById(shiftId, request));
     }
 
-    // ✅ ADMIN/MANAGER add expense by shift id
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{shiftId}/expense")
     public ResponseEntity<ShiftResponse> expenseById(
-            @PathVariable Long shiftId,
+            @PathVariable(name = "shiftId") Long shiftId, // ✅ නම සඳහන් කළා
             @Valid @RequestBody CreateExpenseRequest request
     ) {
         return ResponseEntity.ok(shiftService.addExpenseByShiftId(shiftId, request));
     }
 
-    // ✅ ADMIN/MANAGER add cashdrop by shift id
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{shiftId}/cashdrop")
     public ResponseEntity<ShiftResponse> cashDropById(
-            @PathVariable Long shiftId,
+            @PathVariable(name = "shiftId") Long shiftId, // ✅ නම සඳහන් කළා
             @Valid @RequestBody CreateCashDropRequest request
     ) {
         return ResponseEntity.ok(shiftService.addCashDropByShiftId(shiftId, request));
     }
-
 }
