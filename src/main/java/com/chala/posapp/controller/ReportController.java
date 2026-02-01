@@ -1,16 +1,16 @@
 package com.chala.posapp.controller;
 
+import com.chala.posapp.dto.report.CategorySalesResponse;
 import com.chala.posapp.dto.LowStockResponse;
+import com.chala.posapp.dto.report.RecentOrderResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -20,49 +20,68 @@ public class ReportController {
 
     private final ReportService reportService;
 
+    // --- CARDS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/sales-summary")
     public ResponseEntity<SalesSummaryResponse> salesSummary(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam Instant from,
-            @RequestParam Instant to
-    ) {
-        return ResponseEntity.ok(
-                reportService.salesSummary(branchId, from, to)
-        );
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to) {
+        return ResponseEntity.ok(reportService.salesSummary(branchId, from, to));
     }
 
+    // --- LISTS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/top-selling")
     public ResponseEntity<List<TopSellingItemResponse>> topSelling(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam Instant from,
-            @RequestParam Instant to,
-            @RequestParam(defaultValue = "10") int limit
-    ) {
-        return ResponseEntity.ok(
-                reportService.topSelling(branchId, from, to, limit)
-        );
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to,
+            @RequestParam(name = "limit", defaultValue = "10") int limit) {
+        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/profit")
     public ResponseEntity<List<ProfitReportResponse>> profit(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam Instant from,
-            @RequestParam Instant to,
-            @RequestParam(defaultValue = "50") int limit
-    ) {
-        return ResponseEntity.ok(
-                reportService.profitReport(branchId, from, to, limit)
-        );
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to,
+            @RequestParam(name = "limit", defaultValue = "50") int limit) {
+        return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit));
+    }
+
+    // --- CHARTS ---
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/sales-trend")
+    public ResponseEntity<List<SalesTrendPoint>> salesTrend(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to) {
+        return ResponseEntity.ok(reportService.salesTrend(branchId, from, to));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/sales-by-category")
+    public ResponseEntity<List<CategorySalesResponse>> salesByCategory(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") Instant from,
+            @RequestParam(name = "to") Instant to) {
+        return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to));
+    }
+
+    // --- TABLES ---
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/recent-orders")
+    public ResponseEntity<List<RecentOrderResponse>> recentOrders(
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(reportService.recentOrders(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/low-stock")
     public ResponseEntity<List<LowStockResponse>> lowStock(
-            @RequestParam(required = false) Long branchId
-    ) {
+            @RequestParam(name = "branchId", required = false) Long branchId) {
         return ResponseEntity.ok(reportService.lowStock(branchId));
     }
 
@@ -72,13 +91,17 @@ public class ReportController {
         return ResponseEntity.ok(reportService.creditDueList());
     }
 
-    @GetMapping("/sales-trend")
-    public ResponseEntity<List<SalesTrendPoint>> salesTrend(
-            @RequestParam Long branchId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
-    ) {
-        return ResponseEntity.ok(reportService.salesTrend(branchId, from, to));
+    @GetMapping("/top-customers")
+    public ResponseEntity<List<TopCustomerResponse>> topCustomers(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "limit", defaultValue = "10") int limit) {
+        return ResponseEntity.ok(reportService.topCustomers(branchId, limit));
     }
 
+    @GetMapping("/top-suppliers")
+    public ResponseEntity<List<TopSupplierResponse>> topSuppliers(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "limit", defaultValue = "10") int limit) {
+        return ResponseEntity.ok(reportService.topSuppliers(branchId, limit));
+    }
 }
