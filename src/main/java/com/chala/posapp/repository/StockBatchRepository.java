@@ -17,6 +17,8 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     @Query("SELECT COALESCE(SUM(sb.quantity), 0) FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId")
     Integer getTotalQuantityByItemAndBranch(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
+    List<StockBatch> findByBranchIdAndItemIdAndQuantityGreaterThanOrderByIdAsc(Long branchId, Long itemId, Double quantity);
+
     // 2. [පරණ එක] විකුණන්න සුදුසු Batches ටික (FIFO - පරණ ඒව මුලින්)
     @Query("SELECT sb FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId AND sb.quantity > 0 ORDER BY sb.receivedAt ASC")
     List<StockBatch> findAvailableBatches(@Param("branchId") Long branchId, @Param("itemId") Long itemId);

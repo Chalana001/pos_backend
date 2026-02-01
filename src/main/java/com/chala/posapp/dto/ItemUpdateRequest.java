@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
-import java.math.BigDecimal; // Import this
+import java.math.BigDecimal;
 
 @Data
 public class ItemUpdateRequest {
@@ -12,10 +12,9 @@ public class ItemUpdateRequest {
     @Size(min = 2, max = 160)
     private String name;
 
-    @Size(max = 80)
-    private String category;
+    // String category වෙනුවට SubCategory ID එක ගන්න
+    private Long subCategoryId;
 
-    // Double වෙනුවට BigDecimal දාන්න
     @PositiveOrZero
     private BigDecimal costPrice;
 

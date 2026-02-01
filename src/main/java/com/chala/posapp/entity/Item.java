@@ -26,8 +26,10 @@ public class Item {
     @Column(nullable = false, length = 160)
     private String name;
 
-    @Column(length = 80)
-    private String category;
+    // Aluth SubCategory relationship eka add karanna:
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sub_category_id")
+    private SubCategory subCategory;
 
     // --- MONEY FIELDS (Changed double to BigDecimal) ---
     // Precision 10, Scale 2 කියන්නේ ඉලක්කම් 10යි, දශම ස්ථාන 2යි (උදා: 12345678.99)

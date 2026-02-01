@@ -20,7 +20,6 @@ public class ItemController {
 
     private final ItemService itemService;
 
-    // ADMIN or MANAGER create items
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping
     public ResponseEntity<ItemResponse> create(@Valid @RequestBody ItemCreateRequest request) {
@@ -30,32 +29,31 @@ public class ItemController {
     @PostMapping("/bulk")
     public ResponseEntity<List<ItemResponse>> bulkCreate(
             @RequestBody @NotEmpty(message = "List cannot be empty")
-            List<@Valid ItemCreateRequest> requestList) { // @Valid දාන්නේ List එක ඇතුලේ ඒවට
-
+            List<@Valid ItemCreateRequest> requestList) {
         List<ItemResponse> responses = itemService.bulkCreate(requestList);
         return ResponseEntity.ok(responses);
     }
 
-
     @GetMapping("/with-stock")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     public ResponseEntity<List<ItemWithStockResponse>> listWithStock(
-            @RequestParam(required = false) Long branchId
+            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
     ) {
         return ResponseEntity.ok(itemService.itemsWithStock(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{id}")
-    public ResponseEntity<ItemResponse> get(@PathVariable Long id) {
+    public ResponseEntity<ItemResponse> get(@PathVariable(name = "id") Long id) { // ✅ Added name
+        System.out.println("called");
         return ResponseEntity.ok(itemService.getItem(id));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/barcode/{barcode}")
     public ResponseEntity<ItemResponse> getByBarcode(
-            @PathVariable String barcode,
-            @RequestParam(required = false) Long branchId
+            @PathVariable(name = "barcode") String barcode, // ✅ Added name
+            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
     ) {
         return ResponseEntity.ok(itemService.getByBarcode(barcode, branchId));
     }
@@ -63,30 +61,30 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/search")
     public ResponseEntity<List<ItemResponse>> search(
-            @RequestParam String name,
-            @RequestParam(required = false) Long branchId
+            @RequestParam(name = "name") String name, // ✅ Added name
+            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
     ) {
+        System.out.println("called22222222");
         return ResponseEntity.ok(itemService.searchByName(name, branchId));
     }
 
-    // /items?activeOnly=true
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
-    public ResponseEntity<List<ItemResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
+    public ResponseEntity<List<ItemResponse>> list(@RequestParam(name = "activeOnly", required = false) Boolean activeOnly) { // ✅ Added name
+        System.out.println("called3333333");
         return ResponseEntity.ok(itemService.listAll(activeOnly));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PutMapping("/{id}")
-    public ResponseEntity<ItemResponse> update(@PathVariable Long id,
+    public ResponseEntity<ItemResponse> update(@PathVariable(name = "id") Long id, // ✅ Added name
                                                @Valid @RequestBody ItemUpdateRequest request) {
         return ResponseEntity.ok(itemService.updateItem(id, request));
     }
 
-    // safer: deactivate instead of delete
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deactivate(@PathVariable Long id) {
+    public ResponseEntity<?> deactivate(@PathVariable(name = "id") Long id) { // ✅ Added name
         itemService.deactivateItem(id);
         return ResponseEntity.ok("Item deactivated");
     }

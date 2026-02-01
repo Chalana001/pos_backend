@@ -11,6 +11,8 @@ public class OrderItemRequest {
     @NotNull
     private Long itemId;
 
+    private Long batchId;
+
     @Min(1)
     private int qty;
 

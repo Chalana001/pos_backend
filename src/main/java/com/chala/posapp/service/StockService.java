@@ -64,7 +64,6 @@ public class StockService {
         // Branch ID එක 0 හෝ 0 ට අඩු නම් අපි ඒක NULL කරගන්නවා.
         // මොකද Repository එක බලාපොරොත්තු වෙන්නේ NULL අගයක් All Branches පෙන්නන්න.
         Long filterBranchId = (branchId != null && branchId > 0) ? branchId : null;
-        System.out.println("bbbbbbbbbbb - "+filterBranchId);
         return stockBatchRepository.getStockSummary(filterBranchId);
     }
 

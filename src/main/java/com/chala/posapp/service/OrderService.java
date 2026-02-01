@@ -10,11 +10,11 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.chala.posapp.entity.Role.CASHIER;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,72 +27,94 @@ public class OrderService {
     private final InvoiceService invoiceService;
     private final CustomerRepository customerRepository;
     private final ShiftService shiftService;
-
-    // ⚠️ StockRepository අයින් කරලා Batch Repository එක දැම්මා
     private final StockBatchRepository stockBatchRepository;
-    private final BranchRepository branchRepository; // To get Branch entity for returns
+    private final BranchRepository branchRepository;
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
 
-        // Get logged user
+        // 1. Get Logged User & Branch
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         Long branchId;
-        if (user.getRole() == CASHIER) {
+        if (user.getRole() == Role.CASHIER) {
             branchId = user.getBranchId();
         } else {
             if (request.getBranchId() == null) throw new RuntimeException("BranchId required");
             branchId = request.getBranchId();
         }
 
+        // 2. Basic Validations
         if (request.getItems() == null || request.getItems().isEmpty())
             throw new RuntimeException("Order items required");
 
         if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null)
             throw new RuntimeException("Customer required for CREDIT order");
 
-        // Create invoice
+        // 3. Generate Invoice No
         String invoiceNo = invoiceService.generateInvoiceNo(branchId);
 
-        // Calculate totals
+        // Variables for calculation
         double subTotal = 0;
         List<OrderItem> orderItemsToSave = new ArrayList<>();
+        List<StockBatch> batchesToUpdate = new ArrayList<>();
 
-        // --- 1. VALIDATION & CALCULATION LOOP ---
+        // --- 4. PROCESSING ITEMS (Specific Batch Logic) ---
         for (OrderItemRequest itemReq : request.getItems()) {
+
+            // A. Validate Item
             Item item = itemRepository.findById(itemReq.getItemId())
                     .orElseThrow(() -> new RuntimeException("Item not found: " + itemReq.getItemId()));
 
             if (!item.isActive())
                 throw new RuntimeException("Item is inactive: " + item.getBarcode());
 
-            // 🚀 Batch System Check: Total Qty Available?
-            Integer currentTotalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(branchId, item.getId());
-            if (currentTotalStock == null || currentTotalStock < itemReq.getQty()) {
-                throw new RuntimeException("Not enough stock for item: " + item.getName() +
-                        " (Available: " + (currentTotalStock == null ? 0 : currentTotalStock) + ")");
+            // B. 🔥 VALIDATE BATCH (Must exist and belong to branch/item)
+            if (itemReq.getBatchId() == null) {
+                throw new RuntimeException("Batch ID is missing for item: " + item.getName());
             }
 
-            // unit price
-            double unitPrice = itemReq.getUnitPrice() > 0 ? itemReq.getUnitPrice() : item.getSellingPrice().doubleValue();
+            StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
+                    .orElseThrow(() -> new RuntimeException("Batch not found ID: " + itemReq.getBatchId()));
 
-            // discount logic
+            if (!batch.getItem().getId().equals(item.getId())) {
+                throw new RuntimeException("Batch ID does not match Item ID");
+            }
+            if (!batch.getBranch().getId().equals(branchId)) {
+                throw new RuntimeException("Batch does not belong to this branch");
+            }
+
+            // C. Check Stock Availability
+            if (batch.getQuantity() < itemReq.getQty()) {
+                throw new RuntimeException("Insufficient stock for " + item.getName() +
+                        " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+            }
+
+            // D. Deduct Stock (In Memory)
+            batch.setQuantity(batch.getQuantity() - itemReq.getQty());
+            batchesToUpdate.add(batch);
+
+            // E. Calculations
+            double unitPrice = itemReq.getUnitPrice(); // Price from Frontend (Selected Batch Price)
+            double costPrice = batch.getCostPrice().doubleValue();  // 🔥 Capture Cost for Profit Report
+
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
 
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
             double lineTotal = finalUnitPrice * itemReq.getQty();
 
+            // F. Build OrderItem
             OrderItem oi = OrderItem.builder()
-                    .orderId(null) // set after order saved
                     .itemId(item.getId())
+                    .batchId(batch.getId())       // ✅ Save Batch ID
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
                     .qty(itemReq.getQty())
                     .unitPrice(unitPrice)
+                    .costPrice(costPrice)         // ✅ Save Cost Price
                     .discountType(discountType)
                     .discountValue(discountValue)
                     .finalUnitPrice(finalUnitPrice)
@@ -103,13 +125,12 @@ public class OrderService {
             subTotal += lineTotal;
         }
 
-        // --- 2. BILL DISCOUNT & PAYMENT LOGIC ---
+        // --- 5. BILL DISCOUNT & TOTALS ---
         double billDiscount = request.getBillDiscount();
         if (billDiscount < 0) billDiscount = 0;
         if (billDiscount > subTotal) billDiscount = subTotal;
 
         double grandTotal = subTotal - billDiscount;
-
         double paidAmount = request.getPaidAmount();
         if (paidAmount < 0) paidAmount = 0;
 
@@ -123,6 +144,7 @@ public class OrderService {
             dueAmount = 0;
         }
 
+        // --- 6. SAVE ORDER ---
         Order order = Order.builder()
                 .invoiceNo(invoiceNo)
                 .branchId(branchId)
@@ -136,24 +158,25 @@ public class OrderService {
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
                 .note(request.getNote())
+                .createdAt(LocalDateTime.now())
                 .build();
 
         Order savedOrder = orderRepository.save(order);
 
-        // Save order items
+        // --- 7. SAVE ITEMS & UPDATE STOCK ---
         for (OrderItem oi : orderItemsToSave) {
             oi.setOrderId(savedOrder.getId());
         }
         orderItemRepository.saveAll(orderItemsToSave);
+        stockBatchRepository.saveAll(batchesToUpdate);
 
-        // --- 3. CUSTOMER CREDIT LOGIC ---
+        // --- 8. CUSTOMER CREDIT ---
         if (savedOrder.getOrderType() == OrderType.CREDIT) {
             Customer customer = customerRepository.findById(savedOrder.getCustomerId())
                     .orElseThrow(() -> new RuntimeException("Customer not found"));
 
-            if (customer.getCreditLimit() != null) {
-                double max = customer.getCreditLimit();
-                if (customer.getDueAmount() + savedOrder.getDueAmount() > max) {
+            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0) {
+                if (customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
                     throw new RuntimeException("Customer credit limit exceeded");
                 }
             }
@@ -161,30 +184,7 @@ public class OrderService {
             customerRepository.save(customer);
         }
 
-        // --- 4. STOCK REDUCTION (FIFO) 🚀 ---
-        for (OrderItem oi : orderItemsToSave) {
-            int qtyNeeded = oi.getQty();
-
-            // පරණම Batches ටික අරගෙන අඩු කරගෙන යන්න
-            List<StockBatch> batches = stockBatchRepository.findAvailableBatches(branchId, oi.getItemId());
-
-            for (StockBatch batch : batches) {
-                if (qtyNeeded == 0) break;
-
-                int available = batch.getQuantity();
-
-                if (available >= qtyNeeded) {
-                    batch.setQuantity(available - qtyNeeded);
-                    qtyNeeded = 0;
-                } else {
-                    batch.setQuantity(0);
-                    qtyNeeded -= available;
-                }
-                stockBatchRepository.save(batch);
-            }
-        }
-
-        // Update shift
+        // --- 9. UPDATE SHIFT ---
         if (request.getOrderType() == OrderType.CASH) {
             shiftService.addCashSale(branchId, request.getPaidAmount());
         }
@@ -205,29 +205,26 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.CANCELED)
             throw new RuntimeException("Order already canceled");
 
-        // Permission Check
         if (user.getRole() != Role.ADMIN && !order.getBranchId().equals(user.getBranchId()))
             throw new RuntimeException("Cannot cancel other branch order");
 
-        // --- 1. CREDIT ROLLBACK ---
+        // 1. Credit Rollback
         if (order.getOrderType() == OrderType.CREDIT && order.getCustomerId() != null) {
             Customer customer = customerRepository.findById(order.getCustomerId())
                     .orElseThrow(() -> new RuntimeException("Customer not found"));
 
             double newDue = customer.getDueAmount() - order.getDueAmount();
-            if (newDue < 0) newDue = 0;
-
-            customer.setDueAmount(newDue);
+            customer.setDueAmount(Math.max(0, newDue));
             customerRepository.save(customer);
         }
 
-        // --- 2. UPDATE ORDER STATUS ---
+        // 2. Update Status
         order.setStatus(OrderStatus.CANCELED);
         order.setCancelReason(request.getReason());
         order.setCanceledAt(LocalDateTime.now());
         Order saved = orderRepository.save(order);
 
-        // --- 3. STOCK ROLLBACK (CREATE RETURN BATCHES) 🚀 ---
+        // 3. Stock Rollback (Create Return Batch)
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         Branch branch = branchRepository.findById(order.getBranchId())
                 .orElseThrow(() -> new RuntimeException("Branch not found"));
@@ -236,16 +233,15 @@ public class OrderService {
             Item item = itemRepository.findById(oi.getItemId())
                     .orElseThrow(() -> new RuntimeException("Item not found"));
 
-            // අලුත් Batch එකක් හදනවා "Sales Return" විදියට
-            // Batch Code: "RTN-{InvoiceNo}"
+            // Note: We use the COST PRICE from the OrderItem (historical cost), not current Item cost
             StockBatch returnBatch = StockBatch.builder()
                     .branch(branch)
                     .item(item)
                     .quantity(oi.getQty())
                     .originalQuantity(oi.getQty())
-                    .costPrice(item.getCostPrice()) // Current master cost price
-                    .sellingPrice(item.getSellingPrice())
-                    .batchCode("RTN-" + order.getInvoiceNo()) // Traceability
+                    .costPrice(BigDecimal.valueOf(oi.getCostPrice())) // ✅ Use historical cost
+                    .sellingPrice(item.getSellingPrice()) // Use current selling price (or oi.unitPrice)
+                    .batchCode("RTN-" + order.getInvoiceNo())
                     .receivedAt(LocalDateTime.now())
                     .build();
 
@@ -289,26 +285,27 @@ public class OrderService {
             return unitPrice - (unitPrice * (value / 100.0));
         }
 
-        // FIXED AMOUNT
         if (value < 0) value = 0;
         if (value > unitPrice) value = unitPrice;
         return unitPrice - value;
     }
 
+    // ✅ FIXED: Only ONE buildOrderResponse method
     private OrderResponse buildOrderResponse(Order order, List<OrderItem> items) {
         List<OrderItemResponse> itemResponses = items.stream()
                 .map(oi -> OrderItemResponse.builder()
                         .itemId(oi.getItemId())
                         .barcode(oi.getBarcode())
                         .itemName(oi.getItemName())
+                        .batchId(oi.getBatchId()) // ✅ Mapped Batch ID
                         .qty(oi.getQty())
                         .unitPrice(oi.getUnitPrice())
-                        .discountType(oi.getDiscountType())
+                        .discountType(oi.getDiscountType().toString()) // Enum to String
                         .discountValue(oi.getDiscountValue())
                         .finalUnitPrice(oi.getFinalUnitPrice())
                         .lineTotal(oi.getLineTotal())
                         .build())
-                .toList();
+                .collect(Collectors.toList());
 
         return OrderResponse.builder()
                 .id(order.getId())

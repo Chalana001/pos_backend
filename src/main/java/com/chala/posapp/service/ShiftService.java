@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ShiftNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -61,13 +62,11 @@ public class ShiftService {
 
     public ShiftResponse getMyCurrentShift() {
         User user = getLoggedUser();
-        if (user.getBranchId() == null)
+        if (user.getRole() != Role.ADMIN && user.getBranchId() == null)
             throw new RuntimeException("User branch not assigned");
 
         CashShift shift = cashShiftRepository.findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(user.getBranchId(), user.getId())
-                .orElseThrow(() -> new RuntimeException("No shift found"));
-
-        System.out.println(shift.getCashSales());
+                .orElseThrow(() -> new ShiftNotFoundException("No shift found"));
         return map(shift);
     }
 
@@ -177,7 +176,7 @@ public class ShiftService {
     public ShiftResponse getActiveShiftByBranch(Long branchId) {
         CashShift shift = cashShiftRepository
                 .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
-                .orElseThrow(() -> new RuntimeException("No active shift for this branch"));
+                .orElseThrow(() -> new ShiftNotFoundException("No active shift for this branch"));
 
         return map(shift);
     }

@@ -14,37 +14,54 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     Optional<Item> findByBarcode(String barcode);
 
-    // Bulk Validation සඳහා (එක පාර Barcode ගොඩක් check කරන්න)
     List<Item> findAllByBarcodeIn(List<String> barcodes);
 
     List<Item> findByNameContainingIgnoreCase(String name);
 
-    // ✅ 1. Branch Stock Query (Updated for StockBatch)
-    // stock table එක වෙනුවට stock_batches පාවිච්චි කරලා SUM එක ගන්නවා.
-    // LEFT JOIN දැම්මා, එතකොට Stock නැති (0 තියෙන) Items වුනත් List එකේ පෙන්නනවා.
+    // ✅ 1. Branch Stock Query (New Joins Added)
+    // sub_categories සහ categories table වලට JOIN කරලා නම් ගන්නවා.
     @Query(value = """
             SELECT 
-                i.id, i.barcode, i.name, i.category,
-                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
-                COALESCE(SUM(sb.quantity), 0) AS qty
+                i.id,                       -- [0]
+                i.barcode,                  -- [1]
+                i.name,                     -- [2]
+                c.name AS cat_name,         -- [3] Category Name
+                sc.name AS sub_cat_name,    -- [4] Sub Category Name
+                i.cost_price,               -- [5]
+                i.selling_price,            -- [6]
+                i.reorder_level,            -- [7]
+                i.active,                   -- [8]
+                i.created_at,               -- [9]
+                COALESCE(SUM(sb.quantity), 0) AS qty -- [10]
             FROM items i
+            LEFT JOIN sub_categories sc ON i.sub_category_id = sc.id
+            LEFT JOIN categories c ON sc.category_id = c.id
             LEFT JOIN stock_batches sb 
                 ON sb.item_id = i.id AND sb.branch_id = :branchId
-            GROUP BY i.id, i.barcode, i.name, i.category, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
+            GROUP BY i.id, i.barcode, i.name, c.name, sc.name, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
             ORDER BY i.id DESC
             """, nativeQuery = true)
     List<Object[]> itemsWithBranchStockRaw(@Param("branchId") Long branchId);
 
-    // ✅ 2. Total Stock Query (All Branches)
-    // මෙතන කලින් code එකේ i.created_at මග ඇරිලා තිබුනා. එකත් දැම්මා (index 8).
+    // ✅ 2. Total Stock Query (New Joins Added)
     @Query(value = """
             SELECT 
-                i.id, i.barcode, i.name, i.category,
-                i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at,
-                COALESCE(SUM(sb.quantity), 0) AS qty
+                i.id,                       -- [0]
+                i.barcode,                  -- [1]
+                i.name,                     -- [2]
+                c.name AS cat_name,         -- [3] Category Name
+                sc.name AS sub_cat_name,    -- [4] Sub Category Name
+                i.cost_price,               -- [5]
+                i.selling_price,            -- [6]
+                i.reorder_level,            -- [7]
+                i.active,                   -- [8]
+                i.created_at,               -- [9]
+                COALESCE(SUM(sb.quantity), 0) AS qty -- [10]
             FROM items i
+            LEFT JOIN sub_categories sc ON i.sub_category_id = sc.id
+            LEFT JOIN categories c ON sc.category_id = c.id
             LEFT JOIN stock_batches sb ON sb.item_id = i.id
-            GROUP BY i.id, i.barcode, i.name, i.category, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
+            GROUP BY i.id, i.barcode, i.name, c.name, sc.name, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
             ORDER BY i.id DESC
             """, nativeQuery = true)
     List<Object[]> itemsWithTotalStockRaw();

@@ -3,32 +3,29 @@ package com.chala.posapp.dto;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
+
 @Data
 public class ItemCreateRequest {
-
     @NotBlank
-    @Size(min = 1, max = 80)
     private String barcode;
 
     @NotBlank
-    @Size(min = 2, max = 160)
     private String name;
 
-    @Size(max = 80)
-    private String category;
+    // String category wenuwata ID eka ganna
+    @NotNull(message = "Sub category is required")
+    private Long subCategoryId;
 
     @PositiveOrZero
-    private double costPrice;
+    private BigDecimal costPrice;
 
     @PositiveOrZero
-    private double sellingPrice;
+    private BigDecimal sellingPrice;
 
     @Min(0)
     private int reorderLevel;
 
-    // optional image url (we will control via setting later)
-    @Size(max = 500)
     private String imageUrl;
-
     private Boolean active;
 }
