@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -173,12 +175,14 @@ public class ShiftService {
                 .closedAt(s.getClosedAt())
                 .build();
     }
-    public ShiftResponse getActiveShiftByBranch(Long branchId) {
-        CashShift shift = cashShiftRepository
-                .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
-                .orElseThrow(() -> new ShiftNotFoundException("No active shift for this branch"));
+    public List<ShiftResponse> getAllActiveShiftsByBranch(Long branchId) {
+        // බ්‍රාන්ච් එකේ සියලුම ඕපන් ශිෆ්ට් ගේනවා
+        List<CashShift> shifts = cashShiftRepository.findAllByBranchIdAndStatus(branchId, ShiftStatus.OPEN);
 
-        return map(shift);
+        // Entity ලිස්ට් එක Response DTO ලිස්ට් එකකට පරිවර්තනය කරනවා
+        return shifts.stream()
+                .map(this::map)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -228,8 +232,8 @@ public class ShiftService {
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
             throw new RuntimeException("Not allowed");
 
-        cashShiftRepository.findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
-                .ifPresent(s -> { throw new RuntimeException("Shift already open for this branch"); });
+//        cashShiftRepository.findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
+//                .ifPresent(s -> { throw new RuntimeException("Shift already open for this branch"); });
 
         CashShift shift = CashShift.builder()
                 .branchId(branchId)
@@ -301,6 +305,7 @@ public class ShiftService {
     public void addCashSale(Long branchId, Double amount) {
         User user = authService.getLoggedUser();
 
+        //wenas karanna oni
         CashShift shift = cashShiftRepository
                 .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
                 .orElseThrow(() -> new RuntimeException("No active shift for this branch"));

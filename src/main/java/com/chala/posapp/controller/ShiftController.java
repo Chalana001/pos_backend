@@ -8,6 +8,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/shifts")
 @RequiredArgsConstructor
@@ -26,6 +28,7 @@ public class ShiftController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/me")
     public ResponseEntity<ShiftResponse> myShift() {
+        System.out.println("called me");
         return ResponseEntity.ok(shiftService.getMyCurrentShift());
     }
 
@@ -51,9 +54,8 @@ public class ShiftController {
     }
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/active")
-    // ✅ (name = "branchId") එකතු කළා
-    public ResponseEntity<ShiftResponse> activeShift(@RequestParam(name = "branchId") Long branchId) {
-        return ResponseEntity.ok(shiftService.getActiveShiftByBranch(branchId));
+    public ResponseEntity<List<ShiftResponse>> activeShifts(@RequestParam(name = "branchId") Long branchId) {
+        return ResponseEntity.ok(shiftService.getAllActiveShiftsByBranch(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
