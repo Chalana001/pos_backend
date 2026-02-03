@@ -4,12 +4,14 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.ShiftNotFoundException;
 import com.chala.posapp.repository.*;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -183,6 +185,23 @@ public class ShiftService {
         return shifts.stream()
                 .map(this::map)
                 .collect(Collectors.toList());
+    }
+
+    public List<ShiftResponse> getAllShifts(Long branchId, Long cashierId, LocalDateTime start, LocalDateTime end, ShiftStatus status) {
+        return cashShiftRepository.findAll((root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (branchId != null) predicates.add(cb.equal(root.get("branchId"), branchId));
+            if (cashierId != null) predicates.add(cb.equal(root.get("cashierUserId"), cashierId));
+            if (status != null) predicates.add(cb.equal(root.get("status"), status));
+
+            if (start != null && end != null) {
+                predicates.add(cb.between(root.get("openedAt"), start, end));
+            }
+
+            query.orderBy(cb.desc(root.get("openedAt")));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        }).stream().map(this::map).collect(Collectors.toList());
     }
 
     @Transactional

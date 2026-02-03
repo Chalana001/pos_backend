@@ -1,13 +1,16 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.*;
+import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.service.ShiftService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -22,6 +25,20 @@ public class ShiftController {
     @PostMapping("/open")
     public ResponseEntity<ShiftResponse> open(@Valid @RequestBody OpenShiftRequest request) {
         return ResponseEntity.ok(shiftService.openShift(request));
+    }
+
+    //histryy
+    @GetMapping("/all")
+    public ResponseEntity<List<ShiftResponse>> getAllShifts(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "cashierId", required = false) Long cashierId,
+            @RequestParam(name = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(name = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(name = "status", required = false) ShiftStatus status
+    ) {
+        // Service එක හරහා filter කරලා response එක එවනවා
+        List<ShiftResponse> shifts = shiftService.getAllShifts(branchId, cashierId, startDate, endDate, status);
+        return ResponseEntity.ok(shifts);
     }
 
     // current shift of logged user
