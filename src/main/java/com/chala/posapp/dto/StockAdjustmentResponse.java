@@ -14,14 +14,11 @@ public class StockAdjustmentResponse {
     private Long id;
     private Long branchId;
     private Long itemId;
-
     private String itemBarcode;
     private String itemName;
-
     private StockAdjustmentType type;
     private int qtyChange;
     private String reason;
-
     private Long userId;
     private LocalDateTime createdAt;
 }

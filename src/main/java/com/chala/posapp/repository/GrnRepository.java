@@ -14,7 +14,6 @@ public interface GrnRepository extends JpaRepository<GRN, Long> {
 
     Optional<GRN> findByGrnNo(String grnNo);
 
-    // අන්තිම GRN Number එක ගන්න (අලුත් එක හදන්න උදව්වක් විදියට)
     @Query(value = "SELECT * FROM grn WHERE branch_id = :branchId ORDER BY id DESC LIMIT 1", nativeQuery = true)
     Optional<GRN> findLastGrnByBranch(@Param("branchId") Long branchId);
 
@@ -22,7 +21,6 @@ public interface GrnRepository extends JpaRepository<GRN, Long> {
 
     List<GRN> findAllByOrderByIdDesc();
 
-    // Custom Query එකක් ලියනවා Search + Pagination සඳහා
     @Query("SELECT g FROM GRN g WHERE " +
             "(:query IS NULL OR :query = '' OR " +
             "LOWER(g.grnNo) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

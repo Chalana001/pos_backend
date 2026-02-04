@@ -18,8 +18,6 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByNameContainingIgnoreCase(String name);
 
-    // ✅ 1. Branch Stock Query (New Joins Added)
-    // sub_categories සහ categories table වලට JOIN කරලා නම් ගන්නවා.
     @Query(value = """
             SELECT 
                 i.id,                       -- [0]
@@ -43,7 +41,6 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             """, nativeQuery = true)
     List<Object[]> itemsWithBranchStockRaw(@Param("branchId") Long branchId);
 
-    // ✅ 2. Total Stock Query (New Joins Added)
     @Query(value = """
             SELECT 
                 i.id,                       -- [0]

@@ -47,7 +47,6 @@ public class ShiftService {
         if (user.getRole() != Role.CASHIER && user.getRole() != Role.MANAGER && user.getRole() != Role.ADMIN)
             throw new RuntimeException("Not allowed");
 
-        // prevent double open shift
         cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(user.getBranchId(), user.getId(), ShiftStatus.OPEN)
                 .ifPresent(s -> {
                     throw new RuntimeException("Shift already open");
@@ -129,7 +128,6 @@ public class ShiftService {
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
 
-        // ✅ Calculate CASH sales during shift
         double cashSales = orderRepository.sumCashSales(
                 shift.getBranchId(),
                 shift.getCashierUserId(),
@@ -141,7 +139,6 @@ public class ShiftService {
 
         shift.setCashSales(cashSales);
 
-        // ✅ Expected cash calculation (FINAL)
         double expected = shift.getOpeningCash()
                 + cashSales
                 - shift.getTotalExpenses()
@@ -178,10 +175,8 @@ public class ShiftService {
                 .build();
     }
     public List<ShiftResponse> getAllActiveShiftsByBranch(Long branchId) {
-        // බ්‍රාන්ච් එකේ සියලුම ඕපන් ශිෆ්ට් ගේනවා
         List<CashShift> shifts = cashShiftRepository.findAllByBranchIdAndStatus(branchId, ShiftStatus.OPEN);
 
-        // Entity ලිස්ට් එක Response DTO ලිස්ට් එකකට පරිවර්තනය කරනවා
         return shifts.stream()
                 .map(this::map)
                 .collect(Collectors.toList());
@@ -219,7 +214,6 @@ public class ShiftService {
             throw new RuntimeException("Shift already closed");
         }
 
-        // ✅ Calculate CASH sales during shift
         double cashSales = orderRepository.sumCashSales(
                 shift.getBranchId(),
                 shift.getCashierUserId(),
@@ -256,7 +250,7 @@ public class ShiftService {
 
         CashShift shift = CashShift.builder()
                 .branchId(branchId)
-                .cashierUserId(user.getId()) // opened by admin
+                .cashierUserId(user.getId())
                 .status(ShiftStatus.OPEN)
                 .openingCash(request.getOpeningCash())
                 .openNote(request.getNote())
@@ -324,7 +318,6 @@ public class ShiftService {
     public void addCashSale(Long branchId, Double amount) {
         User user = authService.getLoggedUser();
 
-        //wenas karanna oni
         CashShift shift = cashShiftRepository
                 .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
                 .orElseThrow(() -> new RuntimeException("No active shift for this branch"));

@@ -37,7 +37,7 @@ public class StockTransfer {
     @Column(nullable = false)
     private Long requestedByUserId;
 
-    private Long receivedByUserId; // බඩු භාරගත්ත කෙනා (Accept කරද්දී update වෙනවා)
+    private Long receivedByUserId;
 
     @Column(length = 255)
     private String note;
@@ -45,24 +45,19 @@ public class StockTransfer {
     @Column(length = 255)
     private String cancelReason;
 
-    // --- Audit Timestamps ---
 
     @Column(nullable = false, updatable = false)
-    private LocalDateTime requestedAt; // හැදුව දිනය
+    private LocalDateTime requestedAt;
 
-    private LocalDateTime receivedAt;  // බඩු ලැබුන දිනය
-    private LocalDateTime canceledAt;  // Cancel කරපු දිනය
+    private LocalDateTime receivedAt;
+    private LocalDateTime canceledAt;
 
-    // --- Relationship (Optional) ---
-    // මේක දැම්මොත් Transfer එක ගන්නකොටම ඒකේ Items ටිකත් එනවා.
-    // නැත්නම් TransferItemRepository එකෙන් වෙනම අදින්න වෙනවා.
     @OneToMany(mappedBy = "transferId", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<StockTransferItem> items = new ArrayList<>();
 
     @PrePersist
     void onCreate() {
         requestedAt = LocalDateTime.now();
-        // Service එකෙන් Status එක එව්වේ නැත්නම් විතරක් Default දාන්න
         if (status == null) status = StockTransferStatus.IN_TRANSIT;
     }
 }

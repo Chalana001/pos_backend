@@ -33,11 +33,9 @@ public class PurchaseService {
     @Transactional
     public PurchaseResponse createPurchase(CreatePurchaseRequest request) {
 
-        // 1. Validate Supplier
         Supplier supplier = supplierRepository.findById(request.getSupplierId())
                 .orElseThrow(() -> new RuntimeException("Supplier not found"));
 
-        // 2. Save Parent (Purchase)
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
                 .invoiceNo(request.getInvoiceNo())
@@ -48,10 +46,8 @@ public class PurchaseService {
 
         BigDecimal grandTotal = BigDecimal.ZERO;
 
-        // 👇 අපි හදන List එක (Type එක GrnResponse)
         List<GrnResponse> grnResponseList = new ArrayList<>();
 
-        // 3. Loop Branches
         for (BranchPurchaseRequest branchReq : request.getBranches()) {
 
             Branch branch = branchRepository.findById(branchReq.getBranchId())
@@ -80,15 +76,12 @@ public class PurchaseService {
                 Item item = itemRepository.findById(itemReq.getItemId())
                         .orElseThrow(() -> new RuntimeException("Item not found"));
 
-                // Logic: Update Prices
                 item.setCostPrice(itemReq.getCostPrice());
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
-                // Expiry Logic
                 LocalDateTime expiry = (itemReq.getExpiryDate() != null) ? itemReq.getExpiryDate().atStartOfDay() : null;
 
-                // Create Stock Batch
                 String batchCode = String.format("GRN-%s-%d-%d", grnNo, item.getId(), index);
                 StockBatch batch = StockBatch.builder()
                         .branch(branch)
@@ -104,9 +97,6 @@ public class PurchaseService {
                         .build();
                 stockBatchRepository.save(batch);
 
-                // ❌ StockMovement කෑල්ල අයින් කළා!
-
-                // Create GRN Item
                 BigDecimal lineTotal = itemReq.getCostPrice().multiply(BigDecimal.valueOf(itemReq.getQty()));
 
                 GrnItem grnItem = GrnItem.builder()
@@ -121,7 +111,6 @@ public class PurchaseService {
 
                 grnTotal = grnTotal.add(lineTotal);
 
-                // Response Item
                 itemResponses.add(GrnItemResponse.builder()
                         .itemId(item.getId())
                         .itemName(item.getName())
@@ -138,7 +127,6 @@ public class PurchaseService {
             grnRepository.save(savedGrn);
             grandTotal = grandTotal.add(grnTotal);
 
-            // 👇 Add to List (GrnResponse)
             grnResponseList.add(GrnResponse.builder()
                     .id(savedGrn.getId())
                     .grnNo(savedGrn.getGrnNo())
@@ -160,11 +148,10 @@ public class PurchaseService {
                 .supplierName(supplier.getName())
                 .grandTotal(savedPurchase.getGrandTotal())
                 .createdAt(savedPurchase.getCreatedAt())
-                .grnList(grnResponseList) // ✅ දැන් Type එක Correct
+                .grnList(grnResponseList)
                 .build();
     }
 
-    // 1. GET ALL (Lightweight - GRN නැතුව යවනවා) ⚡
     public Page<PurchaseResponse> getAllPurchases(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<Purchase> purchasePage = purchaseRepository.findAllByOrderByIdDesc(pageable);
@@ -175,49 +162,42 @@ public class PurchaseService {
                 .supplierName(purchase.getSupplier().getName())
                 .grandTotal(purchase.getGrandTotal())
                 .createdAt(purchase.getCreatedAt())
-                .grnList(null) // ✅ මෙතන null යවනවා (List එකේදී බර අඩුයි)
+                .grnList(null)
                 .build());
     }
 
-    // 2. GET BY ID (Detailed - GRN එක්ක යවනවා) 📦
-    // Frontend එකෙන් Row එක Click කළාම මේක Call වෙනවා
     public PurchaseResponse getPurchaseById(Long id) {
-        // 1. Purchase එක හොයාගන්නවා
+
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Purchase not found"));
 
-        // 2. GRN List එක හදනවා (Items ටිකත් එක්කම)
         List<GrnResponse> grnList = purchase.getGrnList().stream()
                 .map(grn -> {
 
-                    // 👇 STEP A: අදාල GRN එකට අයිති Items ටික Database එකෙන් ගන්නවා
                     List<GrnItem> dbItems = grnItemRepository.findByGrnId(grn.getId());
 
-                    // 👇 STEP B: ඒ Entity List එක Response DTO List එකක් බවට හරවනවා
                     List<GrnItemResponse> itemResponses = dbItems.stream()
                             .map(item -> GrnItemResponse.builder()
                                     .itemId(item.getItem().getId())
                                     .itemName(item.getItem().getName())
-                                    .barcode(item.getItem().getBarcode()) // Barcode එකත් යවමු
+                                    .barcode(item.getItem().getBarcode())
                                     .qty(item.getQty())
                                     .costPrice(item.getCostPrice())
                                     .sellingPrice(item.getSellingPrice())
-                                    .lineTotal(item.getAmount()) // Line Total එක
+                                    .lineTotal(item.getAmount())
                                     .build())
                             .collect(Collectors.toList());
 
-                    // 👇 STEP C: GRN Response එක හදනවා (Items ටික set කරනවා)
                     return GrnResponse.builder()
                             .id(grn.getId())
                             .grnNo(grn.getGrnNo())
                             .branchName(grn.getBranch().getName())
                             .totalAmount(grn.getTotalAmount())
-                            .items(itemResponses) // ✅ මෙන්න මෙතන තමයි List එක Set කරන්නේ
+                            .items(itemResponses)
                             .build();
                 })
                 .collect(Collectors.toList());
 
-        // 3. Final Purchase Response
         return PurchaseResponse.builder()
                 .purchaseId(purchase.getId())
                 .invoiceNo(purchase.getInvoiceNo())

@@ -17,14 +17,13 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    // CASHIER can create orders
+    // Cashier create orders
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
         return ResponseEntity.ok(orderService.createOrder(request));
     }
 
-    // /orders/INV-2026-01-B1-000001
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{invoiceNo}")
     public ResponseEntity<OrderResponse> get(@PathVariable String invoiceNo) {

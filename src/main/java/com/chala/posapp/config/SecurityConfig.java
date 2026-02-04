@@ -37,7 +37,6 @@ public class SecurityConfig {
         return config.getAuthenticationManager();
     }
 
-    // ✅ CORS configuration for frontend (Vite)
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
@@ -60,14 +59,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // 1. Auth නැතුව යන්න පුළුවන් තැන් (Login/Register)
+
                         .requestMatchers("/auth/**").permitAll()
 
-                        // 👇 2. මේක අනිවාර්යයෙන් දාන්න! (Allow Preflight Checks)
-                        // Browser එක යවන OPTIONS requests වලට token ඉල්ලන්නේ නැතුව pass කරනවා.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // 3. අනිත් ඕනෑම request එකකට Token ඕන
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
@@ -76,7 +72,7 @@ public class SecurityConfig {
     }
 //    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 //        http
-//                .cors(cors -> cors.configurationSource(corsConfigurationSource())) // ✅ IMPORTANT
+//                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
 //                .csrf(csrf -> csrf.disable())
 //                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 //                .authorizeHttpRequests(auth -> auth

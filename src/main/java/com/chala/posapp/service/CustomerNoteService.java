@@ -18,7 +18,7 @@ public class CustomerNoteService {
     private final CustomerRepository customerRepository;
 
     public Page<CustomerNoteResponse> list(Long customerId, Pageable pageable) {
-        // ensure customer exists
+
         customerRepository.findById(customerId)
                 .orElseThrow(() -> new RuntimeException("Customer not found"));
 
@@ -34,7 +34,7 @@ public class CustomerNoteService {
                 .customerId(customerId)
                 .note(request.getNote().trim())
                 .pinned(false)
-                .createdBy(null) // later set using auth userId
+                .createdBy(null)
                 .build();
 
         return map(noteRepository.save(note));

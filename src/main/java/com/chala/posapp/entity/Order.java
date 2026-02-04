@@ -15,7 +15,6 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // for receipt (ex: INV-2026-000001)
     @Column(nullable = false, unique = true, length = 40)
     private String invoiceNo;
 
@@ -25,7 +24,6 @@ public class Order {
     @Column(nullable = false)
     private Long cashierUserId;
 
-    // customerId required for CREDIT
     private Long customerId;
 
     @Enumerated(EnumType.STRING)
@@ -37,19 +35,19 @@ public class Order {
     private OrderStatus status;
 
     @Column(nullable = false)
-    private double subTotal; // sum of line totals before bill discount
+    private double subTotal;
 
     @Column(nullable = false)
-    private double billDiscount; // optional
+    private double billDiscount;
 
     @Column(nullable = false)
     private double grandTotal;
 
     @Column(nullable = false)
-    private double paidAmount; // cash sales amount paid now (credit usually 0)
+    private double paidAmount;
 
     @Column(nullable = false)
-    private double dueAmount; // credit due (grandTotal - paid)
+    private double dueAmount;
 
     private String note;
 

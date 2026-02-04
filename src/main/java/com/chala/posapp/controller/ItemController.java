@@ -37,14 +37,14 @@ public class ItemController {
     @GetMapping("/with-stock")
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     public ResponseEntity<List<ItemWithStockResponse>> listWithStock(
-            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
+            @RequestParam(name = "branchId", required = false) Long branchId  
     ) {
         return ResponseEntity.ok(itemService.itemsWithStock(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{id}")
-    public ResponseEntity<ItemResponse> get(@PathVariable(name = "id") Long id) { // ✅ Added name
+    public ResponseEntity<ItemResponse> get(@PathVariable(name = "id") Long id) {  
         System.out.println("called");
         return ResponseEntity.ok(itemService.getItem(id));
     }
@@ -52,8 +52,8 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/barcode/{barcode}")
     public ResponseEntity<ItemResponse> getByBarcode(
-            @PathVariable(name = "barcode") String barcode, // ✅ Added name
-            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
+            @PathVariable(name = "barcode") String barcode,  
+            @RequestParam(name = "branchId", required = false) Long branchId  
     ) {
         return ResponseEntity.ok(itemService.getByBarcode(barcode, branchId));
     }
@@ -61,8 +61,8 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/search")
     public ResponseEntity<List<ItemResponse>> search(
-            @RequestParam(name = "name") String name, // ✅ Added name
-            @RequestParam(name = "branchId", required = false) Long branchId // ✅ Added name
+            @RequestParam(name = "name") String name,  
+            @RequestParam(name = "branchId", required = false) Long branchId  
     ) {
         System.out.println("called22222222");
         return ResponseEntity.ok(itemService.searchByName(name, branchId));
@@ -70,21 +70,21 @@ public class ItemController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
-    public ResponseEntity<List<ItemResponse>> list(@RequestParam(name = "activeOnly", required = false) Boolean activeOnly) { // ✅ Added name
+    public ResponseEntity<List<ItemResponse>> list(@RequestParam(name = "activeOnly", required = false) Boolean activeOnly) {  
         System.out.println("called3333333");
         return ResponseEntity.ok(itemService.listAll(activeOnly));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PutMapping("/{id}")
-    public ResponseEntity<ItemResponse> update(@PathVariable(name = "id") Long id, // ✅ Added name
+    public ResponseEntity<ItemResponse> update(@PathVariable(name = "id") Long id,  
                                                @Valid @RequestBody ItemUpdateRequest request) {
         return ResponseEntity.ok(itemService.updateItem(id, request));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deactivate(@PathVariable(name = "id") Long id) { // ✅ Added name
+    public ResponseEntity<?> deactivate(@PathVariable(name = "id") Long id) {  
         itemService.deactivateItem(id);
         return ResponseEntity.ok("Item deactivated");
     }

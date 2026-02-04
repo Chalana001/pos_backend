@@ -9,8 +9,8 @@ public class CreateGrnRequest {
     private Long branchId;
     private Long supplierId;
 
-    private BigDecimal totalAmount; // Frontend එකෙන් එවන Total එක (Validation සඳහා)
-    private BigDecimal paidAmount;  // එවලේම සල්ලි දුන්නා නම්
+    private BigDecimal totalAmount;
+    private BigDecimal paidAmount;
 
     private String note;
     private List<GrnItemRequest> items;

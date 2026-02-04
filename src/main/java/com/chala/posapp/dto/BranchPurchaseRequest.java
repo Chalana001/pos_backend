@@ -6,5 +6,5 @@ import java.util.List;
 @Data
 public class BranchPurchaseRequest {
     private Long branchId;
-    private List<GrnItemRequest> items; // මේක ඔයා ළඟ දැනටමත් තියෙනවා
+    private List<GrnItemRequest> items;
 }

@@ -22,31 +22,27 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final CashShiftRepository cashShiftRepository;
     private final UserRepository userRepository;
-    private final BranchRepository branchRepository; // Branch නම ගැනීමට
+    private final BranchRepository branchRepository;
 
     @Transactional
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
         User user = getLoggedUser();
 
-        // 1. දැනට ලොග් වී සිටින user ගේ branch එකේ active shift එක බලනවා.
-        // Shift එකක් නැති වුණත් Error එකක් Throw කරන්නේ නැත.
         CashShift activeShift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
                 user.getBranchId(), user.getId(), ShiftStatus.OPEN).orElse(null);
 
-        // 2. Expense එක Build කිරීම.
         Expense expense = Expense.builder()
                 .amount(request.getAmount())
                 .category(request.getCategory())
                 .description(request.getDescription().trim())
                 .branchId(user.getBranchId())
                 .cashierUserId(user.getId())
-                .shiftId(activeShift != null ? activeShift.getId() : null) // 🔥 Shift එක නැත්නම් null.
+                .shiftId(activeShift != null ? activeShift.getId() : null)
                 .createdAt(LocalDateTime.now())
                 .build();
 
         Expense savedExpense = expenseRepository.save(expense);
 
-        // 3. Shift එකක් තියෙනවා නම් විතරක් ඒකේ Totals update කරන්න.
         if (activeShift != null) {
             activeShift.setTotalExpenses(activeShift.getTotalExpenses() + request.getAmount());
             cashShiftRepository.save(activeShift);
@@ -71,24 +67,23 @@ public class ExpenseService {
     }
 
     private ExpenseResponse mapToResponse(Expense expense) {
-        // 1. Database එකෙන් අදාළ නම හොයාගන්නා ආකාරය
+
         String cashierName = userRepository.findById(expense.getCashierUserId())
                 .map(User::getUsername).orElse("Unknown");
 
         String branchName = branchRepository.findById(expense.getBranchId())
                 .map(Branch::getName).orElse("Unknown");
 
-        // 2. DTO එක Build කිරීම
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())
                 .category(expense.getCategory().name())
                 .description(expense.getDescription())
                 .branchId(expense.getBranchId())
-                .branchName(branchName)      // ✅ එකතු කළා
+                .branchName(branchName)
                 .shiftId(expense.getShiftId())
                 .cashierId(expense.getCashierUserId())
-                .cashierName(cashierName)    // ✅ එකතු කළා
+                .cashierName(cashierName)
                 .createdAt(expense.getCreatedAt())
                 .build();
     }

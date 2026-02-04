@@ -25,16 +25,12 @@ public class StockAdjustmentController {
         return ResponseEntity.ok(adjustmentService.create(request));
     }
 
-    // branch history
-    // /stock-adjustments/branch/1
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/branch/{branchId}")
     public ResponseEntity<List<StockAdjustmentResponse>> historyBranch(@PathVariable Long branchId) {
         return ResponseEntity.ok(adjustmentService.historyByBranch(branchId));
     }
 
-    // item history in branch
-    // /stock-adjustments/branch/1/item/10
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/branch/{branchId}/item/{itemId}")
     public ResponseEntity<List<StockAdjustmentResponse>> historyItem(@PathVariable Long branchId,

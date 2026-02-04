@@ -11,15 +11,15 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 
 public class StockResponse {
-    private Long id;            // Batch ID
+    private Long id;
     private Long branchId;
     private Long itemId;
-    private String batchCode;   // New: Batch Code eka
-    private Integer quantity;   // Current Qty
+    private String batchCode;
+    private Integer quantity;
 
-    private BigDecimal costPrice;    // New: Cost
-    private BigDecimal sellingPrice; // New: Selling Price
+    private BigDecimal costPrice;
+    private BigDecimal sellingPrice;
 
-    private LocalDateTime receivedAt; // updatedAt wenuwata receivedAt
-    private LocalDateTime expireDate; // Optional
+    private LocalDateTime receivedAt;
+    private LocalDateTime expireDate;
 }

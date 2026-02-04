@@ -13,7 +13,6 @@ public class ItemCreateRequest {
     @NotBlank
     private String name;
 
-    // String category wenuwata ID eka ganna
     @NotNull(message = "Sub category is required")
     private Long subCategoryId;
 

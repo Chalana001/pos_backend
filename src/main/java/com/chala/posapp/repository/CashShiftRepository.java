@@ -13,7 +13,6 @@ public interface CashShiftRepository extends JpaRepository<CashShift, Long>, Jpa
 
     Optional<CashShift> findByBranchIdAndCashierUserIdAndStatus(Long branchId, Long cashierUserId, ShiftStatus status);
 
-    // CashShiftRepository.java
     Optional<CashShift> findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(
             @Param("branchId") Long branchId,
             @Param("cashierUserId") Long cashierUserId

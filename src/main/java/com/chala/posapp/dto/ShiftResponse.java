@@ -12,9 +12,9 @@ import java.time.LocalDateTime;
 public class ShiftResponse {
     private Long id;
     private Long branchId;
-    private String branchName;     // ✅ ඇඩ්මින්ට පෙන්වන්න අලුතින් එකතු කළා
+    private String branchName;
     private Long cashierUserId;
-    private String cashierName;    // ✅ ඇඩ්මින්ට පෙන්වන්න අලුතින් එකතු කළා
+    private String cashierName;
 
     private ShiftStatus status;
 

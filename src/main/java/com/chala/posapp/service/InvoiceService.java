@@ -13,7 +13,7 @@ public class InvoiceService {
     private final OrderRepository orderRepository;
 
     public String generateInvoiceNo(Long branchId) {
-        // Example: INV-2026-01-B1-000001
+
         LocalDate today = LocalDate.now();
         long count = orderRepository.countByBranchId(branchId) + 1;
         return String.format("INV-%d-%02d-B%d-%06d",

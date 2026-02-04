@@ -53,7 +53,7 @@ public class AuthService {
     }
     public User getLoggedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName(); // usually username / email
+        String username = authentication.getName();
 
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new RuntimeException("User not found: " + username));

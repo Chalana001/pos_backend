@@ -18,8 +18,7 @@ public class CreateUserRequest {
     private String password;
 
     @NotNull
-    private Role role; // MANAGER / CASHIER / ADMIN (optional allow)
+    private Role role;
 
-    // assign branch (required for MANAGER/CASHIER)
     private Long branchId;
 }

@@ -25,8 +25,6 @@ public class StockBatch {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // --- RELATIONSHIPS ---
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
@@ -37,12 +35,10 @@ public class StockBatch {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "supplier_id")
-    private Supplier supplier; // Optional: To track where this batch came from
-
-    // --- BATCH DETAILS ---
+    private Supplier supplier;
 
     @Column(name = "batch_code", unique = true)
-    private String batchCode; // Can be GRN ID or Manual Batch Code (e.g., "GRN-2026-001")
+    private String batchCode;
 
     @Column(name = "cost_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal costPrice;
@@ -50,26 +46,19 @@ public class StockBatch {
     @Column(name = "selling_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal sellingPrice;
 
-    // --- QUANTITY TRACKING ---
-
     @Column(nullable = false)
-    private Integer quantity; // Current remaining stock (This decreases when sold)
+    private Integer quantity;
 
     @Column(name = "original_quantity", nullable = false, updatable = false)
-    private Integer originalQuantity; // Initial stock received (Never changes, for audit)
-
-    // --- DATES ---
+    private Integer originalQuantity;
 
     @CreationTimestamp
     @Column(name = "received_at", nullable = false, updatable = false)
     private LocalDateTime receivedAt;
 
     @Column(name = "expire_date")
-    private LocalDateTime expireDate; // Nullable (Hardware doesn't expire, but Gum/Ink might)
+    private LocalDateTime expireDate;
 
-    // --- HELPER METHODS ---
-
-    // Optional: Check if batch is empty
     public boolean isOutOfStock() {
         return this.quantity <= 0;
     }

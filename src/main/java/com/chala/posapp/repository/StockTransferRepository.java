@@ -15,7 +15,6 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
 
     List<StockTransfer> findByToBranchIdOrderByRequestedAtDesc(Long toBranchId);
 
-    // ✅ pending lists
     List<StockTransfer> findByToBranchIdAndStatusOrderByRequestedAtDesc(Long toBranchId, StockTransferStatus status);
 
     List<StockTransfer> findByFromBranchIdAndStatusOrderByRequestedAtDesc(Long fromBranchId, StockTransferStatus status);

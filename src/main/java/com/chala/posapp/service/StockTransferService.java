@@ -19,11 +19,8 @@ public class StockTransferService {
     private final StockTransferRepository transferRepository;
     private final StockTransferItemRepository transferItemRepository;
     private final TransferNumberService transferNumberService;
-
     private final ItemRepository itemRepository;
     private final UserRepository userRepository;
-
-    // ✅ branch validation
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
 
@@ -52,7 +49,6 @@ public class StockTransferService {
 
         User user = getLoggedUser();
 
-        // 1. SECURITY & VALIDATION (Same as before)
         if (user.getRole() == Role.CASHIER)
             throw new RuntimeException("Cashier cannot create transfers");
 
@@ -70,18 +66,15 @@ public class StockTransferService {
 
         String transferNo = transferNumberService.generateTransferNo(request.getFromBranchId());
 
-        // 2. PROCESS ITEMS (REDUCE STOCK FROM SENDER)
         List<StockTransferItem> transferItems = new ArrayList<>();
 
         for (StockTransferItemRequest ri : request.getItems()) {
 
-            // A. Item එක හොයාගන්න
             Item item = itemRepository.findById(ri.getItemId())
                     .orElseThrow(() -> new RuntimeException("Item not found: " + ri.getItemId()));
 
             int qtyNeeded = ri.getQty();
 
-            // B. මුළු Stock එක ඇතිද කියලා Check කරනවා (Total of all batches)
             Integer currentTotalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(request.getFromBranchId(), item.getId());
 
             if (currentTotalStock == null || currentTotalStock < qtyNeeded) {
@@ -89,30 +82,25 @@ public class StockTransferService {
                         " (Available: " + (currentTotalStock == null ? 0 : currentTotalStock) + ")");
             }
 
-            // C. FIFO Reduction (වැදගත්ම කොටස) 🚀
-            // පරණම Batches ටික උඩට එන විදියට ගන්න (OrderBy ReceivedAt ASC)
             List<StockBatch> batches = stockBatchRepository.findAvailableBatches(request.getFromBranchId(), item.getId());
 
             for (StockBatch batch : batches) {
-                if (qtyNeeded == 0) break; // අවශ්‍ය ගාන අඩු කරලා ඉවරයි
+                if (qtyNeeded == 0) break;
 
                 int availableInBatch = batch.getQuantity();
 
                 if (availableInBatch >= qtyNeeded) {
-                    // මේ Batch එකේ ඇති වෙන්න බඩු තියෙනවා
                     batch.setQuantity(availableInBatch - qtyNeeded);
-                    qtyNeeded = 0; // වැඩේ ඉවරයි
+                    qtyNeeded = 0;
                 } else {
-                    // මේ Batch එක මදි, තියෙන ටික ඔක්කොම ගන්නවා
                     batch.setQuantity(0);
-                    qtyNeeded -= availableInBatch; // තව අඩු කරන්න ඕන ගාන ඊළඟ Batch එකට ගෙනියනවා
+                    qtyNeeded -= availableInBatch;
                 }
-                stockBatchRepository.save(batch); // Update Batch
+                stockBatchRepository.save(batch);
             }
 
-            // D. Transfer Item Record එක හදනවා
             transferItems.add(StockTransferItem.builder()
-                    .transferId(null) // පස්සේ set කරනවා
+                    .transferId(null)
                     .itemId(item.getId())
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
@@ -120,12 +108,11 @@ public class StockTransferService {
                     .build());
         }
 
-        // 3. SAVE TRANSFER HEADER
         StockTransfer transfer = StockTransfer.builder()
                 .transferNo(transferNo)
                 .fromBranchId(request.getFromBranchId())
                 .toBranchId(request.getToBranchId())
-                .status(StockTransferStatus.IN_TRANSIT) // Stock අඩු වුනා, තාම ලැබුනේ නෑ
+                .status(StockTransferStatus.IN_TRANSIT)
                 .requestedByUserId(user.getId())
                 .note(request.getNote())
                 .requestedAt(LocalDateTime.now())
@@ -133,7 +120,6 @@ public class StockTransferService {
 
         StockTransfer savedTransfer = transferRepository.save(transfer);
 
-        // 4. SAVE TRANSFER ITEMS
         for (StockTransferItem ti : transferItems) {
             ti.setTransferId(savedTransfer.getId());
         }
@@ -142,12 +128,10 @@ public class StockTransferService {
         return buildResponse(savedTransfer, transferItems);
     }
 
-    // ✅ receive by transfer ID (preferred)
     @Transactional
     public StockTransferResponse receiveTransferById(Long transferId) {
         User user = getLoggedUser();
 
-        // 1. Validations (Same as yours)
         if (user.getRole() == Role.CASHIER)
             throw new RuntimeException("Cashier cannot receive transfers");
 
@@ -157,7 +141,6 @@ public class StockTransferService {
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
             throw new RuntimeException("Transfer is not IN_TRANSIT status");
 
-        // MANAGER Validation
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
                 throw new RuntimeException("Manager branch not assigned");
@@ -166,31 +149,25 @@ public class StockTransferService {
                 throw new RuntimeException("Manager can only receive transfers to their branch");
         }
 
-        // 2. Get Branch Entity (StockBatch එකට Object එක ඕන නිසා)
         Branch toBranch = branchRepository.findById(transfer.getToBranchId())
                 .orElseThrow(() -> new RuntimeException("Receiving branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
 
-        // 3. PROCESS ITEMS (Create NEW BATCHES) 🚀
         for (StockTransferItem ti : items) {
 
-            // Item එකේ විස්තර ගන්න (Cost Price එක දැනගන්න)
             Item item = itemRepository.findById(ti.getItemId())
                     .orElseThrow(() -> new RuntimeException("Item not found"));
 
-            // අලුත් Batch එකක් හදනවා
             StockBatch newBatch = StockBatch.builder()
                     .branch(toBranch)
                     .item(item)
                     .quantity(ti.getQty())
                     .originalQuantity(ti.getQty())
 
-                    // Cost එක Item Master එකෙන් ගන්නවා (GRN Price)
                     .costPrice(item.getCostPrice())
                     .sellingPrice(item.getSellingPrice())
 
-                    // Transfer එකෙන් ආපු බව දැනගන්න Batch Code එක
                     .batchCode("TRN-" + transfer.getTransferNo())
 
                     .receivedAt(LocalDateTime.now())
@@ -199,15 +176,13 @@ public class StockTransferService {
             stockBatchRepository.save(newBatch);
         }
 
-        // 4. UPDATE TRANSFER STATUS
-        transfer.setStatus(StockTransferStatus.COMPLETED); // IN_TRANSIT -> COMPLETED
+        transfer.setStatus(StockTransferStatus.COMPLETED);
         transfer.setReceivedByUserId(user.getId());
         transfer.setReceivedAt(LocalDateTime.now());
 
         return buildResponse(transferRepository.save(transfer), items);
     }
 
-    // keep old receive by transferNo (optional)
     @Transactional
     public StockTransferResponse receiveTransfer(String transferNo) {
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
@@ -215,25 +190,21 @@ public class StockTransferService {
         return receiveTransferById(transfer.getId());
     }
 
-    // ✅ cancel by transfer ID (sender/receiver/admin)
     @Transactional
     public StockTransferResponse cancelTransferById(Long transferId, CancelTransferRequest request) {
 
         User user = getLoggedUser();
 
-        // 1. GET TRANSFER & VALIDATE
         StockTransfer transfer = transferRepository.findById(transferId)
                 .orElseThrow(() -> new RuntimeException("Transfer not found"));
 
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
             throw new RuntimeException("Only IN_TRANSIT (Pending) transfers can be canceled");
 
-        // 2. CHECK PERMISSIONS (MANAGER)
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
                 throw new RuntimeException("Manager branch not assigned");
 
-            // Sender ට හෝ Receiver ට මේක Cancel කරන්න පුළුවන්
             boolean allowed = user.getBranchId().equals(transfer.getFromBranchId())
                     || user.getBranchId().equals(transfer.getToBranchId());
 
@@ -241,30 +212,25 @@ public class StockTransferService {
                 throw new RuntimeException("Manager cannot cancel this transfer");
         }
 
-        // 3. GET FROM_BRANCH (බඩු ආපහු යන්නේ යවපු කෙනාටමයි)
         Branch fromBranch = branchRepository.findById(transfer.getFromBranchId())
                 .orElseThrow(() -> new RuntimeException("Sender branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
 
-        // 4. RESTOCK ITEMS (CREATE NEW BATCHES IN SENDER BRANCH) 🚀
         for (StockTransferItem ti : items) {
 
             Item item = itemRepository.findById(ti.getItemId())
                     .orElseThrow(() -> new RuntimeException("Item not found"));
 
-            // යවපු කෙනාටම බඩු ටික ආපහු දානවා (Re-stocking)
             StockBatch cancelBatch = StockBatch.builder()
                     .branch(fromBranch) // Sender Branch
                     .item(item)
                     .quantity(ti.getQty())
                     .originalQuantity(ti.getQty())
 
-                    // Cost එක Item Master එකෙන් ගන්න
                     .costPrice(item.getCostPrice())
                     .sellingPrice(item.getSellingPrice())
 
-                    // Cancel කරපු එකක් බව හඳුනාගන්න Code එකක්
                     .batchCode("CNL-" + transfer.getTransferNo())
 
                     .receivedAt(LocalDateTime.now())
@@ -273,19 +239,13 @@ public class StockTransferService {
             stockBatchRepository.save(cancelBatch);
         }
 
-        // 5. UPDATE STATUS
         transfer.setStatus(StockTransferStatus.CANCELED);
         transfer.setCancelReason(request.getReason() != null ? request.getReason().trim() : "Cancelled by User");
         transfer.setCanceledAt(LocalDateTime.now());
 
-        // Audit: කවුද Cancel කලේ?
-        // ඔයාට Entity එකේ canceledByUserId කියලා field එකක් තියෙනවා නම් දාන්න.
-        // transfer.setCanceledByUserId(user.getId());
-
         return buildResponse(transferRepository.save(transfer), items);
     }
 
-    // keep old cancel by transferNo (optional)
     @Transactional
     public StockTransferResponse cancelTransfer(String transferNo, CancelTransferRequest request) {
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
@@ -301,7 +261,6 @@ public class StockTransferService {
         return buildResponse(transfer, items);
     }
 
-    // ✅ incoming pending list (dashboard use)
     public List<StockTransferResponse> incomingPending(Long branchId) {
         return transferRepository.findByToBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
@@ -309,7 +268,6 @@ public class StockTransferService {
                 .toList();
     }
 
-    // ✅ outgoing pending list (sender dashboard)
     public List<StockTransferResponse> outgoingPending(Long branchId) {
         return transferRepository.findByFromBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
@@ -331,18 +289,16 @@ public class StockTransferService {
 
     private StockTransferResponse buildResponse(StockTransfer transfer, List<StockTransferItem> items) {
 
-        // 1. Branch Names සොයා ගැනීම (Handling Optional)
         String fromBranchName = branchRepository.findById(transfer.getFromBranchId())
                 .map(Branch::getName)
-                .orElse("Unknown Branch"); // Branch එක Delete කරලා නම් හෝ නැත්නම්
+                .orElse("Unknown Branch");
 
         String toBranchName = branchRepository.findById(transfer.getToBranchId())
                 .map(Branch::getName)
                 .orElse("Unknown Branch");
 
-        // 2. User Names සොයා ගැනීම (Optional - අවශ්‍ය නම් විතරක් දාගන්න)
         String reqUserName = userRepository.findById(transfer.getRequestedByUserId())
-                .map(User::getUsername) // හෝ getName()
+                .map(User::getUsername)
                 .orElse("Unknown User");
 
         String recUserName = null;
@@ -352,37 +308,32 @@ public class StockTransferService {
                     .orElse("Unknown User");
         }
 
-        // 3. Items Map කිරීම
         List<StockTransferItemResponse> itemResponses = items.stream()
                 .map(i -> StockTransferItemResponse.builder()
                         .itemId(i.getItemId())
-                        .barcode(i.getBarcode())   // StockTransferItem table එකේ save කරලා තියෙන්න ඕන
-                        .itemName(i.getItemName()) // StockTransferItem table එකේ save කරලා තියෙන්න ඕන
+                        .barcode(i.getBarcode())
+                        .itemName(i.getItemName())
                         .qty(i.getQty())
                         .build())
                 .toList();
 
-        // 4. Final Response Build කිරීම
         return StockTransferResponse.builder()
                 .id(transfer.getId())
                 .transferNo(transfer.getTransferNo())
 
-                // IDs
                 .fromBranchId(transfer.getFromBranchId())
                 .toBranchId(transfer.getToBranchId())
 
-                // ✨ Names (Frontend එකේ පෙන්නන්න ලේසියි)
                 .fromBranchName(fromBranchName)
                 .toBranchName(toBranchName)
 
                 .status(transfer.getStatus())
 
-                // Users
                 .requestedByUserId(transfer.getRequestedByUserId())
-                .requestedByUserName(reqUserName) // ✨
+                .requestedByUserName(reqUserName)
 
                 .receivedByUserId(transfer.getReceivedByUserId())
-                .receivedByUserName(recUserName)  // ✨
+                .receivedByUserName(recUserName)
 
                 .note(transfer.getNote())
                 .cancelReason(transfer.getCancelReason())

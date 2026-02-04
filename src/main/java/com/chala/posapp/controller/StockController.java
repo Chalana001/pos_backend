@@ -17,8 +17,6 @@ public class StockController {
 
     private final StockService stockService;
 
-    // list stock for branch
-    // /stock/branch/1
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/branch/{branchId}")
     public ResponseEntity<List<StockResponseWithItems>> listBranchStock(@PathVariable Long branchId) {
@@ -26,8 +24,6 @@ public class StockController {
         return ResponseEntity.ok(stockService.listBranchStock(branchId));
     }
 
-    // low stock list (branch wise)
-    // /stock/low?branchId=1
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/low")
     public ResponseEntity<List<LowStockResponse>> lowStock(@RequestParam Long branchId) {

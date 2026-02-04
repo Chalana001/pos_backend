@@ -16,9 +16,9 @@ public class ExpenseResponse {
     private String category;
     private String description;
     private Long branchId;
-    private String branchName;  // 🔥 මේක අනිවාර්යයෙන්ම ඕනේ
+    private String branchName;
     private Long shiftId;
     private Long cashierId;
-    private String cashierName; // 🔥 මේක අනිවාර්යයෙන්ම ඕනේ
+    private String cashierName;
     private LocalDateTime createdAt;
 }

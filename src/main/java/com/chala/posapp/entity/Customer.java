@@ -27,7 +27,6 @@ public class Customer {
     @Column(nullable = false)
     private double dueAmount;
 
-    // optional: max due allowed
     private Double creditLimit;
 
     @Column(nullable = false)

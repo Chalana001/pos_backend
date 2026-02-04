@@ -6,9 +6,9 @@ import lombok.Data;
 @Data
 @Builder
 public class ProfitSummaryResponse {
-    private double totalRevenue;      // මුළු විකුණුම්
-    private double totalCost;         // බඩු වල වියදම (COGS)
-    private double grossProfit;       // දළ ලාභය (Revenue - Cost)
-    private double totalExpenses;     // අමතර වියදම් (Expenses)
-    private double netProfit;         // ශුද්ධ ලාභය (Gross Profit - Expenses)
+    private double totalRevenue;
+    private double totalCost;
+    private double grossProfit;
+    private double totalExpenses;
+    private double netProfit;
 }

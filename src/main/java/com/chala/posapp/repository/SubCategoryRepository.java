@@ -9,9 +9,7 @@ import java.util.List;
 @Repository
 public interface SubCategoryRepository extends JpaRepository<SubCategory, Long> {
 
-    // ✅ Category ID එක අනුව Sub-categories filter කරලා ගන්න
     List<SubCategory> findByCategoryId(Long categoryId);
 
-    // ✅ නම අනුව search කරන්න ඕන වුනොත්
     List<SubCategory> findByNameContainingIgnoreCase(String name);
 }

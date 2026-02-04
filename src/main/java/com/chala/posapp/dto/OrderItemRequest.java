@@ -16,12 +16,11 @@ public class OrderItemRequest {
     @Min(1)
     private int qty;
 
-    // default: item sellingPrice
     @Min(0)
     private double unitPrice;
 
     @NotNull
-    private DiscountType discountType; // NONE/PERCENT/FIXED
+    private DiscountType discountType;
 
     @Min(0)
     private double discountValue;

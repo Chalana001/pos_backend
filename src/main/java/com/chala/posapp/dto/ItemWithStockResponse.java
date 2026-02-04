@@ -13,12 +13,9 @@ public class ItemWithStockResponse {
     private String barcode;
     private String name;
 
-    // String category wenuwata me details tika danna
-    private String categoryName;    // e.g., "Computer Parts"
-    private String subCategoryName; // e.g., "Processors"
+    private String categoryName;
+    private String subCategoryName;
     private Long subCategoryId;
-
-    // Use BigDecimal for money consistency
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
 
@@ -26,5 +23,5 @@ public class ItemWithStockResponse {
     private boolean active;
     private LocalDateTime createdAt;
 
-    private int quantity; // Branch stock qty
+    private int quantity;
 }

@@ -26,13 +26,12 @@ public class SupplierController {
     public ResponseEntity<?> createQuick(@RequestBody SupplierQuickCreateRequest req) {
         return ResponseEntity.ok(supplierService.createQuickSupplier(req));
     }
-    // GET ALL
+
     @GetMapping
     public ResponseEntity<List<SupplierResponse>> getAll() {
         return ResponseEntity.ok(supplierService.getAllActiveSuppliers());
     }
 
-    // GET BY ID
     @GetMapping("/{id}")
     public ResponseEntity<SupplierResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(supplierService.getSupplierById(id));

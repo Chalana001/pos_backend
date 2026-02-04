@@ -15,7 +15,6 @@ public class SupplierResponse {
     private String address;
     private Boolean active;
 
-    // Nested Details
     private BankDetailsDto bankDetails;
     private List<ContactDto> contacts;
 
@@ -31,7 +30,7 @@ public class SupplierResponse {
     @Data
     @Builder
     public static class ContactDto {
-        private String contactName; // හෝ phone number
-        // ඔයාගේ SupplierContact entity එකේ තියෙන field එක අනුව මේක වෙනස් වෙන්න පුළුවන්
+        private String contactName;
+
     }
 }

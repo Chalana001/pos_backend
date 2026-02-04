@@ -6,6 +6,6 @@ import java.util.List;
 @Data
 public class CreatePurchaseRequest {
     private Long supplierId;
-    private String invoiceNo; // INV-999
+    private String invoiceNo;
     private List<BranchPurchaseRequest> branches;
 }

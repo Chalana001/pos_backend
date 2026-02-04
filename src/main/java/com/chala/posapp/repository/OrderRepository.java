@@ -17,7 +17,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     long countByBranchId(Long branchId);
 
-    // ✅ SUM of CASH sales during shift
     @Query("""
         SELECT COALESCE(SUM(o.grandTotal), 0)
         FROM Order o

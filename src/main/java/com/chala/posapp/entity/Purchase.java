@@ -20,7 +20,6 @@ public class Purchase {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // User අතින් ගහන Supplier Invoice No එක (Ex: INV-999)
     private String invoiceNo;
 
     @ManyToOne
@@ -28,9 +27,8 @@ public class Purchase {
     private Supplier supplier;
 
     private LocalDateTime createdAt;
-    private BigDecimal grandTotal; // මුළු බිලේ වටිනාකම
+    private BigDecimal grandTotal;
 
-    // එක Purchase එකක GRN ගොඩක් තියෙන්න පුළුවන්
     @OneToMany(mappedBy = "purchase", cascade = CascadeType.ALL)
     private List<GRN> grnList = new ArrayList<>();
 }

@@ -25,10 +25,6 @@ public class StockAdjustment {
     @Column(nullable = false, length = 20)
     private StockAdjustmentType type;
 
-    /**
-     * qtyChange: positive = add stock
-     * qtyChange: negative = reduce stock
-     */
     @Column(nullable = false)
     private int qtyChange;
 

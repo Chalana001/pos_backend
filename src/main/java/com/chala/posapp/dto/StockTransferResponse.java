@@ -14,25 +14,17 @@ public class StockTransferResponse {
 
     private Long id;
     private String transferNo;
-
-    // IDs විතරක් නෙමෙයි, නම් ටිකත් යවන්න
     private Long fromBranchId;
-    private String fromBranchName; // ✨ New
-
+    private String fromBranchName;
     private Long toBranchId;
-    private String toBranchName;   // ✨ New
-
+    private String toBranchName;
     private StockTransferStatus status;
-
     private Long requestedByUserId;
-    private String requestedByUserName; // ✨ New (Optional)
-
+    private String requestedByUserName;
     private Long receivedByUserId;
-    private String receivedByUserName;  // ✨ New (Optional)
-
+    private String receivedByUserName;
     private String note;
     private String cancelReason;
-
     private LocalDateTime requestedAt;
     private LocalDateTime receivedAt;
     private LocalDateTime canceledAt;

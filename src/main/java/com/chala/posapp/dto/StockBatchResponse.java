@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 public class StockBatchResponse {
         private Long batchId;
-        private BigDecimal price;  // Selling Price of this batch
-        private Integer qty;        // Available Quantity in this batch
-        private LocalDateTime expiry;  // Expiry Date (Optional)
+        private BigDecimal price;
+        private Integer qty;
+        private LocalDateTime expiry;
 }

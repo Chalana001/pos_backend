@@ -14,7 +14,7 @@ public class OrderItemResponse {
     private Long batchId;
     private int qty;
     private double unitPrice;
-    private String discountType; // Enum නම් String එකක් විදියට යවන්න
+    private String discountType;
     private double discountValue;
     private double finalUnitPrice;
     private double lineTotal;

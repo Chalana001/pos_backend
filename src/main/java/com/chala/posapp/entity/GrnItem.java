@@ -27,9 +27,8 @@ public class GrnItem {
 
     private Integer qty;
 
-    // History: මේ GRN එක එනකොට තිබුන මිලගණන් (පස්සේ වෙනස් වෙන්න පුළුවන් නිසා මෙතන save කරගන්නවා)
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
 
-    private BigDecimal amount; // Line Total (qty * costPrice)
+    private BigDecimal amount;
 }

@@ -29,11 +29,9 @@ public class UserManagementService {
 
         Role role = request.getRole();
 
-        // MANAGER/CASHIER must have branch
         if ((role == Role.MANAGER || role == Role.CASHIER) && request.getBranchId() == null)
             throw new RuntimeException("BranchId required for " + role);
 
-        // If branchId provided, validate branch exists & active
         Long branchId = null;
         if (request.getBranchId() != null) {
             Branch branch = branchRepository.findById(request.getBranchId())

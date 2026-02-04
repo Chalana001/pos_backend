@@ -10,8 +10,6 @@ import java.util.List;
 
 public interface ReportRepository extends JpaRepository<Order, Long> {
 
-    // --- BASIC CARDS ---
-
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
         WHERE (:branchId IS NULL OR o.branch_id = :branchId)
@@ -52,8 +50,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     long totalOrders(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
-    // --- LISTS & TABLES ---
-
     @Query(value = """
         SELECT 
             oi.item_id, oi.item_name,
@@ -70,7 +66,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     List<Object[]> topSellingRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate, @Param("limitValue") int limitValue);
 
-    // ✅ FIXED: Using 'oi.cost_price' instead of 'i.cost_price'
     @Query(value = """
         SELECT
             oi.item_id, oi.item_name,
@@ -89,9 +84,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     List<Object[]> profitReportRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate, @Param("limitValue") int limitValue);
 
-    // --- CHARTS ---
-
-    // 1. Line Chart (Sales Trend)
     @Query(value = """
         SELECT DATE(o.created_at) AS date, COALESCE(SUM(o.grand_total),0) AS sales, COUNT(o.id) AS orders
         FROM orders o
@@ -103,7 +95,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     List<Object[]> salesTrendRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
-    // 2. Pie Chart (Sales by Category) 🔥 NEW
     @Query(value = """
         SELECT c.name AS category_name, SUM(oi.line_total) AS total
         FROM order_items oi
@@ -118,7 +109,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     List<Object[]> salesByCategoryRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
-    // 3. Recent Transactions Table 🔥 NEW
     @Query(value = """
         SELECT o.id, o.invoice_no, o.grand_total, o.order_type, o.created_at
         FROM orders o
@@ -146,11 +136,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     """, nativeQuery = true)
     List<Object[]> topCustomersRaw(@Param("branchId") Long branchId, @Param("limitValue") int limitValue);
 
-    // 🔥 2. TOP SUPPLIERS (By Purchase Volume)
-    // (Purchase Table එකක් තියෙනවා කියලා උපකල්පනය කරනවා)
-    // ReportRepository.java
-
-    // 🔥 2. TOP SUPPLIERS
     @Query(value = """
     SELECT 
         s.id, 
@@ -167,8 +152,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 """, nativeQuery = true)
     List<Object[]> topSuppliersRaw(@Param("limitValue") int limitValue);
 
-    // ReportRepository.java
-
     @Query(value = """
     SELECT COALESCE(SUM(amount), 0)
     FROM expenses
@@ -179,7 +162,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                             @Param("fromDate") LocalDateTime fromDate,
                             @Param("toDate") LocalDateTime toDate);
 
-    // ✅ Daily Sales
+
     @Query(value = """
     SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
     FROM orders o
@@ -193,8 +176,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                  @Param("fromDate") LocalDateTime fromDate,
                                  @Param("toDate") LocalDateTime toDate);
 
-
-    // ✅ Monthly Sales
     @Query(value = """
     SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
     FROM orders o

@@ -16,10 +16,10 @@ public class Branch {
     private Long id;
 
     @Column(nullable = false, unique = true, length = 80)
-    private String code; // ex: BR001
+    private String code;
 
     @Column(nullable = false, length = 120)
-    private String name; // ex: Main Branch
+    private String name;
 
     @Column(length = 255)
     private String address;

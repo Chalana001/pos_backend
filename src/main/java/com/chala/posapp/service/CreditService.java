@@ -49,7 +49,7 @@ public class CreditService {
             throw new RuntimeException("Customer has no due");
 
         double newDue = customer.getDueAmount() - request.getAmount();
-        if (newDue < 0) newDue = 0; // allow over-pay -> treat as full
+        if (newDue < 0) newDue = 0;
 
         customer.setDueAmount(newDue);
 

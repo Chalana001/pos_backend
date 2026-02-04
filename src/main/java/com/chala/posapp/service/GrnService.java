@@ -24,26 +24,17 @@ public class GrnService {
     private final GrnRepository grnRepository;
     private final GrnItemRepository grnItemRepository;
 
-    // ❌ createGrn Method එක සම්පූර්ණයෙන්ම අයින් කරන්න.
-    // ඒ Logic එක දැන් PurchaseService එකේ තියෙන්නේ.
-
-    // ✅ 1. Search Logic (වෙනසක් නෑ, පරණ එකමයි)
     public Page<GrnResponse> getGrns(String search, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
 
-        // Repository එකේ searchGrns query එක තාම වැඩ කරනවා
-        // මොකද අපි Note එකට Invoice No එක දාන නිසා.
         Page<GRN> grnPage = grnRepository.searchGrns(search, pageable);
 
         return grnPage.map(this::mapToGrnResponse);
     }
-
-    // ✅ 2. Get Single GRN Logic (මේක ඕන View/Print කරන්න)
     public GrnResponse getGrnById(Long id) {
         GRN grn = grnRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("GRN not found"));
 
-        // Items ටික ගන්නවා
         List<GrnItem> itemsList = grnItemRepository.findByGrnId(id);
 
         List<GrnItemResponse> itemResponses = itemsList.stream()
@@ -65,12 +56,11 @@ public class GrnService {
                 .branchName(grn.getBranch().getName())
                 .totalAmount(grn.getTotalAmount())
                 .receivedAt(grn.getReceivedAt())
-                .note(grn.getNote()) // මෙතන Invoice No එක එනවා
+                .note(grn.getNote())
                 .items(itemResponses)
                 .build();
     }
 
-    // Helper Method
     private GrnResponse mapToGrnResponse(GRN grn) {
         return GrnResponse.builder()
                 .id(grn.getId())
@@ -80,7 +70,7 @@ public class GrnService {
                 .totalAmount(grn.getTotalAmount())
                 .receivedAt(grn.getReceivedAt())
                 .note(grn.getNote())
-                .items(new ArrayList<>()) // List එකේදි Items යවන්නේ නෑ
+                .items(new ArrayList<>())
                 .build();
     }
 }

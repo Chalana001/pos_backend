@@ -15,5 +15,5 @@ public class BranchUpdateRequest {
     @Size(max = 30)
     private String phone;
 
-    private Boolean active; // optional update
+    private Boolean active;
 }

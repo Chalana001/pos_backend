@@ -42,7 +42,6 @@ public class CustomerNotesController {
         return ResponseEntity.ok(response);
     }
 
-    // ✅ add note
     @PostMapping("/customers/{customerId}/notes")
     public ResponseEntity<CustomerNoteResponse> create(
             @PathVariable Long customerId,
@@ -51,7 +50,6 @@ public class CustomerNotesController {
         return ResponseEntity.ok(service.create(customerId, request));
     }
 
-    // ✅ update note
     @PutMapping("/customer-notes/{noteId}")
     public ResponseEntity<CustomerNoteResponse> update(
             @PathVariable Long noteId,
@@ -60,7 +58,7 @@ public class CustomerNotesController {
         return ResponseEntity.ok(service.update(noteId, request));
     }
 
-    // ✅ delete note
+
     @DeleteMapping("/customer-notes/{noteId}")
     public ResponseEntity<Void> delete(@PathVariable Long noteId) {
         service.delete(noteId);

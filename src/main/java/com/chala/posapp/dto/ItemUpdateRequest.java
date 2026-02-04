@@ -12,7 +12,6 @@ public class ItemUpdateRequest {
     @Size(min = 2, max = 160)
     private String name;
 
-    // String category වෙනුවට SubCategory ID එක ගන්න
     private Long subCategoryId;
 
     @PositiveOrZero

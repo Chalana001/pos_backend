@@ -17,28 +17,24 @@ public class UserManagementController {
 
     private final UserManagementService userManagementService;
 
-    // ✅ Create cashier/manager
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<UserResponse> create(@Valid @RequestBody CreateUserRequest request) {
         return ResponseEntity.ok(userManagementService.createUser(request));
     }
 
-    // ✅ list all users
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
     public ResponseEntity<List<UserResponse>> list() {
         return ResponseEntity.ok(userManagementService.listUsers());
     }
 
-    // ✅ get user by id
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> get(@PathVariable Long id) {
         return ResponseEntity.ok(userManagementService.getUser(id));
     }
 
-    // ✅ assign branch
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/assign-branch")
     public ResponseEntity<?> assignBranch(@PathVariable Long userId,
@@ -46,7 +42,6 @@ public class UserManagementController {
         return ResponseEntity.ok(userManagementService.assignBranch(userId, request));
     }
 
-    // ✅ enable / disable
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/status")
     public ResponseEntity<?> updateStatus(@PathVariable Long userId,
@@ -54,7 +49,6 @@ public class UserManagementController {
         return ResponseEntity.ok(userManagementService.updateUserStatus(userId, request));
     }
 
-    // ✅ reset password
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/reset-password")
     public ResponseEntity<?> resetPassword(@PathVariable Long userId,

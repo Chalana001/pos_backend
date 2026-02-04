@@ -7,6 +7,6 @@ import lombok.*;
 @NoArgsConstructor
 @Builder
 public class DailySalesResponse {
-    private String date;   // yyyy-MM-dd
+    private String date;
     private double sales;
 }

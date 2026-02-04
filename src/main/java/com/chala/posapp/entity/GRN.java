@@ -29,7 +29,6 @@ public class GRN {
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
-    // 👇 අලුත් සම්බන්ධය (Link to Parent)
     @ManyToOne
     @JoinColumn(name = "purchase_id", nullable = false)
     @JsonIgnore // Infinite Loop වලක්වන්න

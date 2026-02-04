@@ -20,7 +20,6 @@ public class ReportController {
 
     private final ReportService reportService;
 
-    // --- CARDS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/sales-summary")
     public ResponseEntity<SalesSummaryResponse> salesSummary(
@@ -30,7 +29,6 @@ public class ReportController {
         return ResponseEntity.ok(reportService.salesSummary(branchId, from, to));
     }
 
-    // --- NEW SUMMARY ENDPOINT ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/profit-summary")
     public ResponseEntity<ProfitSummaryResponse> profitSummary(
@@ -40,7 +38,6 @@ public class ReportController {
         return ResponseEntity.ok(reportService.getProfitSummary(branchId, from, to));
     }
 
-    // --- LISTS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/top-selling")
     public ResponseEntity<List<TopSellingItemResponse>> topSelling(
@@ -61,7 +58,6 @@ public class ReportController {
         return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit));
     }
 
-    // --- CHARTS ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/sales-trend")
     public ResponseEntity<List<SalesTrendPoint>> salesTrend(
@@ -70,7 +66,6 @@ public class ReportController {
             @RequestParam(name = "to") Instant to,
             @RequestParam(name = "type", defaultValue = "DAILY") String type) { // 🔥 New Parameter
 
-        // Service එකට type එක යවනවා
         return ResponseEntity.ok(reportService.salesTrend(branchId, from, to, type));
     }
 
@@ -83,7 +78,6 @@ public class ReportController {
         return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to));
     }
 
-    // --- TABLES ---
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/recent-orders")
     public ResponseEntity<List<RecentOrderResponse>> recentOrders(

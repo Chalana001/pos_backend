@@ -12,7 +12,7 @@ public class StockResponseWithItems {
     private Long itemId;
     private String barcode;
     private String itemName;
-    private BigDecimal costPrice;    // Item Master එකේ තියෙන Default Price එක
+    private BigDecimal costPrice;
     private BigDecimal sellingPrice;
-    private Long totalQuantity;      // All Branches Total
+    private Long totalQuantity;
 }

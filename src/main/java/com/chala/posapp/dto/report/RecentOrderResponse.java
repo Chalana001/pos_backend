@@ -11,6 +11,6 @@ public class RecentOrderResponse {
     private Long id;
     private String invoiceNo;
     private double totalAmount;
-    private String type; // CASH/CREDIT
+    private String type;
     private LocalDateTime date;
 }

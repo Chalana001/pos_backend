@@ -19,9 +19,6 @@ public class OrderItem {
     @Column(nullable = false)
     private Long itemId;
 
-    // 🔥 NEW FIELD: 1. Batch ID (අත්‍යවශ්‍යයි)
-    // Return එකක් ආවොත් හෝ System එකේ දෝෂයක් ආවොත්,
-    // හරියටම කොයි Batch එකේ බඩුද අඩු වුනේ කියලා බලන්න මේක ඕන.
     @Column(nullable = false)
     private Long batchId;
 
@@ -34,14 +31,11 @@ public class OrderItem {
     @Column(nullable = false)
     private int qty;
 
-    // 🔥 NEW FIELD: 2. Cost Price (Profit Report එකට අත්‍යවශ්‍යයි)
-    // Item Master එකේ Cost එක වෙනස් වුනත්, විකුණපු වෙලාවේ තිබුණ Cost එක
-    // මෙතන Save වෙලා තියෙන්න ඕන. නැත්නම් Profit එක වැරදෙනවා.
     @Column(nullable = false)
     private double costPrice;
 
     @Column(nullable = false)
-    private double unitPrice; // Selling Price (Before Discount)
+    private double unitPrice;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -51,8 +45,8 @@ public class OrderItem {
     private double discountValue;
 
     @Column(nullable = false)
-    private double finalUnitPrice; // after discount
+    private double finalUnitPrice;
 
     @Column(nullable = false)
-    private double lineTotal; // finalUnitPrice * qty
+    private double lineTotal;
 }

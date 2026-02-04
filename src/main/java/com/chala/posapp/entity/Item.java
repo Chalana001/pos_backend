@@ -26,21 +26,15 @@ public class Item {
     @Column(nullable = false, length = 160)
     private String name;
 
-    // Aluth SubCategory relationship eka add karanna:
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "sub_category_id")
     private SubCategory subCategory;
-
-    // --- MONEY FIELDS (Changed double to BigDecimal) ---
-    // Precision 10, Scale 2 කියන්නේ ඉලක්කම් 10යි, දශම ස්ථාන 2යි (උදා: 12345678.99)
 
     @Column(name = "cost_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal costPrice;
 
     @Column(name = "selling_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal sellingPrice;
-
-    // ---------------------------------------------------
 
     @Column(nullable = false)
     private int reorderLevel;
@@ -49,14 +43,14 @@ public class Item {
     private String imageUrl;
 
     @Column(nullable = false)
-    @Builder.Default // Builder පාවිච්චි කරද්දී මේක false නොවී true විදියටම තියෙන්න
+    @Builder.Default
     private boolean active = true;
 
-    @Column(nullable = false, updatable = false) // හදපු දිනය කවදාවත් වෙනස් වෙන්නේ නෑ
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "item", cascade = CascadeType.ALL, orphanRemoval = true)
-    @Builder.Default // List එක null නොවී හිස් List එකක් ලෙස හැදෙන්න
+    @Builder.Default
     private List<SupplierItem> suppliers = new ArrayList<>();
 
     @PrePersist

@@ -7,6 +7,6 @@ import lombok.*;
 @NoArgsConstructor
 @Builder
 public class MonthlySalesResponse {
-    private String month;  // yyyy-MM
+    private String month;
     private double sales;
 }

@@ -14,11 +14,8 @@ public class SupplierCreateRequest {
     private String email;
     private String address;
     private Boolean active;
-
     private List<String> contacts;
-
     private Bank bank;
-
     @Getter @Setter
     public static class Bank {
         private String bankName;

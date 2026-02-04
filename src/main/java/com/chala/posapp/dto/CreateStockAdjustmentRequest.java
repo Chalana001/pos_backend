@@ -18,10 +18,6 @@ public class CreateStockAdjustmentRequest {
     @NotNull
     private StockAdjustmentType type;
 
-    /**
-     * qty: always positive number from UI
-     * service will convert to +/- based on adjustment type
-     */
     @Min(1)
     private int qty;
 

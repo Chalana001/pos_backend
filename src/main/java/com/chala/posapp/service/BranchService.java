@@ -61,7 +61,6 @@ public class BranchService {
     }
 
     public void deleteBranch(Long id) {
-        // safer approach: do NOT delete in POS - just deactivate
         Branch branch = branchRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Branch not found"));
         branch.setActive(false);

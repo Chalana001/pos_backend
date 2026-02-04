@@ -29,7 +29,6 @@ public class SupplierService {
         supplier.setAddress(req.getAddress());
         supplier.setActive(req.getActive() != null ? req.getActive() : true);
 
-        // Contacts
         if (req.getContacts() != null) {
             for (String c : req.getContacts()) {
                 SupplierContact sc = new SupplierContact();
@@ -39,7 +38,6 @@ public class SupplierService {
             }
         }
 
-        // Bank details
         if (req.getBank() != null) {
             SupplierBankDetails bd = new SupplierBankDetails();
             bd.setBankName(req.getBank().getBankName());
@@ -68,21 +66,18 @@ public class SupplierService {
         List<Supplier> suppliers = supplierRepository.findByActiveTrue();
 
         return suppliers.stream()
-                .map(this::mapToResponse) // පහළ තියෙන helper method එක call කරනවා
+                .map(this::mapToResponse)
                 .collect(Collectors.toList());
     }
 
-    // --- GET BY ID ---
     public SupplierResponse getSupplierById(Long id) {
         Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Supplier not found with id: " + id));
         return mapToResponse(supplier);
     }
 
-    // --- HELPER: Map Entity to DTO ---
     private SupplierResponse mapToResponse(Supplier s) {
 
-        // 1. Map Bank Details (if exists)
         SupplierResponse.BankDetailsDto bankDto = null;
         if (s.getBankDetails() != null) {
             bankDto = SupplierResponse.BankDetailsDto.builder()
@@ -93,18 +88,11 @@ public class SupplierService {
                     .build();
         }
 
-        // 2. Map Contacts (Example Logic - Adjust based on your Contact Entity)
-        /* * Note: ඔයාගේ SupplierContact Entity එකේ fields මම හරියටම දන්නේ නෑ.
-         * string එකක් නම් s.getContacts() කෙලින්ම යවන්න පුළුවන්.
-         * Object එකක් නම් stream().map() දාන්න ඕන.
-         */
         List<SupplierResponse.ContactDto> contactDtos = s.getContacts().stream()
                 .map(contact -> SupplierResponse.ContactDto.builder()
-                        // .contactName(contact.getSomeField()) // Uncomment & fix this
                         .build())
                 .collect(Collectors.toList());
 
-        // 3. Final Build
         return SupplierResponse.builder()
                 .id(s.getId())
                 .name(s.getName())

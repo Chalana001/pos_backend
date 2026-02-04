@@ -18,7 +18,6 @@ public class Supplier {
 
     private String name;
 
-    // Main phone
     private String phone;
 
     private String email;

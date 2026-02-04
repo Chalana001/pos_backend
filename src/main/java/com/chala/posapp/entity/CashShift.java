@@ -28,7 +28,6 @@ public class CashShift {
     @Column(nullable = false)
     private double openingCash;
 
-    // calculated fields
     @Column(nullable = false)
     private double totalExpenses;
 
@@ -38,10 +37,9 @@ public class CashShift {
     @Column(nullable = false)
     private Double cashSales;
 
-    // closing
     private Double countedCash;
     private Double expectedCash;
-    private Double cashDifference; // counted - expected
+    private Double cashDifference;
 
     private String openNote;
     private String closeNote;
