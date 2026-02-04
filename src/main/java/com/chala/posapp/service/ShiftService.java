@@ -2,7 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
-import com.chala.posapp.exception.ShiftNotFoundException;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -69,7 +69,7 @@ public class ShiftService {
             throw new RuntimeException("User branch not assigned");
 
         CashShift shift = cashShiftRepository.findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(user.getBranchId(), user.getId())
-                .orElseThrow(() -> new ShiftNotFoundException("No shift found"));
+                .orElseThrow(() -> new ResourceNotFoundException("No shift found"));
         return map(shift);
     }
 

@@ -13,6 +13,7 @@ public class BranchCreateRequest {
 
     @NotBlank
     @Size(min = 2, max = 120)
+    @NotBlank(message = "Branch name is required")
     private String name;
 
     @Size(max = 255)

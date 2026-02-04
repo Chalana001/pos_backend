@@ -52,4 +52,13 @@ public class JwtService {
         Object r = parseClaims(token).get("role");
         return r == null ? null : r.toString();
     }
+
+    public boolean isTokenValid(String token) {
+        try {
+            Claims claims = parseClaims(token);
+            return claims.getExpiration().after(new Date());
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

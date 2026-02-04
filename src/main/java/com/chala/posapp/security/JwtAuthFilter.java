@@ -37,21 +37,34 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        String token = authHeader.substring(7);
-        String username = jwtService.extractUsername(token);
+        try {
+            String token = authHeader.substring(7);
 
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userService.loadUserByUsername(username);
+            // Validate token first
+            if (!jwtService.isTokenValid(token)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
 
-            UsernamePasswordAuthenticationToken authToken =
-                    new UsernamePasswordAuthenticationToken(
-                            userDetails,
-                            null,
-                            userDetails.getAuthorities()
-                    );
+            String username = jwtService.extractUsername(token);
 
-            authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authToken);
+            if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                UserDetails userDetails = userService.loadUserByUsername(username);
+
+                UsernamePasswordAuthenticationToken authToken =
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities()
+                        );
+
+                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            }
+        } catch (Exception e) {
+            // Log the error but don't block the request
+            // Let Spring Security handle the unauthorized access
+            System.err.println("JWT Authentication error: " + e.getMessage());
         }
 
         filterChain.doFilter(request, response);
