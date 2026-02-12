@@ -4,6 +4,7 @@ import com.chala.posapp.dto.GrnItemResponse;
 import com.chala.posapp.dto.GrnResponse;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.GrnItemRepository;
 import com.chala.posapp.repository.GrnRepository;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,7 @@ public class GrnService {
     }
     public GrnResponse getGrnById(Long id) {
         GRN grn = grnRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("GRN not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("GRN not found"));
 
         List<GrnItem> itemsList = grnItemRepository.findByGrnId(id);
 

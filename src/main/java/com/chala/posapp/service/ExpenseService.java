@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.ExpenseResponse;
 import com.chala.posapp.dto.CreateExpenseRequest;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -91,7 +92,7 @@ public class ExpenseService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
 }

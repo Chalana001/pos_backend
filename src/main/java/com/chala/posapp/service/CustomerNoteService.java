@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.entity.CustomerNote;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerNoteRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.dto.CustomerNoteCreateRequest;
@@ -20,7 +21,7 @@ public class CustomerNoteService {
     public Page<CustomerNoteResponse> list(Long customerId, Pageable pageable) {
 
         customerRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         return noteRepository.findByCustomerId(customerId, pageable)
                 .map(this::map);
@@ -28,7 +29,7 @@ public class CustomerNoteService {
 
     public CustomerNoteResponse create(Long customerId, CustomerNoteCreateRequest request) {
         customerRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         CustomerNote note = CustomerNote.builder()
                 .customerId(customerId)
@@ -42,7 +43,7 @@ public class CustomerNoteService {
 
     public CustomerNoteResponse update(Long noteId, CustomerNoteUpdateRequest request) {
         CustomerNote note = noteRepository.findById(noteId)
-                .orElseThrow(() -> new RuntimeException("Note not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Note not found"));
 
         note.setNote(request.getNote().trim());
         return map(noteRepository.save(note));
@@ -50,7 +51,7 @@ public class CustomerNoteService {
 
     public void delete(Long noteId) {
         if (!noteRepository.existsById(noteId))
-            throw new RuntimeException("Note not found");
+            throw new ResourceNotFoundException("Note not found");
         noteRepository.deleteById(noteId);
     }
 

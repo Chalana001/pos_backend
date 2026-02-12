@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,7 @@ public class BranchService {
 
     public BranchResponse getBranch(Long id) {
         Branch branch = branchRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         return mapToResponse(branch);
     }
 
@@ -50,7 +51,7 @@ public class BranchService {
     @Transactional
     public BranchResponse updateBranch(Long id, BranchUpdateRequest request) {
         Branch branch = branchRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         if (request.getName() != null) branch.setName(request.getName().trim());
         if (request.getAddress() != null) branch.setAddress(request.getAddress());
@@ -62,7 +63,7 @@ public class BranchService {
 
     public void deleteBranch(Long id) {
         Branch branch = branchRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         branch.setActive(false);
         branchRepository.save(branch);
     }

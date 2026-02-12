@@ -5,6 +5,7 @@ import com.chala.posapp.dto.StockAddRequest;
 import com.chala.posapp.dto.StockResponse;
 import com.chala.posapp.dto.StockResponseWithItems;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,15 +27,15 @@ public class StockService {
     public StockResponse addStock(StockAddRequest request) {
 
         Item item = itemRepository.findById(request.getItemId())
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         Branch branch = branchRepository.findById(request.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         Supplier supplier = null;
         if (request.getSupplierId() != null) {
             supplier = supplierRepository.findById(request.getSupplierId())
-                    .orElseThrow(() -> new RuntimeException("Supplier not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
         }
 
         StockBatch batch = StockBatch.builder()

@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,15 +28,15 @@ public class StockTransferService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private void validateBranches(Long fromBranchId, Long toBranchId) {
         Branch from = branchRepository.findById(fromBranchId)
-                .orElseThrow(() -> new RuntimeException("From branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("From branch not found"));
 
         Branch to = branchRepository.findById(toBranchId)
-                .orElseThrow(() -> new RuntimeException("To branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("To branch not found"));
 
         if (!from.isActive()) throw new RuntimeException("From branch inactive");
         if (!to.isActive()) throw new RuntimeException("To branch inactive");
@@ -71,7 +72,7 @@ public class StockTransferService {
         for (StockTransferItemRequest ri : request.getItems()) {
 
             Item item = itemRepository.findById(ri.getItemId())
-                    .orElseThrow(() -> new RuntimeException("Item not found: " + ri.getItemId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + ri.getItemId()));
 
             int qtyNeeded = ri.getQty();
 
@@ -136,7 +137,7 @@ public class StockTransferService {
             throw new RuntimeException("Cashier cannot receive transfers");
 
         StockTransfer transfer = transferRepository.findById(transferId)
-                .orElseThrow(() -> new RuntimeException("Transfer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
             throw new RuntimeException("Transfer is not IN_TRANSIT status");
@@ -150,14 +151,14 @@ public class StockTransferService {
         }
 
         Branch toBranch = branchRepository.findById(transfer.getToBranchId())
-                .orElseThrow(() -> new RuntimeException("Receiving branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Receiving branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
 
         for (StockTransferItem ti : items) {
 
             Item item = itemRepository.findById(ti.getItemId())
-                    .orElseThrow(() -> new RuntimeException("Item not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch newBatch = StockBatch.builder()
                     .branch(toBranch)
@@ -186,7 +187,7 @@ public class StockTransferService {
     @Transactional
     public StockTransferResponse receiveTransfer(String transferNo) {
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
-                .orElseThrow(() -> new RuntimeException("Transfer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
         return receiveTransferById(transfer.getId());
     }
 
@@ -196,7 +197,7 @@ public class StockTransferService {
         User user = getLoggedUser();
 
         StockTransfer transfer = transferRepository.findById(transferId)
-                .orElseThrow(() -> new RuntimeException("Transfer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
             throw new RuntimeException("Only IN_TRANSIT (Pending) transfers can be canceled");
@@ -213,14 +214,14 @@ public class StockTransferService {
         }
 
         Branch fromBranch = branchRepository.findById(transfer.getFromBranchId())
-                .orElseThrow(() -> new RuntimeException("Sender branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Sender branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
 
         for (StockTransferItem ti : items) {
 
             Item item = itemRepository.findById(ti.getItemId())
-                    .orElseThrow(() -> new RuntimeException("Item not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch cancelBatch = StockBatch.builder()
                     .branch(fromBranch) // Sender Branch
@@ -249,13 +250,13 @@ public class StockTransferService {
     @Transactional
     public StockTransferResponse cancelTransfer(String transferNo, CancelTransferRequest request) {
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
-                .orElseThrow(() -> new RuntimeException("Transfer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
         return cancelTransferById(transfer.getId(), request);
     }
 
     public StockTransferResponse getTransfer(String transferNo) {
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
-                .orElseThrow(() -> new RuntimeException("Transfer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
         return buildResponse(transfer, items);

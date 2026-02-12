@@ -6,6 +6,7 @@ import com.chala.posapp.dto.SupplierResponse;
 import com.chala.posapp.entity.Supplier;
 import com.chala.posapp.entity.SupplierBankDetails;
 import com.chala.posapp.entity.SupplierContact;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.SupplierRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -72,7 +73,7 @@ public class SupplierService {
 
     public SupplierResponse getSupplierById(Long id) {
         Supplier supplier = supplierRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Supplier not found with id: " + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + id));
         return mapToResponse(supplier);
     }
 

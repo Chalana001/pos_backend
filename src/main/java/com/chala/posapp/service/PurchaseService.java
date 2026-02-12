@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -34,7 +35,7 @@ public class PurchaseService {
     public PurchaseResponse createPurchase(CreatePurchaseRequest request) {
 
         Supplier supplier = supplierRepository.findById(request.getSupplierId())
-                .orElseThrow(() -> new RuntimeException("Supplier not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
 
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
@@ -51,7 +52,7 @@ public class PurchaseService {
         for (BranchPurchaseRequest branchReq : request.getBranches()) {
 
             Branch branch = branchRepository.findById(branchReq.getBranchId())
-                    .orElseThrow(() -> new RuntimeException("Branch not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
             String grnNo = grnNumberService.generateGrnNo(branch.getId());
 
@@ -74,7 +75,7 @@ public class PurchaseService {
             for (GrnItemRequest itemReq : branchReq.getItems()) {
                 index++;
                 Item item = itemRepository.findById(itemReq.getItemId())
-                        .orElseThrow(() -> new RuntimeException("Item not found"));
+                        .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
                 item.setCostPrice(itemReq.getCostPrice());
                 item.setSellingPrice(itemReq.getSellingPrice());
@@ -169,7 +170,7 @@ public class PurchaseService {
     public PurchaseResponse getPurchaseById(Long id) {
 
         Purchase purchase = purchaseRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Purchase not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
 
         List<GrnResponse> grnList = purchase.getGrnList().stream()
                 .map(grn -> {

@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.CreateStockAdjustmentRequest;
 import com.chala.posapp.dto.StockAdjustmentResponse;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,7 +28,7 @@ public class StockAdjustmentService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private int computeQtyChange(StockAdjustmentType type, int qty) {
@@ -59,13 +60,13 @@ public class StockAdjustmentService {
         }
 
         Item item = itemRepository.findById(request.getItemId())
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         if (!item.isActive())
             throw new RuntimeException("Item inactive");
 
         Branch branch = branchRepository.findById(request.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         int qtyChange = computeQtyChange(request.getType(), request.getQty());
 

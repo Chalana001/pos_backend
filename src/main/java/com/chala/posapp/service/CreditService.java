@@ -5,6 +5,7 @@ import com.chala.posapp.dto.CreditPaymentResponse;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -26,7 +27,7 @@ public class CreditService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     @Transactional
@@ -37,7 +38,7 @@ public class CreditService {
             throw new RuntimeException("User branch not assigned");
 
         Customer customer = customerRepository.findById(request.getCustomerId())
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         if (!customer.isActive())
             throw new RuntimeException("Customer inactive");

@@ -5,6 +5,7 @@ import com.chala.posapp.dto.LoginRequest;
 import com.chala.posapp.dto.RegisterRequest;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -44,7 +45,7 @@ public class AuthService {
         );
 
         User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!user.isEnabled()) throw new RuntimeException("User disabled");
 
@@ -56,7 +57,7 @@ public class AuthService {
         String username = authentication.getName();
 
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found: " + username));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
     }
 }
 

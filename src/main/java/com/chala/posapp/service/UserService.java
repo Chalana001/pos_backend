@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -17,7 +18,7 @@ public class UserService implements UserDetailsService {
 
     public User getByUsername(String username) {
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -35,7 +36,7 @@ public class OrderService {
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Long branchId;
         if (user.getRole() == Role.CASHIER) {
@@ -70,7 +71,7 @@ public class OrderService {
             }
 
             StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
-                    .orElseThrow(() -> new RuntimeException("Batch not found ID: " + itemReq.getBatchId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + itemReq.getBatchId()));
 
             if (!batch.getItem().getId().equals(item.getId())) {
                 throw new RuntimeException("Batch ID does not match Item ID");

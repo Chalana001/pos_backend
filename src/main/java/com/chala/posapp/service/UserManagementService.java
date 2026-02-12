@@ -4,6 +4,7 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -60,21 +61,21 @@ public class UserManagementService {
 
     public UserResponse getUser(Long id) {
         User u = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return map(u);
     }
 
     @Transactional
     public String assignBranch(Long userId, AssignBranchRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (userId == 1L || user.getRole() == Role.ADMIN) {
             throw new RuntimeException("Admin user cannot assign branch");
         }
 
         Branch branch = branchRepository.findById(request.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         if (!branch.isActive())
             throw new RuntimeException("Branch inactive");
@@ -87,7 +88,7 @@ public class UserManagementService {
     public String updateUserStatus(Long userId, UpdateUserStatusRequest request) {
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (userId == 1L || user.getRole() == Role.ADMIN) {
             throw new RuntimeException("Admin user cannot be disabled");
@@ -100,7 +101,7 @@ public class UserManagementService {
     @Transactional
     public String resetPassword(Long userId, ResetPasswordRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         return "Password reset successful";

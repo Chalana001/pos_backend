@@ -2,7 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
-import com.chala.posapp.exception.ShiftNotFoundException;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -29,12 +29,12 @@ public class ShiftService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private CashShift getOpenShiftOrThrow(Long branchId, Long cashierId) {
         return cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, cashierId, ShiftStatus.OPEN)
-                .orElseThrow(() -> new RuntimeException("No open shift found"));
+                .orElseThrow(() -> new ResourceNotFoundException("No open shift found"));
     }
 
     @Transactional
@@ -69,7 +69,7 @@ public class ShiftService {
             throw new RuntimeException("User branch not assigned");
 
         CashShift shift = cashShiftRepository.findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(user.getBranchId(), user.getId())
-                .orElseThrow(() -> new ShiftNotFoundException("No shift found"));
+                .orElseThrow(() -> new ResourceNotFoundException("No shift found"));
         return map(shift);
     }
 
@@ -208,7 +208,7 @@ public class ShiftService {
         }
 
         CashShift shift = cashShiftRepository.findById(shiftId)
-                .orElseThrow(() -> new RuntimeException("Shift not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN) {
             throw new RuntimeException("Shift already closed");
@@ -265,7 +265,7 @@ public class ShiftService {
             throw new RuntimeException("Not allowed");
 
         CashShift shift = cashShiftRepository.findById(shiftId)
-                .orElseThrow(() -> new RuntimeException("Shift not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN)
             throw new RuntimeException("Shift is closed");
@@ -293,7 +293,7 @@ public class ShiftService {
             throw new RuntimeException("Not allowed");
 
         CashShift shift = cashShiftRepository.findById(shiftId)
-                .orElseThrow(() -> new RuntimeException("Shift not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN)
             throw new RuntimeException("Shift is closed");

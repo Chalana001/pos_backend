@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.dashboard.DashboardKpiResponse;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.DashboardRepository;
 import com.chala.posapp.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class DashboardService {
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     private Long resolveBranchId(User user, Long requestedBranchId) {

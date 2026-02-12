@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
@@ -84,13 +85,13 @@ public class ItemService {
     // --- READ / SEARCH ---
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         return mapToResponse(item);
     }
 
     public ItemResponse getByBarcode(String barcode, Long branchId) {
         Item item = itemRepository.findByBarcode(barcode.trim())
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         if (branchId == null) {
             return mapToResponse(item);

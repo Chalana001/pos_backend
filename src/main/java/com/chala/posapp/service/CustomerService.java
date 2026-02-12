@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Customer;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -35,13 +36,13 @@ public class CustomerService {
 
     public CustomerResponse get(Long id) {
         Customer c = customerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
         return map(c);
     }
 
     public CustomerResponse getByPhone(String phone) {
         Customer c = customerRepository.findByPhone(phone.trim())
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
         return map(c);
     }
 
@@ -60,7 +61,7 @@ public class CustomerService {
     @Transactional
     public CustomerResponse update(Long id, CustomerUpdateRequest request) {
         Customer c = customerRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         if (request.getName() != null) c.setName(request.getName().trim());
         if (request.getPhone() != null) c.setPhone(request.getPhone().trim());
