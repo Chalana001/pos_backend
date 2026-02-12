@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.persistence.criteria.Predicate;
@@ -124,7 +125,7 @@ public class ShiftService {
     public ShiftResponse closeShift(CloseShiftRequest request) {
         User user = getLoggedUser();
         if (user.getBranchId() == null)
-            throw new RuntimeException("User branch not assigned");
+            throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
 

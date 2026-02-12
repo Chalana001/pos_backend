@@ -185,13 +185,13 @@ public class ItemService {
     @Transactional
     public ItemResponse updateItem(Long id, ItemUpdateRequest request) {
         Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         if (request.getName() != null && !request.getName().isBlank()) item.setName(request.getName().trim());
 
         if (request.getSubCategoryId() != null) {
             SubCategory subCat = subCategoryRepository.findById(request.getSubCategoryId())
-                    .orElseThrow(() -> new RuntimeException("SubCategory not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found"));
             item.setSubCategory(subCat);
         }
 
@@ -264,7 +264,7 @@ public class ItemService {
 
     public void deactivateItem(Long id) {
         Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         item.setActive(false);
         itemRepository.save(item);
     }

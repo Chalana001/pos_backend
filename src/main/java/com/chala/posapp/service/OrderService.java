@@ -159,7 +159,7 @@ public class OrderService {
 
         if (savedOrder.getOrderType() == OrderType.CREDIT) {
             Customer customer = customerRepository.findById(savedOrder.getCustomerId())
-                    .orElseThrow(() -> new RuntimeException("Customer not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
             if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0) {
                 if (customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
@@ -182,10 +182,10 @@ public class OrderService {
 
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
         if (order.getStatus() == OrderStatus.CANCELED)
             throw new RuntimeException("Order already canceled");
@@ -196,7 +196,7 @@ public class OrderService {
         // 1. Credit Rollback
         if (order.getOrderType() == OrderType.CREDIT && order.getCustomerId() != null) {
             Customer customer = customerRepository.findById(order.getCustomerId())
-                    .orElseThrow(() -> new RuntimeException("Customer not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
             double newDue = customer.getDueAmount() - order.getDueAmount();
             customer.setDueAmount(Math.max(0, newDue));
@@ -210,11 +210,11 @@ public class OrderService {
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         Branch branch = branchRepository.findById(order.getBranchId())
-                .orElseThrow(() -> new RuntimeException("Branch not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         for (OrderItem oi : items) {
             Item item = itemRepository.findById(oi.getItemId())
-                    .orElseThrow(() -> new RuntimeException("Item not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch returnBatch = StockBatch.builder()
                     .branch(branch)
@@ -235,14 +235,14 @@ public class OrderService {
 
     public OrderResponse getOrder(String invoiceNo) {
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
-                .orElseThrow(() -> new RuntimeException("Order not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         return buildOrderResponse(order, items);
     }
 
     public Page<CustomerOrderListResponse> list(Long customerId, String orderType, Pageable pageable) {
         customerRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         Page<Order> page;
         if (orderType == null || orderType.equalsIgnoreCase("ALL")) {

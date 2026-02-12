@@ -5,6 +5,7 @@ import com.chala.posapp.dto.CreditPaymentResponse;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
@@ -35,7 +36,7 @@ public class CreditService {
         User user = getLoggedUser();
 
         if (user.getBranchId() == null)
-            throw new RuntimeException("User branch not assigned");
+            throw new NotAssignedException("User branch not assigned");
 
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));

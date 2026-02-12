@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.CreateStockAdjustmentRequest;
 import com.chala.posapp.dto.StockAdjustmentResponse;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -54,7 +55,7 @@ public class StockAdjustmentService {
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
-                throw new RuntimeException("User branch not assigned");
+                throw new NotAssignedException("User branch not assigned");
             if (!user.getBranchId().equals(request.getBranchId()))
                 throw new RuntimeException("Managers can adjust only their branch");
         }
