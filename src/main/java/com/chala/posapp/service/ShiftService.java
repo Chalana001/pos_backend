@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
@@ -44,7 +45,7 @@ public class ShiftService {
         User user = getLoggedUser();
 
         if (user.getBranchId() == null)
-            throw new RuntimeException("User branch not assigned");
+            throw new NotAssignedException("User branch not assigned");
 
         if (user.getRole() != Role.CASHIER && user.getRole() != Role.MANAGER && user.getRole() != Role.ADMIN)
             throw new RuntimeException("Not allowed");
@@ -245,7 +246,7 @@ public class ShiftService {
     public ShiftResponse openShiftByBranch(Long branchId, OpenShiftRequest request) {
         User user = getLoggedUser();
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
-            throw new RuntimeException("Not allowed");
+            throw new BadRequestException("Not allowed");
 
 //        cashShiftRepository.findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
 //                .ifPresent(s -> { throw new RuntimeException("Shift already open for this branch"); });
@@ -270,7 +271,7 @@ public class ShiftService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN)
-            throw new RuntimeException("Shift is closed");
+            throw new BadRequestException("Shift is closed");
 
         Expense expense = Expense.builder()
                 .shiftId(shift.getId())
@@ -292,13 +293,13 @@ public class ShiftService {
     public ShiftResponse addCashDropByShiftId(Long shiftId, CreateCashDropRequest request) {
         User user = getLoggedUser();
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
-            throw new RuntimeException("Not allowed");
+            throw new BadRequestException("Not allowed");
 
         CashShift shift = cashShiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN)
-            throw new RuntimeException("Shift is closed");
+            throw new BadRequestException("Shift is closed");
 
         CashDrop cashDrop = CashDrop.builder()
                 .shiftId(shift.getId())
@@ -322,10 +323,10 @@ public class ShiftService {
 
         CashShift shift = cashShiftRepository
                 .findFirstByBranchIdAndStatus(branchId, ShiftStatus.OPEN)
-                .orElseThrow(() -> new RuntimeException("No active shift for this branch"));
+                .orElseThrow(() -> new ResourceNotFoundException("No active shift for this branch"));
 
         if (!shift.getStatus().equals(ShiftStatus.OPEN)) {
-            throw new RuntimeException("Shift is not open");
+            throw new ResourceNotFoundException("Shift is not open");
         }
 
         shift.setCashSales((shift.getCashSales() == null ? 0.0 : shift.getCashSales()) + amount);

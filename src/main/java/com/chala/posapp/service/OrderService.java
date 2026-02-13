@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -43,15 +44,15 @@ public class OrderService {
         if (user.getRole() == Role.CASHIER) {
             branchId = user.getBranchId();
         } else {
-            if (request.getBranchId() == null) throw new RuntimeException("BranchId required");
+            if (request.getBranchId() == null) throw new BadRequestException("BranchId required");
             branchId = request.getBranchId();
         }
 
         if (request.getItems() == null || request.getItems().isEmpty())
-            throw new RuntimeException("Order items required");
+            throw new BadRequestException("Order items required");
 
         if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null)
-            throw new RuntimeException("Customer required for CREDIT order");
+            throw new BadRequestException("Customer required for CREDIT order");
 
         String invoiceNo = invoiceService.generateInvoiceNo(branchId);
 
@@ -62,27 +63,27 @@ public class OrderService {
         for (OrderItemRequest itemReq : request.getItems()) {
 
             Item item = itemRepository.findById(itemReq.getItemId())
-                    .orElseThrow(() -> new RuntimeException("Item not found: " + itemReq.getItemId()));
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemReq.getItemId()));
 
             if (!item.isActive())
-                throw new RuntimeException("Item is inactive: " + item.getBarcode());
+                throw new BadRequestException("Item is inactive: " + item.getBarcode());
 
             if (itemReq.getBatchId() == null) {
-                throw new RuntimeException("Batch ID is missing for item: " + item.getName());
+                throw new BadRequestException("Batch ID is missing for item: " + item.getName());
             }
 
             StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
                     .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + itemReq.getBatchId()));
 
             if (!batch.getItem().getId().equals(item.getId())) {
-                throw new RuntimeException("Batch ID does not match Item ID");
+                throw new BadRequestException("Batch ID does not match Item ID");
             }
             if (!batch.getBranch().getId().equals(branchId)) {
-                throw new RuntimeException("Batch does not belong to this branch");
+                throw new BadRequestException("Batch does not belong to this branch");
             }
 
             if (batch.getQuantity() < itemReq.getQty()) {
-                throw new RuntimeException("Insufficient stock for " + item.getName() +
+                throw new BadRequestException("Insufficient stock for " + item.getName() +
                         " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
             }
 
@@ -130,7 +131,7 @@ public class OrderService {
             dueAmount = grandTotal;
         } else {
             if (paidAmount < grandTotal)
-                throw new RuntimeException("Paid amount cannot be less than grand total for CASH sale");
+                throw new BadRequestException("Paid amount cannot be less than grand total for CASH sale");
             dueAmount = 0;
         }
 
@@ -164,7 +165,7 @@ public class OrderService {
 
             if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0) {
                 if (customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
-                    throw new RuntimeException("Customer credit limit exceeded");
+                    throw new BadRequestException("Customer credit limit exceeded");
                 }
             }
             customer.setDueAmount(customer.getDueAmount() + savedOrder.getDueAmount());
@@ -192,7 +193,7 @@ public class OrderService {
             throw new AlreadyExistsException("Order already canceled");
 
         if (user.getRole() != Role.ADMIN && !order.getBranchId().equals(user.getBranchId()))
-            throw new RuntimeException("Cannot cancel other branch order");
+            throw new BadRequestException("Cannot cancel other branch order");
 
         // 1. Credit Rollback
         if (order.getOrderType() == OrderType.CREDIT && order.getCustomerId() != null) {

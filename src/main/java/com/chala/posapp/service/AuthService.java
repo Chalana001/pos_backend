@@ -6,6 +6,7 @@ import com.chala.posapp.dto.RegisterRequest;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.security.JwtService;
@@ -48,7 +49,7 @@ public class AuthService {
         User user = userRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (!user.isEnabled()) throw new RuntimeException("User disabled");
+        if (!user.isEnabled()) throw new BadRequestException("User disabled");
 
         String token = jwtService.generateToken(user.getUsername(), user.getRole().name());
         return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId());

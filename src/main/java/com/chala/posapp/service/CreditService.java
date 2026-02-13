@@ -5,6 +5,7 @@ import com.chala.posapp.dto.CreditPaymentResponse;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CreditPaymentRepository;
@@ -42,13 +43,14 @@ public class CreditService {
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
         if (!customer.isActive())
-            throw new RuntimeException("Customer inactive");
+            throw new BadRequestException("Customer inactive");
 
         if (request.getAmount() <= 0)
-            throw new RuntimeException("Invalid amount");
+            throw new BadRequestException("Invalid amount");
+
 
         if (customer.getDueAmount() <= 0)
-            throw new RuntimeException("Customer has no due");
+            throw new BadRequestException("Customer has no due");
 
         double newDue = customer.getDueAmount() - request.getAmount();
         if (newDue < 0) newDue = 0;

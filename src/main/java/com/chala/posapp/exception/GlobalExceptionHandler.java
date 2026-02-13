@@ -29,4 +29,10 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.ALREADY_REPORTED)
                 .body(Map.of("message", ex.getMessage(), "status", "already_exists"));
     }
+
+    public ResponseEntity<Map<String, String>> handleBadRequest(BadRequestException ex){
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("message", ex.getMessage(), "status", "bad_request"));
+    }
 }

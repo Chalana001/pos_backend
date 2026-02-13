@@ -2,6 +2,8 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -38,11 +40,11 @@ public class StockTransferService {
         Branch to = branchRepository.findById(toBranchId)
                 .orElseThrow(() -> new ResourceNotFoundException("To branch not found"));
 
-        if (!from.isActive()) throw new RuntimeException("From branch inactive");
-        if (!to.isActive()) throw new RuntimeException("To branch inactive");
+        if (!from.isActive()) throw new BadRequestException("From branch inactive");
+        if (!to.isActive()) throw new BadRequestException("To branch inactive");
 
         if (fromBranchId.equals(toBranchId))
-            throw new RuntimeException("From and To branch cannot be same");
+            throw new BadRequestException("From and To branch cannot be same");
     }
 
     @Transactional
@@ -51,18 +53,19 @@ public class StockTransferService {
         User user = getLoggedUser();
 
         if (user.getRole() == Role.CASHIER)
-            throw new RuntimeException("Cashier cannot create transfers");
+            throw new BadRequestException("Cashier cannot create transfers");
 
         if (request.getItems() == null || request.getItems().isEmpty())
-            throw new RuntimeException("Transfer items required");
+            throw new BadRequestException("Transfer items required");
+
 
         validateBranches(request.getFromBranchId(), request.getToBranchId());
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
-                throw new RuntimeException("Manager branch not assigned");
+                throw new NotAssignedException("Manager branch not assigned");
             if (!user.getBranchId().equals(request.getFromBranchId()))
-                throw new RuntimeException("Manager can only transfer FROM their branch");
+                throw new BadRequestException("Manager can only transfer FROM their branch");
         }
 
         String transferNo = transferNumberService.generateTransferNo(request.getFromBranchId());
@@ -140,14 +143,14 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
-            throw new RuntimeException("Transfer is not IN_TRANSIT status");
+            throw new BadRequestException("Transfer is not IN_TRANSIT status");
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
-                throw new RuntimeException("Manager branch not assigned");
+                throw new NotAssignedException("Manager branch not assigned");
 
             if (!user.getBranchId().equals(transfer.getToBranchId()))
-                throw new RuntimeException("Manager can only receive transfers to their branch");
+                throw new BadRequestException("Manager can only receive transfers to their branch");
         }
 
         Branch toBranch = branchRepository.findById(transfer.getToBranchId())
@@ -200,17 +203,17 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
-            throw new RuntimeException("Only IN_TRANSIT (Pending) transfers can be canceled");
+            throw new BadRequestException("Only IN_TRANSIT (Pending) transfers can be canceled");
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
-                throw new RuntimeException("Manager branch not assigned");
+                throw new BadRequestException("Manager branch not assigned");
 
             boolean allowed = user.getBranchId().equals(transfer.getFromBranchId())
                     || user.getBranchId().equals(transfer.getToBranchId());
 
             if (!allowed)
-                throw new RuntimeException("Manager cannot cancel this transfer");
+                throw new BadRequestException("Manager cannot cancel this transfer");
         }
 
         Branch fromBranch = branchRepository.findById(transfer.getFromBranchId())

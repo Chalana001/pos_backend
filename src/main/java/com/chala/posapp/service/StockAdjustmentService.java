@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.CreateStockAdjustmentRequest;
 import com.chala.posapp.dto.StockAdjustmentResponse;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
@@ -51,20 +52,20 @@ public class StockAdjustmentService {
         User user = getLoggedUser();
 
         if (user.getRole() == Role.CASHIER)
-            throw new RuntimeException("Cashier cannot adjust stock");
+            throw new BadRequestException("Cashier cannot adjust stock");
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
                 throw new NotAssignedException("User branch not assigned");
             if (!user.getBranchId().equals(request.getBranchId()))
-                throw new RuntimeException("Managers can adjust only their branch");
+                throw new BadRequestException("Managers can adjust only their branch");
         }
 
         Item item = itemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         if (!item.isActive())
-            throw new RuntimeException("Item inactive");
+            throw new BadRequestException("Item inactive");
 
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
@@ -92,7 +93,7 @@ public class StockAdjustmentService {
 
             Integer currentTotalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(request.getBranchId(), request.getItemId());
             if (currentTotalStock == null || currentTotalStock < qtyToRemove) {
-                throw new RuntimeException("Not enough stock to reduce. Current: " + (currentTotalStock == null ? 0 : currentTotalStock));
+                throw new BadRequestException("Not enough stock to reduce. Current: " + (currentTotalStock == null ? 0 : currentTotalStock));
             }
 
             List<StockBatch> batches = stockBatchRepository.findAvailableBatches(request.getBranchId(), request.getItemId());

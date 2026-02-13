@@ -5,6 +5,8 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -32,15 +34,15 @@ public class UserManagementService {
         Role role = request.getRole();
 
         if ((role == Role.MANAGER || role == Role.CASHIER) && request.getBranchId() == null)
-            throw new RuntimeException("BranchId required for " + role);
+            throw new BadRequestException("BranchId required for " + role);
 
         Long branchId = null;
         if (request.getBranchId() != null) {
             Branch branch = branchRepository.findById(request.getBranchId())
-                    .orElseThrow(() -> new RuntimeException("Branch not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
             if (!branch.isActive())
-                throw new RuntimeException("Branch inactive");
+                throw new BadRequestException("Branch inactive");
 
             branchId = branch.getId();
         }
@@ -72,14 +74,14 @@ public class UserManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (userId == 1L || user.getRole() == Role.ADMIN) {
-            throw new RuntimeException("Admin user cannot assign branch");
+            throw new BadRequestException("Admin user cannot assign branch");
         }
 
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         if (!branch.isActive())
-            throw new RuntimeException("Branch inactive");
+            throw new BadRequestException("Branch inactive");
 
         user.setBranchId(branch.getId());
         return "Branch assigned";
@@ -92,7 +94,7 @@ public class UserManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (userId == 1L || user.getRole() == Role.ADMIN) {
-            throw new RuntimeException("Admin user cannot be disabled");
+            throw new BadRequestException("Admin user cannot be disabled");
         }
 
         user.setEnabled(request.getEnabled());

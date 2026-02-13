@@ -6,6 +6,7 @@ import com.chala.posapp.dto.report.RecentOrderResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +42,7 @@ public class ReportService {
         if (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER) {
             return user.getBranchId();
         }
-        throw new RuntimeException("Not allowed");
+        throw new BadRequestException("Not allowed");
     }
 
     private LocalDateTime toLDT(Instant instant) {

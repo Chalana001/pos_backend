@@ -58,7 +58,7 @@ public class ItemService {
                 .toList();
 
         if (!itemRepository.findAllByBarcodeIn(incomingBarcodes).isEmpty()) {
-            throw new RuntimeException("Duplicate barcodes found in the system. Bulk upload aborted.");
+            throw new AlreadyExistsException("Duplicate barcodes found in the system. Bulk upload aborted.");
         }
 
         List<Item> newItemList = requestList.stream()

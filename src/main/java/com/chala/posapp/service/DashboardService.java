@@ -3,6 +3,8 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.dashboard.DashboardKpiResponse;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.DashboardRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -34,17 +36,17 @@ public class DashboardService {
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {
             if (requestedBranchId == null)
-                throw new RuntimeException("branchId required for admin");
+                throw new NotAssignedException("branchId required for admin");
             return requestedBranchId;
         }
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
-                throw new RuntimeException("Manager branch not assigned");
+                throw new NotAssignedException("Manager branch not assigned");
             return user.getBranchId();
         }
 
-        throw new RuntimeException("Not allowed");
+        throw new BadRequestException("Not allowed");
     }
 
     public DashboardKpiResponse todayKpis(Long requestedBranchId) {
