@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -188,7 +189,7 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
         if (order.getStatus() == OrderStatus.CANCELED)
-            throw new RuntimeException("Order already canceled");
+            throw new AlreadyExistsException("Order already canceled");
 
         if (user.getRole() != Role.ADMIN && !order.getBranchId().equals(user.getBranchId()))
             throw new RuntimeException("Cannot cancel other branch order");

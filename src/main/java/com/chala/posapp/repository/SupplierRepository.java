@@ -10,4 +10,6 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     List<Supplier> findByActiveTrue();
 
     List<Supplier> findByNameContainingIgnoreCase(String name);
+
+    boolean existsByEmail(String email);
 }

@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
@@ -50,7 +51,7 @@ public class ShiftService {
 
         cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(user.getBranchId(), user.getId(), ShiftStatus.OPEN)
                 .ifPresent(s -> {
-                    throw new RuntimeException("Shift already open");
+                    throw new AlreadyExistsException("Shift already open");
                 });
 
         CashShift shift = CashShift.builder()
@@ -67,7 +68,7 @@ public class ShiftService {
     public ShiftResponse getMyCurrentShift() {
         User user = getLoggedUser();
         if (user.getRole() != Role.ADMIN && user.getBranchId() == null)
-            throw new RuntimeException("User branch not assigned");
+            throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = cashShiftRepository.findTopByBranchIdAndCashierUserIdOrderByOpenedAtDesc(user.getBranchId(), user.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("No shift found"));
@@ -77,7 +78,7 @@ public class ShiftService {
     @Transactional
     public ShiftResponse addExpense(CreateExpenseRequest request) {
         User user = getLoggedUser();
-        if (user.getBranchId() == null) throw new RuntimeException("User branch not assigned");
+        if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
 
@@ -101,7 +102,7 @@ public class ShiftService {
     @Transactional
     public ShiftResponse addCashDrop(CreateCashDropRequest request) {
         User user = getLoggedUser();
-        if (user.getBranchId() == null) throw new RuntimeException("User branch not assigned");
+        if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
 
@@ -212,7 +213,7 @@ public class ShiftService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
         if (shift.getStatus() != ShiftStatus.OPEN) {
-            throw new RuntimeException("Shift already closed");
+            throw new AlreadyExistsException("Shift already closed");
         }
 
         double cashSales = orderRepository.sumCashSales(

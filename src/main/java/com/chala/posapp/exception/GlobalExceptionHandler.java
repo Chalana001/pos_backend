@@ -23,4 +23,10 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(Map.of("message", ex.getMessage(), "status", "not_assigned"));
     }
+
+    public ResponseEntity<Map<String, String>> handleAlreadyExists(AlreadyExistsException ex){
+        return ResponseEntity
+                .status(HttpStatus.ALREADY_REPORTED)
+                .body(Map.of("message", ex.getMessage(), "status", "already_exists"));
+    }
 }

@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Customer;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,7 @@ public class CustomerService {
         String phone = request.getPhone().trim();
 
         if (customerRepository.existsByPhone(phone))
-            throw new RuntimeException("Customer phone already exists");
+            throw new AlreadyExistsException("Customer phone already exists");
 
         Customer c = Customer.builder()
                 .name(request.getName().trim())

@@ -4,6 +4,7 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -26,7 +27,7 @@ public class UserManagementService {
         String username = request.getUsername().trim();
 
         if (userRepository.existsByUsername(username))
-            throw new RuntimeException("Username already exists");
+            throw new AlreadyExistsException("Username already exists");
 
         Role role = request.getRole();
 

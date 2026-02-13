@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
@@ -32,7 +33,7 @@ public class ItemService {
         String barcode = request.getBarcode().trim();
 
         if (itemRepository.existsByBarcode(barcode))
-            throw new RuntimeException("Barcode already exists: " + barcode);
+            throw new AlreadyExistsException("Barcode already exists: " + barcode);
 
         SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                 .orElseThrow(() -> new RuntimeException("SubCategory not found with ID: " + request.getSubCategoryId()));

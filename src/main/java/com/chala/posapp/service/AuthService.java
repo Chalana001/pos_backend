@@ -5,6 +5,7 @@ import com.chala.posapp.dto.LoginRequest;
 import com.chala.posapp.dto.RegisterRequest;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.security.JwtService;
@@ -26,7 +27,7 @@ public class AuthService {
 
     public void registerAdmin(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername()))
-            throw new RuntimeException("Username already exists");
+            throw new AlreadyExistsException("Username already exists");
 
         User user = User.builder()
                 .username(request.getUsername())

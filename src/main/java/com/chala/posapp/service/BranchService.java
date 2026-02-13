@@ -2,6 +2,7 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +21,7 @@ public class BranchService {
         String code = request.getCode().trim().toUpperCase();
 
         if (branchRepository.existsByCode(code))
-            throw new RuntimeException("Branch code already exists: " + code);
+            throw new AlreadyExistsException("Branch code already exists: " + code);
 
         Branch branch = Branch.builder()
                 .code(code)

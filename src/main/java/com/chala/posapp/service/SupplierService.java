@@ -6,6 +6,7 @@ import com.chala.posapp.dto.SupplierResponse;
 import com.chala.posapp.entity.Supplier;
 import com.chala.posapp.entity.SupplierBankDetails;
 import com.chala.posapp.entity.SupplierContact;
+import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.SupplierRepository;
 import jakarta.transaction.Transactional;
@@ -29,6 +30,10 @@ public class SupplierService {
         supplier.setEmail(req.getEmail());
         supplier.setAddress(req.getAddress());
         supplier.setActive(req.getActive() != null ? req.getActive() : true);
+
+        if (supplierRepository.existsByEmail(req.getEmail())){
+            throw new AlreadyExistsException("A supplier with email "+ req.getEmail()+ "already exists");
+        }
 
         if (req.getContacts() != null) {
             for (String c : req.getContacts()) {
