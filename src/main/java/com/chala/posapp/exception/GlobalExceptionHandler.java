@@ -1,38 +1,30 @@
 package com.chala.posapp.exception;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import java.security.Key;
-import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<Map<String, String>> handleResourceNotFound(ResourceNotFoundException ex) {
-        return ResponseEntity
-                .status(HttpStatus.NOT_FOUND)
-                .body(Map.of("message", ex.getMessage(), "status", "no_shift"));
+    public ProblemDetail handleResourceNotFound(ResourceNotFoundException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
     }
 
-    public ResponseEntity<Map<String, String>> handleNotAssigned(NotAssignedException ex){
-        return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
-                .body(Map.of("message", ex.getMessage(), "status", "not_assigned"));
+    @ExceptionHandler(NotAssignedException.class)
+    public ProblemDetail handleNotAssigned(NotAssignedException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
-    public ResponseEntity<Map<String, String>> handleAlreadyExists(AlreadyExistsException ex){
-        return ResponseEntity
-                .status(HttpStatus.ALREADY_REPORTED)
-                .body(Map.of("message", ex.getMessage(), "status", "already_exists"));
+    @ExceptionHandler(AlreadyExistsException.class)
+    public ProblemDetail handleAlreadyExists(AlreadyExistsException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
     }
 
-    public ResponseEntity<Map<String, String>> handleBadRequest(BadRequestException ex){
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("message", ex.getMessage(), "status", "bad_request"));
+    @ExceptionHandler(BadRequestException.class)
+    public ProblemDetail handleBadRequest(BadRequestException ex) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 }
