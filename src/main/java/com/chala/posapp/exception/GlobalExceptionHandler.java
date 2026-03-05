@@ -27,4 +27,12 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleBadRequest(BadRequestException ex) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
+
+    @ExceptionHandler(Exception.class)
+    public ProblemDetail handleAllExceptions(Exception ex) {
+        return ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "Something went wrong on our end. Please try again later."
+        );
+    }
 }
