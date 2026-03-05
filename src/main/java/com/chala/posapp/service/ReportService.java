@@ -1,7 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.report.CategorySalesResponse;
-import com.chala.posapp.dto.LowStockResponse;
+import com.chala.posapp.dto.stock.LowStockResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.entity.Role;

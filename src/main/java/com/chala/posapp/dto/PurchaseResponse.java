@@ -1,5 +1,6 @@
 package com.chala.posapp.dto;
 
+import com.chala.posapp.dto.grn.GrnResponse;
 import lombok.Builder;
 import lombok.Data;
 import java.math.BigDecimal;

@@ -1,7 +1,7 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.CreateStockAdjustmentRequest;
-import com.chala.posapp.dto.StockAdjustmentResponse;
+import com.chala.posapp.dto.stock.CreateStockAdjustmentRequest;
+import com.chala.posapp.dto.stock.StockAdjustmentResponse;
 import com.chala.posapp.service.StockAdjustmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

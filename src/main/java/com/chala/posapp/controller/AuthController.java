@@ -1,8 +1,8 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.AuthResponse;
-import com.chala.posapp.dto.LoginRequest;
-import com.chala.posapp.dto.RegisterRequest;
+import com.chala.posapp.dto.user.AuthResponse;
+import com.chala.posapp.dto.user.LoginRequest;
+import com.chala.posapp.dto.user.RegisterRequest;
 import com.chala.posapp.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

@@ -1,7 +1,7 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.LowStockResponse;
-import com.chala.posapp.dto.StockResponseWithItems;
+import com.chala.posapp.dto.stock.LowStockResponse;
+import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.service.StockService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

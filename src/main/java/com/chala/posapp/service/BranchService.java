@@ -1,6 +1,8 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.branch.BranchCreateRequest;
+import com.chala.posapp.dto.branch.BranchResponse;
+import com.chala.posapp.dto.branch.BranchUpdateRequest;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -42,7 +44,9 @@ public class BranchService {
     }
 
     public List<BranchResponse> getAllBranches(Boolean activeOnly) {
+        System.out.println("called branche in service");
         List<Branch> branches = branchRepository.findAll();
+        System.out.println(branches);
         return branches.stream()
                 .filter(b -> activeOnly == null || !activeOnly || b.isActive())
                 .map(this::mapToResponse)

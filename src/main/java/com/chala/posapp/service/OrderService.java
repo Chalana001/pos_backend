@@ -1,7 +1,9 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.customer.CustomerOrderListResponse;
+import com.chala.posapp.dto.order.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -170,10 +172,6 @@ public class OrderService {
             }
             customer.setDueAmount(customer.getDueAmount() + savedOrder.getDueAmount());
             customerRepository.save(customer);
-        }
-
-        if (request.getOrderType() == OrderType.CASH) {
-            shiftService.addCashSale(branchId, request.getPaidAmount());
         }
 
         return buildOrderResponse(savedOrder, orderItemsToSave);

@@ -1,6 +1,8 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.stock.CancelTransferRequest;
+import com.chala.posapp.dto.stock.CreateStockTransferRequest;
+import com.chala.posapp.dto.stock.StockTransferResponse;
 import com.chala.posapp.service.StockTransferService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

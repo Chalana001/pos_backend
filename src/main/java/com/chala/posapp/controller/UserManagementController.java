@@ -1,6 +1,10 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.branch.AssignBranchRequest;
+import com.chala.posapp.dto.user.CreateUserRequest;
+import com.chala.posapp.dto.user.ResetPasswordRequest;
+import com.chala.posapp.dto.user.UpdateUserStatusRequest;
+import com.chala.posapp.dto.user.UserResponse;
 import com.chala.posapp.service.UserManagementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -54,5 +58,11 @@ public class UserManagementController {
     public ResponseEntity<?> resetPassword(@PathVariable Long userId,
                                            @Valid @RequestBody ResetPasswordRequest request) {
         return ResponseEntity.ok(userManagementService.resetPassword(userId, request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/branch/{branchId}")
+    public ResponseEntity<List<UserResponse>> branchCashiers(@PathVariable("branchId") Long branchId) {
+        return ResponseEntity.ok(userManagementService.getCashiersInBranch(branchId));
     }
 }

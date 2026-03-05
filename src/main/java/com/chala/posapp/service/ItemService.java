@@ -1,7 +1,12 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.item.ItemCreateRequest;
+import com.chala.posapp.dto.item.ItemResponse;
+import com.chala.posapp.dto.item.ItemUpdateRequest;
+import com.chala.posapp.dto.item.ItemWithStockResponse;
+import com.chala.posapp.dto.stock.StockBatchResponse;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.ItemRepository;

@@ -1,7 +1,7 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.CreditPaymentRequest;
-import com.chala.posapp.dto.CreditPaymentResponse;
+import com.chala.posapp.dto.payments.CreditPaymentRequest;
+import com.chala.posapp.dto.payments.CreditPaymentResponse;
 import com.chala.posapp.service.CreditService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

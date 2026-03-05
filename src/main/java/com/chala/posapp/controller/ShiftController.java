@@ -1,6 +1,9 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.shift.CloseShiftRequest;
+import com.chala.posapp.dto.shift.OpenShiftRequest;
+import com.chala.posapp.dto.shift.ShiftResponse;
 import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.service.ShiftService;
 import jakarta.validation.Valid;
@@ -80,6 +83,7 @@ public class ShiftController {
             @RequestParam(name = "branchId") Long branchId,
             @Valid @RequestBody OpenShiftRequest request
     ) {
+        System.out.println(request);
         return ResponseEntity.ok(shiftService.openShiftByBranch(branchId, request));
     }
 

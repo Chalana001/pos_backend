@@ -1,6 +1,8 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.customer.CustomerCreateRequest;
+import com.chala.posapp.dto.customer.CustomerResponse;
+import com.chala.posapp.dto.customer.CustomerUpdateRequest;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;

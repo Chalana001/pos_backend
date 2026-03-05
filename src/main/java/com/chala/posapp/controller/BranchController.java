@@ -1,13 +1,14 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.branch.BranchCreateRequest;
+import com.chala.posapp.dto.branch.BranchResponse;
+import com.chala.posapp.dto.branch.BranchUpdateRequest;
 import com.chala.posapp.service.BranchService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 
 @RestController
@@ -35,7 +36,8 @@ public class BranchController {
     // /branches?activeOnly=true
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping
-    public ResponseEntity<List<BranchResponse>> list(@RequestParam(required = false) Boolean activeOnly) {
+    public ResponseEntity<List<BranchResponse>> list(@RequestParam(name = "activeOnly", required = false) Boolean activeOnly) {
+        System.out.println("called branch in controller");
         return ResponseEntity.ok(branchService.getAllBranches(activeOnly));
     }
 

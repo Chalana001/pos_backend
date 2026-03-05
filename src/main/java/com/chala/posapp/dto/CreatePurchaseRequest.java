@@ -1,5 +1,6 @@
 package com.chala.posapp.dto;
 
+import com.chala.posapp.dto.branch.BranchPurchaseRequest;
 import lombok.Data;
 import java.util.List;
 

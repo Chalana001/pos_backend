@@ -2,7 +2,6 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.CreateExpenseRequest;
 import com.chala.posapp.dto.ExpenseResponse;
-import com.chala.posapp.dto.ShiftResponse;
 import com.chala.posapp.service.ExpenseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

@@ -1,7 +1,7 @@
 package com.chala.posapp.repository;
 
-import com.chala.posapp.entity.StockTransfer;
-import com.chala.posapp.entity.StockTransferStatus;
+import com.chala.posapp.entity.stock.StockTransfer;
+import com.chala.posapp.entity.stock.StockTransferStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;

@@ -1,11 +1,11 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.SupplierCreateRequest;
-import com.chala.posapp.dto.SupplierQuickCreateRequest;
-import com.chala.posapp.dto.SupplierResponse;
-import com.chala.posapp.entity.Supplier;
-import com.chala.posapp.entity.SupplierBankDetails;
-import com.chala.posapp.entity.SupplierContact;
+import com.chala.posapp.dto.supplier.SupplierCreateRequest;
+import com.chala.posapp.dto.supplier.SupplierQuickCreateRequest;
+import com.chala.posapp.dto.supplier.SupplierResponse;
+import com.chala.posapp.entity.supplier.Supplier;
+import com.chala.posapp.entity.supplier.SupplierBankDetails;
+import com.chala.posapp.entity.supplier.SupplierContact;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.SupplierRepository;

@@ -1,7 +1,7 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.CreditPaymentRequest;
-import com.chala.posapp.dto.CreditPaymentResponse;
+import com.chala.posapp.dto.payments.CreditPaymentRequest;
+import com.chala.posapp.dto.payments.CreditPaymentResponse;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.User;

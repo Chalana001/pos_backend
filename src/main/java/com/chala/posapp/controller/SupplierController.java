@@ -1,8 +1,8 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.SupplierCreateRequest;
-import com.chala.posapp.dto.SupplierQuickCreateRequest;
-import com.chala.posapp.dto.SupplierResponse;
+import com.chala.posapp.dto.supplier.SupplierCreateRequest;
+import com.chala.posapp.dto.supplier.SupplierQuickCreateRequest;
+import com.chala.posapp.dto.supplier.SupplierResponse;
 import com.chala.posapp.service.SupplierService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

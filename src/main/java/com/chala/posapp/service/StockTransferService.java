@@ -1,7 +1,11 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.stock.*;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockTransfer;
+import com.chala.posapp.entity.stock.StockTransferItem;
+import com.chala.posapp.entity.stock.StockTransferStatus;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;

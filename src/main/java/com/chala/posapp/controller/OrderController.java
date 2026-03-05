@@ -1,8 +1,8 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.CancelOrderRequest;
-import com.chala.posapp.dto.CreateOrderRequest;
-import com.chala.posapp.dto.OrderResponse;
+import com.chala.posapp.dto.order.CancelOrderRequest;
+import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

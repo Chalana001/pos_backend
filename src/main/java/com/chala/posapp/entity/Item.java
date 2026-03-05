@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.entity.supplier.SupplierItem;
 import jakarta.persistence.*;
 import lombok.*;
 

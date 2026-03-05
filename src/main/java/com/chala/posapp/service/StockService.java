@@ -1,10 +1,12 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.LowStockResponse;
-import com.chala.posapp.dto.StockAddRequest;
-import com.chala.posapp.dto.StockResponse;
-import com.chala.posapp.dto.StockResponseWithItems;
+import com.chala.posapp.dto.stock.LowStockResponse;
+import com.chala.posapp.dto.stock.StockAddRequest;
+import com.chala.posapp.dto.stock.StockResponse;
+import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;

@@ -1,7 +1,7 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.GrnItemResponse;
-import com.chala.posapp.dto.GrnResponse;
+import com.chala.posapp.dto.grn.GrnItemResponse;
+import com.chala.posapp.dto.grn.GrnResponse;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
 import com.chala.posapp.exception.ResourceNotFoundException;

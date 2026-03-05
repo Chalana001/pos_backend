@@ -1,21 +1,27 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.branch.AssignBranchRequest;
+import com.chala.posapp.dto.user.CreateUserRequest;
+import com.chala.posapp.dto.user.ResetPasswordRequest;
+import com.chala.posapp.dto.user.UpdateUserStatusRequest;
+import com.chala.posapp.dto.user.UserResponse;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
-import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -119,5 +125,17 @@ public class UserManagementService {
                 .branchId(u.getBranchId())
                 .createdAt(u.getCreatedAt())
                 .build();
+    }
+
+    public @Nullable List<UserResponse> getCashiersInBranch(Long branchId) {
+        if (!branchRepository.existsById(branchId)) {
+            throw new ResourceNotFoundException("Branch not found in the system");
+        }
+        List<User> cashiers = userRepository.findAllByBranchId(branchId);
+
+        System.out.println(cashiers);
+        return cashiers.stream()
+                .map(this::map)
+                .collect(Collectors.toList());
     }
 }

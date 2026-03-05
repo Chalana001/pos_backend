@@ -1,9 +1,9 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.PageResponse;
-import com.chala.posapp.dto.CustomerNoteCreateRequest;
-import com.chala.posapp.dto.CustomerNoteResponse;
-import com.chala.posapp.dto.CustomerNoteUpdateRequest;
+import com.chala.posapp.dto.customer.CustomerNoteCreateRequest;
+import com.chala.posapp.dto.customer.CustomerNoteResponse;
+import com.chala.posapp.dto.customer.CustomerNoteUpdateRequest;
 import com.chala.posapp.service.CustomerNoteService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

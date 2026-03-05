@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.entity.supplier.Supplier;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;

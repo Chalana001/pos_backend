@@ -1,6 +1,6 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.CustomerOrderListResponse;
+import com.chala.posapp.dto.customer.CustomerOrderListResponse;
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.service.OrderService;
 import lombok.RequiredArgsConstructor;

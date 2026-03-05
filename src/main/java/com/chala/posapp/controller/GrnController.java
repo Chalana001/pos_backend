@@ -1,6 +1,6 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.GrnResponse;
+import com.chala.posapp.dto.grn.GrnResponse;
 import com.chala.posapp.service.GrnService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;

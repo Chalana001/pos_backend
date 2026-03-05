@@ -1,6 +1,8 @@
 package com.chala.posapp.controller;
 
-import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.customer.CustomerCreateRequest;
+import com.chala.posapp.dto.customer.CustomerResponse;
+import com.chala.posapp.dto.customer.CustomerUpdateRequest;
 import com.chala.posapp.service.CustomerService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;

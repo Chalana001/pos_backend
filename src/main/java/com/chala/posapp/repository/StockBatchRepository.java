@@ -1,8 +1,8 @@
 package com.chala.posapp.repository;
 
-import com.chala.posapp.dto.LowStockResponse;
-import com.chala.posapp.dto.StockResponseWithItems;
-import com.chala.posapp.entity.StockBatch;
+import com.chala.posapp.dto.stock.LowStockResponse;
+import com.chala.posapp.dto.stock.StockResponseWithItems;
+import com.chala.posapp.entity.stock.StockBatch;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -30,7 +30,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "HAVING SUM(sb.quantity) <= sb.item.reorderLevel")
     List<LowStockResponse> findLowStockItems(@Param("branchId") Long branchId);
 
-    @Query("SELECT new com.chala.posapp.dto.StockResponseWithItems(" +
+    @Query("SELECT new com.chala.posapp.dto.stock.StockResponseWithItems(" +
             "sb.item.id, " +
             "sb.item.barcode, " +
             "sb.item.name, " +
