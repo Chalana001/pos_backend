@@ -89,33 +89,32 @@ public class ShiftService {
                         ShiftStatus.OPEN
                 )
                 .orElseThrow(() -> new ResourceNotFoundException("No active shift found"));
-        System.out.println(shift);
         return map(shift);
     }
 
-    @Transactional
-    public ShiftResponse addExpense(CreateExpenseRequest request) {
-        User user = getLoggedUser();
-        if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
-
-        CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
-
-        Expense expense = Expense.builder()
-                .shiftId(shift.getId())
-                .branchId(user.getBranchId())
-                .cashierUserId(user.getId())
-                .category(request.getCategory())
-                .amount(request.getAmount())
-                .description(request.getDescription().trim())
-                .build();
-
-        expenseRepository.save(expense);
-
-        shift.setTotalExpenses(shift.getTotalExpenses() + request.getAmount());
-        cashShiftRepository.save(shift);
-
-        return map(shift);
-    }
+//    @Transactional
+//    public ShiftResponse addExpense(CreateExpenseRequest request) {
+//        User user = getLoggedUser();
+//        if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
+//
+//        CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
+//
+//        Expense expense = Expense.builder()
+//                .shiftId(shift.getId())
+//                .branchId(user.getBranchId())
+//                .cashierUserId(user.getId())
+//                .category(request.getCategory())
+//                .amount(request.getAmount())
+//                .description(request.getDescription().trim())
+//                .build();
+//
+//        expenseRepository.save(expense);
+//
+//        shift.setTotalExpenses(shift.getTotalExpenses() + request.getAmount());
+//        cashShiftRepository.save(shift);
+//
+//        return map(shift);
+//    }
 
     @Transactional
     public ShiftResponse addCashDrop(CreateCashDropRequest request) {
@@ -397,39 +396,40 @@ public class ShiftService {
         return map(cashShiftRepository.save(shift));
     }
 
-    @Transactional
-    public ShiftResponse addExpenseByShiftId(Long shiftId, CreateExpenseRequest request) {
+//    @Transactional
+//    public ShiftResponse addExpenseByShiftId(Long shiftId, CreateExpenseRequest request) {
+//
+//        if (shiftId == null) {
+//            throw new BadRequestException("Shift ID cannot be null");
+//        }
+//
+//        User user = getLoggedUser();
+//        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
+//            throw new RuntimeException("Not allowed");
+//
+//        CashShift shift = cashShiftRepository.findById(shiftId)
+//                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+//
+//        if (shift.getStatus() != ShiftStatus.OPEN)
+//            throw new BadRequestException("Shift is closed");
+//
+//        Expense expense = Expense.builder()
+//                .shiftId(shift.getId())
+//                .branchId(shift.getBranchId())
+//                .cashierUserId(user.getId())
+//                .category(request.getCategory())
+//                .amount(request.getAmount())
+//                .description(request.getDescription().trim())
+//                .build();
+//
+//        expenseRepository.save(expense);
+//
+//        shift.setTotalExpenses(shift.getTotalExpenses() + request.getAmount());
+//        cashShiftRepository.save(shift);
+//
+//        return map(shift);
+//    }
 
-        if (shiftId == null) {
-            throw new BadRequestException("Shift ID cannot be null");
-        }
-
-        User user = getLoggedUser();
-        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
-            throw new RuntimeException("Not allowed");
-
-        CashShift shift = cashShiftRepository.findById(shiftId)
-                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
-
-        if (shift.getStatus() != ShiftStatus.OPEN)
-            throw new BadRequestException("Shift is closed");
-
-        Expense expense = Expense.builder()
-                .shiftId(shift.getId())
-                .branchId(shift.getBranchId())
-                .cashierUserId(user.getId())
-                .category(request.getCategory())
-                .amount(request.getAmount())
-                .description(request.getDescription().trim())
-                .build();
-
-        expenseRepository.save(expense);
-
-        shift.setTotalExpenses(shift.getTotalExpenses() + request.getAmount());
-        cashShiftRepository.save(shift);
-
-        return map(shift);
-    }
     @Transactional
     public ShiftResponse addCashDropByShiftId(Long shiftId, CreateCashDropRequest request) {
         if (shiftId == null) {

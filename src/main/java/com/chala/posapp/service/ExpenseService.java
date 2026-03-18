@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.ExpenseResponse;
 import com.chala.posapp.dto.CreateExpenseRequest;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.transaction.Transactional;
@@ -29,14 +30,22 @@ public class ExpenseService {
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
         User user = getLoggedUser();
 
+        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
+            request.setBranchId(user.getBranchId());
+        }
+
         CashShift activeShift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
-                user.getBranchId(), user.getId(), ShiftStatus.OPEN).orElse(null);
+                request.getBranchId(), user.getId(), ShiftStatus.OPEN).orElse(null);
+
+        if (activeShift == null && user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
+            throw new BadRequestException("Cashiers must have an open shift to record expenses from the drawer.");
+        }
 
         Expense expense = Expense.builder()
                 .amount(request.getAmount())
                 .category(request.getCategory())
                 .description(request.getDescription().trim())
-                .branchId(user.getBranchId())
+                .branchId(request.getBranchId())
                 .cashierUserId(user.getId())
                 .shiftId(activeShift != null ? activeShift.getId() : null)
                 .createdAt(LocalDateTime.now())
@@ -44,11 +53,10 @@ public class ExpenseService {
 
         Expense savedExpense = expenseRepository.save(expense);
 
-        if (activeShift != null) {
+        if (request.isFromDrawer() && activeShift != null) {
             activeShift.setTotalExpenses(activeShift.getTotalExpenses() + request.getAmount());
             cashShiftRepository.save(activeShift);
         }
-
         return mapToResponse(savedExpense);
     }
 

@@ -52,11 +52,11 @@ public class ShiftController {
     }
 
     // add expense
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-    @PostMapping("/expense")
-    public ResponseEntity<ShiftResponse> expense(@Valid @RequestBody CreateExpenseRequest request) {
-        return ResponseEntity.ok(shiftService.addExpense(request));
-    }
+//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+//    @PostMapping("/expense")
+//    public ResponseEntity<ShiftResponse> expense(@Valid @RequestBody CreateExpenseRequest request) {
+//        return ResponseEntity.ok(shiftService.addExpense(request));
+//    }
 
     // add cash drop
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
@@ -96,14 +96,14 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.closeShiftById(shiftId, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @PostMapping("/{shiftId}/expense")
-    public ResponseEntity<ShiftResponse> expenseById(
-            @PathVariable(name = "shiftId") Long shiftId,
-            @Valid @RequestBody CreateExpenseRequest request
-    ) {
-        return ResponseEntity.ok(shiftService.addExpenseByShiftId(shiftId, request));
-    }
+//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+//    @PostMapping("/{shiftId}/expense")
+//    public ResponseEntity<ShiftResponse> expenseById(
+//            @PathVariable(name = "shiftId") Long shiftId,
+//            @Valid @RequestBody CreateExpenseRequest request
+//    ) {
+//        return ResponseEntity.ok(shiftService.addExpenseByShiftId(shiftId, request));
+//    }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{shiftId}/cashdrop")

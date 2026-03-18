@@ -18,6 +18,8 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByNameContainingIgnoreCase(String name);
 
+    List<Item> findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(String name, String barcode);
+
     @Query(value = """
             SELECT 
                 i.id,                       -- [0]

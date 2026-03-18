@@ -26,6 +26,9 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping
     public ResponseEntity<ItemResponse> create(@Valid @RequestBody ItemCreateRequest request) {
+        System.out.println("start");
+        System.out.println(request);
+        System.out.println("end");
         return ResponseEntity.ok(itemService.createItem(request));
     }
 
@@ -67,7 +70,6 @@ public class ItemController {
             @RequestParam(name = "name") String name,  
             @RequestParam(name = "branchId", required = false) Long branchId  
     ) {
-        System.out.println("called22222222");
         return ResponseEntity.ok(itemService.searchByName(name, branchId));
     }
 
@@ -90,5 +92,19 @@ public class ItemController {
     public ResponseEntity<?> deactivate(@PathVariable(name = "id") Long id) {  
         itemService.deactivateItem(id);
         return ResponseEntity.ok("Item deactivated");
+    }
+
+    @GetMapping("/recent")
+    public ResponseEntity<List<ItemResponse>> getRecentItems(
+            @RequestParam(name = "limit", defaultValue = "50") int limit) {
+        List<ItemResponse> recentItems = itemService.getRecentlyAddedItems(limit);
+        return ResponseEntity.ok(recentItems);
+    }
+
+    @GetMapping("/search-print")
+    public ResponseEntity<List<ItemResponse>> searchItemsForPrint(@RequestParam(name= "query") String query) {
+
+        List<ItemResponse> items = itemService.searchForBarcodePrint(query);
+        return ResponseEntity.ok(items);
     }
 }

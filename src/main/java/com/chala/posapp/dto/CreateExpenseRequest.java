@@ -15,6 +15,11 @@ public class CreateExpenseRequest {
     @Min(1)
     private double amount;
 
+    @NotNull
+    private Long branchId;
+
+    private boolean isFromDrawer=true;
+
     @NotBlank
     private String description;
 }

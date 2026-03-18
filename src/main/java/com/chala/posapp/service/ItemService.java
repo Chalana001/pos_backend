@@ -13,6 +13,9 @@ import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,10 +39,16 @@ public class ItemService {
     private final StockBatchRepository stockBatchRepository;
 
     public ItemResponse createItem(ItemCreateRequest request) {
-        String barcode = request.getBarcode().trim();
 
-        if (itemRepository.existsByBarcode(barcode))
-            throw new AlreadyExistsException("Barcode already exists: " + barcode);
+        String barcode = request.getBarcode() != null ? request.getBarcode().trim() : "";
+
+        if (barcode.isEmpty()) {
+            barcode = generateFiveDigitBarcode();
+        } else {
+            if (itemRepository.existsByBarcode(barcode)) {
+                throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
+            }
+        }
 
         SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                 .orElseThrow(() -> new RuntimeException("SubCategory not found with ID: " + request.getSubCategoryId()));
@@ -58,6 +68,15 @@ public class ItemService {
 
     @Transactional
     public List<ItemResponse> bulkCreate(List<ItemCreateRequest> requestList) {
+
+        requestList.forEach(req -> {
+            if (req.getBarcode() == null || req.getBarcode().trim().isEmpty()) {
+                req.setBarcode(generateFiveDigitBarcode());
+            } else {
+                req.setBarcode(req.getBarcode().trim());
+            }
+        });
+
         List<String> incomingBarcodes = requestList.stream()
                 .map(ItemCreateRequest::getBarcode)
                 .toList();
@@ -72,12 +91,13 @@ public class ItemService {
                             .orElseThrow(() -> new RuntimeException("SubCategory ID " + req.getSubCategoryId() + " not found"));
 
                     return Item.builder()
-                            .name(req.getName())
+                            .name(req.getName().trim())
                             .barcode(req.getBarcode())
                             .subCategory(subCat)
                             .costPrice(req.getCostPrice())
                             .sellingPrice(req.getSellingPrice())
                             .reorderLevel(req.getReorderLevel())
+                            .imageUrl(req.getImageUrl())
                             .active(true)
                             .build();
                 })
@@ -88,7 +108,6 @@ public class ItemService {
                 .toList();
     }
 
-    // --- READ / SEARCH ---
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
@@ -168,18 +187,23 @@ public class ItemService {
         }).collect(Collectors.toList());
     }
 
-//    public List<ItemResponse> searchByName(String name, Long branchId) {
-//        List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
-//
-//        return items.stream().map(item -> {
-//            Double qty = null;
-//            if (branchId != null) {
-//                Integer totalQty = stockBatchRepository.getTotalQuantityByItemAndBranch(branchId, item.getId());
-//                qty = totalQty != null ? totalQty.doubleValue() : 0.0;
-//            }
-//            return mapToResponse(item, qty);
-//        }).toList();
-//    }
+    public List<ItemResponse> searchForBarcodePrint(String query) {
+
+        String searchTerm = query.trim();
+
+        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+
+        return items.stream().map(item -> {
+            ItemResponse response = new ItemResponse();
+
+            response.setId(item.getId());
+            response.setBarcode(item.getBarcode());
+            response.setName(item.getName());
+            response.setSellingPrice(item.getSellingPrice());
+
+            return response;
+        }).collect(Collectors.toList());
+    }
 
     public List<ItemResponse> listAll(Boolean activeOnly) {
         return itemRepository.findAll().stream()
@@ -280,5 +304,24 @@ public class ItemService {
         if (v instanceof LocalDateTime ldt) return ldt;
         if (v instanceof Timestamp ts) return ts.toLocalDateTime();
         return Instant.ofEpochMilli(((Number) v).longValue()).atZone(ZoneId.systemDefault()).toLocalDateTime();
+    }
+
+    public String generateFiveDigitBarcode() {
+        String newBarcode;
+        Random random = new Random();
+        do {
+            int randomNumber = 10000 + random.nextInt(90000);
+            newBarcode = String.valueOf(randomNumber);
+        } while (itemRepository.existsByBarcode(newBarcode));
+        return newBarcode;
+    }
+
+    public List<ItemResponse> getRecentlyAddedItems(int limit) {
+
+        Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));
+
+        return itemRepository.findAll(pageable).stream()
+                .map(this::mapToResponse)
+                .toList();
     }
 }

@@ -11,7 +11,7 @@ import java.util.Optional;
 
 public interface CashShiftRepository extends JpaRepository<CashShift, Long>, JpaSpecificationExecutor<CashShift> {
 
-    Optional<CashShift> findByBranchIdAndCashierUserIdAndStatus(Long branchId, Long cashierUserId, ShiftStatus status);
+    Optional<CashShift> findByBranchIdAndCashierUserIdAndStatus(@Param("branchId") Long branchId, @Param("cashierUserId") Long cashierUserId, @Param("status") ShiftStatus status);
 
     List<CashShift> findAllByBranchIdAndStatus(Long branchId, ShiftStatus status);
 
