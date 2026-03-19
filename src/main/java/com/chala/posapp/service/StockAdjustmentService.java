@@ -73,49 +73,30 @@ public class StockAdjustmentService {
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
+        if (request.getBatchId() == null) {
+            throw new BadRequestException("Batch ID is required");
+        }
+
+        StockBatch batch = stockBatchRepository.findById(request.getBatchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));
+
+        if (!batch.getBranch().getId().equals(request.getBranchId())) {
+            throw new BadRequestException("Selected batch does not belong to this branch");
+        }
+        if (!batch.getItem().getId().equals(request.getItemId())) {
+            throw new BadRequestException("Selected batch does not belong to this item");
+        }
+
         int qtyChange = computeQtyChange(request.getType(), request.getQty());
 
-        if (qtyChange > 0) {
-
-            StockBatch newBatch = StockBatch.builder()
-                    .branch(branch)
-                    .item(item)
-                    .quantity(qtyChange)
-                    .originalQuantity(qtyChange)
-                    .costPrice(item.getCostPrice())
-                    .sellingPrice(item.getSellingPrice())
-                    .batchCode("ADJ-" + System.currentTimeMillis())
-                    .receivedAt(LocalDateTime.now())
-                    .build();
-
-            stockBatchRepository.save(newBatch);
-
-        } else {
-
+        if (qtyChange < 0) {
             int qtyToRemove = Math.abs(qtyChange);
-
-            Integer currentTotalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(request.getBranchId(), request.getItemId());
-            if (currentTotalStock == null || currentTotalStock < qtyToRemove) {
-                throw new BadRequestException("Not enough stock to reduce. Current: " + (currentTotalStock == null ? 0 : currentTotalStock));
-            }
-
-            List<StockBatch> batches = stockBatchRepository.findAvailableBatches(request.getBranchId(), request.getItemId());
-
-            for (StockBatch batch : batches) {
-                if (qtyToRemove == 0) break;
-
-                int availableInBatch = batch.getQuantity();
-
-                if (availableInBatch >= qtyToRemove) {
-                    batch.setQuantity(availableInBatch - qtyToRemove);
-                    qtyToRemove = 0;
-                } else {
-                    batch.setQuantity(0);
-                    qtyToRemove -= availableInBatch;
-                }
-                stockBatchRepository.save(batch);
+            if (batch.getQuantity() < qtyToRemove) {
+                throw new BadRequestException("Not enough stock in the selected batch to reduce. Available: " + batch.getQuantity());
             }
         }
+        batch.setQuantity(batch.getQuantity() + qtyChange);
+        stockBatchRepository.save(batch);
 
         StockAdjustment adjustment = StockAdjustment.builder()
                 .branchId(request.getBranchId())

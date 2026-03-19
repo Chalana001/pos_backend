@@ -125,66 +125,140 @@ public class ItemService {
             return mapToResponse(item, totalQty != null ? totalQty.doubleValue() : 0.0);
         }
     }
+//meka wada karaaaa
+//    public List<ItemResponse> searchByName(String name, Long branchId) {
+//
+//        List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
+//
+//        return items.stream().map(item -> {
+//            ItemResponse response = new ItemResponse();
+//
+//            response.setId(item.getId());
+//            response.setBarcode(item.getBarcode());
+//            response.setName(item.getName());
+//            response.setImageUrl(item.getImageUrl());
+//            response.setReorderLevel(item.getReorderLevel());
+//            response.setActive(item.isActive());
+//            response.setCreatedAt(item.getCreatedAt());
+//
+//            if (item.getSubCategory() != null) {
+//                response.setSubCategoryId(item.getSubCategory().getId());
+//                response.setSubCategoryName(item.getSubCategory().getName());
+//
+//                if (item.getSubCategory().getCategory() != null) {
+//                    response.setCategoryId(item.getSubCategory().getCategory().getId());
+//                    response.setCategoryName(item.getSubCategory().getCategory().getName());
+//                }
+//            }
+//
+//            response.setCostPrice(item.getCostPrice());
+//
+//            List<StockBatchResponse> batchDTOs = new ArrayList<>();
+//            Double totalAvailableQty = 0.0;
+//            BigDecimal currentDisplayPrice = item.getSellingPrice();
+//
+//            if (branchId != null) {
+//
+//                List<StockBatch> activeBatches = stockBatchRepository
+//                        .findByBranchIdAndItemIdAndQuantityGreaterThanOrderByIdAsc(branchId, item.getId(), 0.0);
+//
+//                batchDTOs = activeBatches.stream().map(batch -> new StockBatchResponse(
+//                        batch.getId(),
+//                        batch.getSellingPrice(),
+//                        batch.getQuantity(),
+//                        batch.getExpireDate()
+//                )).collect(Collectors.toList());
+//
+//                totalAvailableQty = batchDTOs.stream()
+//                        .mapToDouble(StockBatchResponse::getQty)
+//                        .sum();
+//
+//                if (!batchDTOs.isEmpty()) {
+//                    currentDisplayPrice = batchDTOs.get(0).getPrice();
+//                }
+//            }
+//
+//            response.setBatches(batchDTOs);
+//            response.setAvailableQty(totalAvailableQty);
+//            response.setSellingPrice(currentDisplayPrice);
+//
+//            return response;
+//
+//        }).collect(Collectors.toList());
+//    }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
 
         List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
 
         return items.stream().map(item -> {
-            ItemResponse response = new ItemResponse();
+                    ItemResponse response = new ItemResponse();
 
-            response.setId(item.getId());
-            response.setBarcode(item.getBarcode());
-            response.setName(item.getName());
-            response.setImageUrl(item.getImageUrl());
-            response.setReorderLevel(item.getReorderLevel());
-            response.setActive(item.isActive());
-            response.setCreatedAt(item.getCreatedAt());
+                    response.setId(item.getId());
+                    response.setBarcode(item.getBarcode());
+                    response.setName(item.getName());
+                    response.setImageUrl(item.getImageUrl());
+                    response.setReorderLevel(item.getReorderLevel());
+                    response.setActive(item.isActive());
+                    response.setCreatedAt(item.getCreatedAt());
+                    response.setCostPrice(item.getCostPrice());
 
-            if (item.getSubCategory() != null) {
-                response.setSubCategoryId(item.getSubCategory().getId());
-                response.setSubCategoryName(item.getSubCategory().getName());
+                    if (item.getSubCategory() != null) {
+                        response.setSubCategoryId(item.getSubCategory().getId());
+                        response.setSubCategoryName(item.getSubCategory().getName());
 
-                if (item.getSubCategory().getCategory() != null) {
-                    response.setCategoryId(item.getSubCategory().getCategory().getId());
-                    response.setCategoryName(item.getSubCategory().getCategory().getName());
-                }
-            }
+                        if (item.getSubCategory().getCategory() != null) {
+                            response.setCategoryId(item.getSubCategory().getCategory().getId());
+                            response.setCategoryName(item.getSubCategory().getCategory().getName());
+                        }
+                    }
 
-            response.setCostPrice(item.getCostPrice());
+                    List<StockBatchResponse> batchDTOs = new ArrayList<>();
+                    Double totalAvailableQty = 0.0;
+                    BigDecimal currentDisplayPrice = item.getSellingPrice();
 
-            List<StockBatchResponse> batchDTOs = new ArrayList<>();
-            Double totalAvailableQty = 0.0;
-            BigDecimal currentDisplayPrice = item.getSellingPrice();
+                    if (branchId != null) {
+                        // ✅ වෙනස 1: Qty > 0 ඒවා විතරක් නෙවෙයි, මේ Item එකට අදාල මේ Branch එකේ තියෙන 'ඔක්කොම' Batches ගන්නවා.
+                        List<StockBatch> allBranchBatches = stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
 
-            if (branchId != null) {
+                        // ✅ වෙනස 2: කවදාවත්ම මේ Branch එකට මේ බඩුව ගෙනැල්ලා නැත්නම් (Batches මුකුත්ම නැත්නම්), null return කරනවා (පස්සේ මේක filter කරලා අයින් කරනවා)
+                        if (allBranchBatches.isEmpty()) {
+                            return null;
+                        }
 
-                List<StockBatch> activeBatches = stockBatchRepository
-                        .findByBranchIdAndItemIdAndQuantityGreaterThanOrderByIdAsc(branchId, item.getId(), 0.0);
+                        // විකුණන්න පුළුවන් (Qty > 0) Batches ටික විතරක් වෙන් කරගන්නවා
+                        List<StockBatch> activeBatches = allBranchBatches.stream()
+                                .filter(b -> b.getQuantity() > 0)
+                                .toList();
 
-                batchDTOs = activeBatches.stream().map(batch -> new StockBatchResponse(
-                        batch.getId(),
-                        batch.getSellingPrice(),
-                        batch.getQuantity(),
-                        batch.getExpireDate()
-                )).collect(Collectors.toList());
+                        batchDTOs = activeBatches.stream().map(batch -> new StockBatchResponse(
+                                batch.getId(),
+                                batch.getSellingPrice(),
+                                batch.getQuantity(),
+                                batch.getExpireDate()
+                        )).collect(Collectors.toList());
 
-                totalAvailableQty = batchDTOs.stream()
-                        .mapToDouble(StockBatchResponse::getQty)
-                        .sum();
+                        totalAvailableQty = batchDTOs.stream()
+                                .mapToDouble(StockBatchResponse::getQty)
+                                .sum();
 
-                if (!batchDTOs.isEmpty()) {
-                    currentDisplayPrice = batchDTOs.get(0).getPrice();
-                }
-            }
+                        if (!batchDTOs.isEmpty()) {
+                            currentDisplayPrice = batchDTOs.get(0).getPrice(); // Qty තියෙන අලුත්ම මිල
+                        } else if (!allBranchBatches.isEmpty()) {
+                            // බඩු ඉවර වෙලා නම්, අන්තිමට විකුණපු මිල පෙන්නනවා (Out of stock පෙන්නන්න ලේසි වෙන්න)
+                            currentDisplayPrice = allBranchBatches.get(allBranchBatches.size() - 1).getSellingPrice();
+                        }
+                    }
 
-            response.setBatches(batchDTOs);
-            response.setAvailableQty(totalAvailableQty);
-            response.setSellingPrice(currentDisplayPrice);
+                    response.setBatches(batchDTOs);
+                    response.setAvailableQty(totalAvailableQty);
+                    response.setSellingPrice(currentDisplayPrice);
 
-            return response;
+                    return response;
 
-        }).collect(Collectors.toList());
+                })
+                .filter(java.util.Objects::nonNull) // ✅ වෙනස 3: අර උඩින් null කරපු (කවදාවත් ගෙනාවේ නැති) Items ටික List එකෙන් අයින් කරලා දානවා
+                .collect(Collectors.toList());
     }
 
     public List<ItemResponse> searchForBarcodePrint(String query) {

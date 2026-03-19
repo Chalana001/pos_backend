@@ -51,8 +51,9 @@ public class StockTransferController {
         return ResponseEntity.ok(transferService.outgoingPending(branchId));
     }
 
+    // ✅ වෙනස් කරපු තැන: පැටලෙන්නේ නැති වෙන්න /details/ කියන කෑල්ල ඉස්සරහට දැම්මා
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @GetMapping("/{transferNo}")
+    @GetMapping("/details/{transferNo}")
     public ResponseEntity<StockTransferResponse> get(@PathVariable("transferNo") String transferNo) {
         return ResponseEntity.ok(transferService.getTransfer(transferNo));
     }

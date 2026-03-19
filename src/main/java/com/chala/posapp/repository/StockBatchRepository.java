@@ -41,4 +41,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
             "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice")
     List<StockResponseWithItems> getStockSummary(@Param("branchId") Long branchId);
+
+    List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
 }

@@ -47,8 +47,7 @@ public class ItemController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{id}")
-    public ResponseEntity<ItemResponse> get(@PathVariable(name = "id") Long id) {  
-        System.out.println("called");
+    public ResponseEntity<ItemResponse> get(@PathVariable(name = "id") Long id) {
         return ResponseEntity.ok(itemService.getItem(id));
     }
 

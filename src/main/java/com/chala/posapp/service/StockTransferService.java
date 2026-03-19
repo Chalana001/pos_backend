@@ -62,8 +62,9 @@ public class StockTransferService {
         if (request.getItems() == null || request.getItems().isEmpty())
             throw new BadRequestException("Transfer items required");
 
-
-        validateBranches(request.getFromBranchId(), request.getToBranchId());
+        if (request.getFromBranchId().equals(request.getToBranchId())) {
+            throw new BadRequestException("Cannot transfer stock to the same branch");
+        }
 
         if (user.getRole() == Role.MANAGER) {
             if (user.getBranchId() == null)
@@ -81,35 +82,33 @@ public class StockTransferService {
             Item item = itemRepository.findById(ri.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + ri.getItemId()));
 
+            if (ri.getBatchId() == null) {
+                throw new BadRequestException("Batch ID is required for item: " + item.getName());
+            }
+
+            StockBatch batch = stockBatchRepository.findById(ri.getBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));
+
+            if (!batch.getBranch().getId().equals(request.getFromBranchId())) {
+                throw new BadRequestException("Selected batch does not belong to the source branch");
+            }
+            if (!batch.getItem().getId().equals(ri.getItemId())) {
+                throw new BadRequestException("Selected batch does not match the requested item");
+            }
+
             int qtyNeeded = ri.getQty();
-
-            Integer currentTotalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(request.getFromBranchId(), item.getId());
-
-            if (currentTotalStock == null || currentTotalStock < qtyNeeded) {
-                throw new RuntimeException("Not enough stock for item: " + item.getName() +
-                        " (Available: " + (currentTotalStock == null ? 0 : currentTotalStock) + ")");
+            if (batch.getQuantity() < qtyNeeded) {
+                throw new BadRequestException("Not enough stock in the selected batch for item: " + item.getName() +
+                        " (Available: " + batch.getQuantity() + ")");
             }
 
-            List<StockBatch> batches = stockBatchRepository.findAvailableBatches(request.getFromBranchId(), item.getId());
-
-            for (StockBatch batch : batches) {
-                if (qtyNeeded == 0) break;
-
-                int availableInBatch = batch.getQuantity();
-
-                if (availableInBatch >= qtyNeeded) {
-                    batch.setQuantity(availableInBatch - qtyNeeded);
-                    qtyNeeded = 0;
-                } else {
-                    batch.setQuantity(0);
-                    qtyNeeded -= availableInBatch;
-                }
-                stockBatchRepository.save(batch);
-            }
+            batch.setQuantity(batch.getQuantity() - qtyNeeded);
+            stockBatchRepository.save(batch);
 
             transferItems.add(StockTransferItem.builder()
                     .transferId(null)
                     .itemId(item.getId())
+                    .batchId(batch.getId())
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
                     .qty(ri.getQty())
@@ -127,7 +126,6 @@ public class StockTransferService {
                 .build();
 
         StockTransfer savedTransfer = transferRepository.save(transfer);
-
         for (StockTransferItem ti : transferItems) {
             ti.setTransferId(savedTransfer.getId());
         }

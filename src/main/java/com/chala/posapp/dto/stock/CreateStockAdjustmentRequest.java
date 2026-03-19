@@ -15,6 +15,9 @@ public class CreateStockAdjustmentRequest {
     @NotNull
     private Long itemId;
 
+    @NotNull(message = "Batch ID is required")
+    private Long batchId;
+
     @NotNull
     private StockAdjustmentType type;
 

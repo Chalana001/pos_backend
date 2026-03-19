@@ -19,6 +19,9 @@ public class StockTransferItem {
     @Column(nullable = false)
     private Long itemId;
 
+    @Column(nullable = false)
+    private Long batchId;
+
     @Column(nullable = false, length = 80)
     private String barcode;
 
