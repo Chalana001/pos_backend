@@ -19,14 +19,14 @@ public class StockController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/branch/{branchId}")
-    public ResponseEntity<List<StockResponseWithItems>> listBranchStock(@PathVariable Long branchId) {
+    public ResponseEntity<List<StockResponseWithItems>> listBranchStock(@PathVariable (name = "branchId") Long branchId) {
         System.out.println("braanch iddd"+branchId);
         return ResponseEntity.ok(stockService.listBranchStock(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/low")
-    public ResponseEntity<List<LowStockResponse>> lowStock(@RequestParam Long branchId) {
+    public ResponseEntity<List<LowStockResponse>> lowStock(@RequestParam (name = "branchId") Long branchId) {
         return ResponseEntity.ok(stockService.lowStock(branchId));
     }
 }

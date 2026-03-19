@@ -1,12 +1,16 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.customer.CustomerCreateRequest;
+import com.chala.posapp.dto.customer.CustomerPaymentRequest;
 import com.chala.posapp.dto.customer.CustomerResponse;
 import com.chala.posapp.dto.customer.CustomerUpdateRequest;
 import com.chala.posapp.entity.Customer;
+import com.chala.posapp.entity.Order;
+import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
+import com.chala.posapp.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +22,7 @@ import java.util.List;
 public class CustomerService {
 
     private final CustomerRepository customerRepository;
+    private final OrderRepository orderRepository;
 
     public CustomerResponse create(CustomerCreateRequest request) {
         String phone = request.getPhone().trim();
@@ -75,6 +80,48 @@ public class CustomerService {
         return map(c);
     }
 
+    @Transactional
+    public CustomerResponse recordPayment(Long customerId, CustomerPaymentRequest request) {
+
+        Customer customer = customerRepository.findById(customerId)
+                .orElseThrow(() -> new RuntimeException("Customer not found with ID: " + customerId));
+
+        double paymentAmount = request.getAmount();
+
+        if (paymentAmount > customer.getDueAmount()) {
+            throw new RuntimeException("Payment amount exceeds the total due amount: " + customer.getDueAmount());
+        }
+
+        customer.setDueAmount(customer.getDueAmount() - paymentAmount);
+        customerRepository.save(customer);
+
+        List<Order> pendingOrders = orderRepository.findPendingCreditOrders(customerId);
+        double remainingPayment = paymentAmount;
+
+        for (Order order : pendingOrders) {
+            if (remainingPayment <= 0) break;
+
+            double orderDue = order.getDueAmount();
+
+            if (remainingPayment >= orderDue) {
+                order.setPaidAmount(order.getPaidAmount() + orderDue);
+                order.setDueAmount(0.0);
+                order.setStatus(OrderStatus.COMPLETED);
+
+                remainingPayment -= orderDue;
+            } else {
+                order.setPaidAmount(order.getPaidAmount() + remainingPayment);
+                order.setDueAmount(orderDue - remainingPayment);
+                // Status එක වෙනස් කරන්නේ නෑ, මොකද තව ණය ඉතුරුයි
+
+                remainingPayment = 0; // සල්ලි ඉවරයි
+            }
+            orderRepository.save(order);
+        }
+
+        return map(customer);
+    }
+
     private CustomerResponse map(Customer c) {
         return CustomerResponse.builder()
                 .id(c.getId())
@@ -87,6 +134,5 @@ public class CustomerService {
                 .createdAt(c.getCreatedAt())
                 .build();
     }
-
 
 }

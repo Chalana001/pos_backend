@@ -26,16 +26,17 @@ public class OrderController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{invoiceNo}")
-    public ResponseEntity<OrderResponse> get(@PathVariable String invoiceNo) {
+    public ResponseEntity<OrderResponse> get(@PathVariable("invoiceNo") String invoiceNo) {
         return ResponseEntity.ok(orderService.getOrder(invoiceNo));
     }
 
     // cancel order
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/{invoiceNo}/cancel")
-    public ResponseEntity<OrderResponse> cancel(@PathVariable String invoiceNo,
-                                                @Valid @RequestBody CancelOrderRequest request) {
+    public ResponseEntity<OrderResponse> cancel(
+            @PathVariable("invoiceNo") String invoiceNo,
+            @Valid @RequestBody CancelOrderRequest request
+    ) {
         return ResponseEntity.ok(orderService.cancelOrder(invoiceNo, request));
     }
-
 }

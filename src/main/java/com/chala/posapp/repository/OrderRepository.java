@@ -10,6 +10,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
@@ -38,4 +39,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByCustomerId(Long customerId, Pageable pageable);
 
     Page<Order> findByCustomerIdAndOrderType(Long customerId, OrderType orderType, Pageable pageable);
+
+    @Query("SELECT o FROM Order o WHERE o.customerId = :customerId " +
+            "AND o.orderType = 'CREDIT' AND o.dueAmount > 0 " +
+            "ORDER BY o.createdAt ASC")
+    List<Order> findPendingCreditOrders(@Param("customerId") Long customerId);
 }

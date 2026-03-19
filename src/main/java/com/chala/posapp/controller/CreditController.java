@@ -28,7 +28,7 @@ public class CreditController {
     // payment history
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/payments/{customerId}")
-    public ResponseEntity<List<CreditPaymentResponse>> history(@PathVariable Long customerId) {
+    public ResponseEntity<List<CreditPaymentResponse>> history(@PathVariable (name = "customerId") Long customerId) {
         return ResponseEntity.ok(creditService.paymentHistory(customerId));
     }
 }

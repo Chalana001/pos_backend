@@ -26,9 +26,6 @@ public class ItemController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping
     public ResponseEntity<ItemResponse> create(@Valid @RequestBody ItemCreateRequest request) {
-        System.out.println("start");
-        System.out.println(request);
-        System.out.println("end");
         return ResponseEntity.ok(itemService.createItem(request));
     }
 

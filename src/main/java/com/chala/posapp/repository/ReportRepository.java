@@ -12,7 +12,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -20,7 +20,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED' AND o.order_type = 'CASH'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -28,7 +28,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED' AND o.order_type = 'CREDIT'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -36,7 +36,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.bill_discount),0) FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -44,7 +44,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COUNT(*) FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
@@ -57,7 +57,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(oi.line_total),0) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY oi.item_id, oi.item_name
@@ -75,7 +75,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(oi.line_total - (oi.qty * oi.cost_price)),0) AS profit
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY oi.item_id, oi.item_name
@@ -88,7 +88,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         SELECT DATE(o.created_at) AS date, COALESCE(SUM(o.grand_total),0) AS sales, COUNT(o.id) AS orders
         FROM orders o
         WHERE o.status = 'COMPLETED'
-          AND (:branchId IS NULL OR o.branch_id = :branchId)
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE(o.created_at)
         ORDER BY DATE(o.created_at)
@@ -102,7 +102,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         JOIN items i ON i.id = oi.item_id
         JOIN sub_categories sc ON sc.id = i.sub_category_id
         JOIN categories c ON c.id = sc.category_id
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY c.name
@@ -112,7 +112,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT o.id, o.invoice_no, o.grand_total, o.order_type, o.created_at
         FROM orders o
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
         ORDER BY o.created_at DESC
         LIMIT 10
@@ -128,7 +128,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(o.grand_total), 0) as total_spent
         FROM orders o
         JOIN customers c ON c.id = o.customer_id
-        WHERE (:branchId IS NULL OR o.branch_id = :branchId)
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
         GROUP BY c.id, c.name, c.phone
         ORDER BY total_spent DESC
@@ -137,54 +137,53 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     List<Object[]> topCustomersRaw(@Param("branchId") Long branchId, @Param("limitValue") int limitValue);
 
     @Query(value = """
-    SELECT 
-        s.id, 
-        s.name, 
-        s.phone, 
-        COUNT(p.id) as purchase_count, 
-        COALESCE(SUM(p.grand_total), 0) as total_purchased
-    FROM purchase p
-    JOIN suppliers s ON s.id = p.supplier_id
-    -- WHERE කොටස අයින් කළ නිසා branchId මෙතනට ඕන නෑ
-    GROUP BY s.id, s.name, s.phone
-    ORDER BY total_purchased DESC
-    LIMIT :limitValue
-""", nativeQuery = true)
+        SELECT 
+            s.id, 
+            s.name, 
+            s.phone, 
+            COUNT(p.id) as purchase_count, 
+            COALESCE(SUM(p.grand_total), 0) as total_purchased
+        FROM purchase p
+        JOIN suppliers s ON s.id = p.supplier_id
+        GROUP BY s.id, s.name, s.phone
+        ORDER BY total_purchased DESC
+        LIMIT :limitValue
+    """, nativeQuery = true)
     List<Object[]> topSuppliersRaw(@Param("limitValue") int limitValue);
 
     @Query(value = """
-    SELECT COALESCE(SUM(amount), 0)
-    FROM expenses
-    WHERE (:branchId = 0 OR branch_id = :branchId)
-      AND created_at BETWEEN :fromDate AND :toDate
-""", nativeQuery = true)
+        SELECT COALESCE(SUM(amount), 0)
+        FROM expenses
+        WHERE (:branchId = 0 OR branch_id = :branchId)
+          AND created_at BETWEEN :fromDate AND :toDate
+    """, nativeQuery = true)
     double getTotalExpenses(@Param("branchId") Long branchId,
                             @Param("fromDate") LocalDateTime fromDate,
                             @Param("toDate") LocalDateTime toDate);
 
 
     @Query(value = """
-    SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
-    FROM orders o
-    WHERE (:branchId = 0 OR o.branch_id = :branchId)
-      AND o.status = 'COMPLETED'
-      AND o.created_at BETWEEN :fromDate AND :toDate
-    GROUP BY DATE(o.created_at)
-    ORDER BY day
-""", nativeQuery = true)
+        SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
+        FROM orders o
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.status = 'COMPLETED'
+          AND o.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY DATE(o.created_at)
+        ORDER BY day
+    """, nativeQuery = true)
     List<Object[]> dailySalesRaw(@Param("branchId") Long branchId,
                                  @Param("fromDate") LocalDateTime fromDate,
                                  @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
-    SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
-    FROM orders o
-    WHERE (:branchId = 0 OR o.branch_id = :branchId)
-      AND o.status = 'COMPLETED'
-      AND o.created_at BETWEEN :fromDate AND :toDate
-    GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
-    ORDER BY month
-""", nativeQuery = true)
+        SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
+        FROM orders o
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.status = 'COMPLETED'
+          AND o.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
+        ORDER BY month
+    """, nativeQuery = true)
     List<Object[]> monthlySalesRaw(@Param("branchId") Long branchId,
                                    @Param("fromDate") LocalDateTime fromDate,
                                    @Param("toDate") LocalDateTime toDate);

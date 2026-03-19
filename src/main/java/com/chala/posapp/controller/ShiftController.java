@@ -47,7 +47,6 @@ public class ShiftController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/me")
     public ResponseEntity<ShiftResponse> myShift() {
-        System.out.println("called me");
         return ResponseEntity.ok(shiftService.getMyCurrentShift());
     }
 
@@ -81,7 +80,6 @@ public class ShiftController {
             @RequestParam(name = "branchId") Long branchId,
             @Valid @RequestBody OpenShiftRequest request
     ) {
-        System.out.println(request);
         return ResponseEntity.ok(shiftService.openShiftByBranch(branchId, request));
     }
 
@@ -93,15 +91,6 @@ public class ShiftController {
     ) {
         return ResponseEntity.ok(shiftService.closeShiftById(shiftId, request));
     }
-
-//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-//    @PostMapping("/{shiftId}/expense")
-//    public ResponseEntity<ShiftResponse> expenseById(
-//            @PathVariable(name = "shiftId") Long shiftId,
-//            @Valid @RequestBody CreateExpenseRequest request
-//    ) {
-//        return ResponseEntity.ok(shiftService.addExpenseByShiftId(shiftId, request));
-//    }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{shiftId}/cashdrop")

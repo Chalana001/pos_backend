@@ -27,44 +27,45 @@ public class StockTransferController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{transferId}/receive")
-    public ResponseEntity<StockTransferResponse> receiveById(@PathVariable Long transferId) {
+    public ResponseEntity<StockTransferResponse> receiveById(@PathVariable("transferId") Long transferId) {
         return ResponseEntity.ok(transferService.receiveTransferById(transferId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{transferId}/cancel")
-    public ResponseEntity<StockTransferResponse> cancelById(@PathVariable Long transferId,
-                                                            @Valid @RequestBody CancelTransferRequest request) {
+    public ResponseEntity<StockTransferResponse> cancelById(
+            @PathVariable("transferId") Long transferId,
+            @Valid @RequestBody CancelTransferRequest request) {
         return ResponseEntity.ok(transferService.cancelTransferById(transferId, request));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/incoming/{branchId}/pending")
-    public ResponseEntity<List<StockTransferResponse>> incomingPending(@PathVariable Long branchId) {
+    public ResponseEntity<List<StockTransferResponse>> incomingPending(@PathVariable("branchId") Long branchId) {
         return ResponseEntity.ok(transferService.incomingPending(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/outgoing/{branchId}/pending")
-    public ResponseEntity<List<StockTransferResponse>> outgoingPending(@PathVariable Long branchId) {
+    public ResponseEntity<List<StockTransferResponse>> outgoingPending(@PathVariable("branchId") Long branchId) {
         return ResponseEntity.ok(transferService.outgoingPending(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/{transferNo}")
-    public ResponseEntity<StockTransferResponse> get(@PathVariable String transferNo) {
+    public ResponseEntity<StockTransferResponse> get(@PathVariable("transferNo") String transferNo) {
         return ResponseEntity.ok(transferService.getTransfer(transferNo));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/outgoing/{fromBranchId}")
-    public ResponseEntity<List<StockTransferResponse>> outgoing(@PathVariable Long fromBranchId) {
+    public ResponseEntity<List<StockTransferResponse>> outgoing(@PathVariable("fromBranchId") Long fromBranchId) {
         return ResponseEntity.ok(transferService.listOutgoing(fromBranchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/incoming/{toBranchId}")
-    public ResponseEntity<List<StockTransferResponse>> incoming(@PathVariable Long toBranchId) {
+    public ResponseEntity<List<StockTransferResponse>> incoming(@PathVariable("toBranchId") Long toBranchId) {
         return ResponseEntity.ok(transferService.listIncoming(toBranchId));
     }
 }

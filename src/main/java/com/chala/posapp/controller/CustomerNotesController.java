@@ -21,9 +21,9 @@ public class CustomerNotesController {
     // ✅ list notes (paged) - stable response
     @GetMapping("/customers/{customerId}/notes")
     public ResponseEntity<PageResponse<CustomerNoteResponse>> list(
-            @PathVariable Long customerId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size
+            @PathVariable (name = "customerId")Long customerId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "50") int size
     ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
@@ -44,7 +44,7 @@ public class CustomerNotesController {
 
     @PostMapping("/customers/{customerId}/notes")
     public ResponseEntity<CustomerNoteResponse> create(
-            @PathVariable Long customerId,
+            @PathVariable (name = "customerId") Long customerId,
             @Valid @RequestBody CustomerNoteCreateRequest request
     ) {
         return ResponseEntity.ok(service.create(customerId, request));
@@ -52,7 +52,7 @@ public class CustomerNotesController {
 
     @PutMapping("/customer-notes/{noteId}")
     public ResponseEntity<CustomerNoteResponse> update(
-            @PathVariable Long noteId,
+            @PathVariable (name = "noteId")Long noteId,
             @Valid @RequestBody CustomerNoteUpdateRequest request
     ) {
         return ResponseEntity.ok(service.update(noteId, request));
@@ -60,7 +60,7 @@ public class CustomerNotesController {
 
 
     @DeleteMapping("/customer-notes/{noteId}")
-    public ResponseEntity<Void> delete(@PathVariable Long noteId) {
+    public ResponseEntity<Void> delete(@PathVariable (name = "noteId") Long noteId) {
         service.delete(noteId);
         return ResponseEntity.noContent().build();
     }

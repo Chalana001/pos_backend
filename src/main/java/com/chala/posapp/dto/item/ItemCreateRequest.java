@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 
 @Data
 public class ItemCreateRequest {
-    @NotBlank
+
     private String barcode;
 
     @NotBlank

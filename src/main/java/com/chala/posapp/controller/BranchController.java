@@ -28,7 +28,7 @@ public class BranchController {
     // ADMIN/MANAGER can view
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/{id}")
-    public ResponseEntity<BranchResponse> get(@PathVariable Long id) {
+    public ResponseEntity<BranchResponse> get(@PathVariable (name = "id") Long id) {
         return ResponseEntity.ok(branchService.getBranch(id));
     }
 
@@ -54,7 +54,7 @@ public class BranchController {
     // ADMIN only - deactivate branch
     @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deactivate(@PathVariable Long id) {
+    public ResponseEntity<?> deactivate(@PathVariable(name = "id") Long id) {
         branchService.deleteBranch(id);
         return ResponseEntity.ok("Branch deactivated");
     }

@@ -35,28 +35,31 @@ public class UserManagementController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> get(@PathVariable Long id) {
+    public ResponseEntity<UserResponse> get(@PathVariable("id") Long id) { // Noma danna
         return ResponseEntity.ok(userManagementService.getUser(id));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/assign-branch")
-    public ResponseEntity<?> assignBranch(@PathVariable Long userId,
-                                          @Valid @RequestBody AssignBranchRequest request) {
+    public ResponseEntity<?> assignBranch(
+            @PathVariable("userId") Long userId, // Noma danna
+            @Valid @RequestBody AssignBranchRequest request) {
         return ResponseEntity.ok(userManagementService.assignBranch(userId, request));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/status")
-    public ResponseEntity<?> updateStatus(@PathVariable Long userId,
-                                          @Valid @RequestBody UpdateUserStatusRequest request) {
+    public ResponseEntity<?> updateStatus(
+            @PathVariable("userId") Long userId, // Noma danna
+            @Valid @RequestBody UpdateUserStatusRequest request) {
         return ResponseEntity.ok(userManagementService.updateUserStatus(userId, request));
     }
 
     @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{userId}/reset-password")
-    public ResponseEntity<?> resetPassword(@PathVariable Long userId,
-                                           @Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<?> resetPassword(
+            @PathVariable("userId") Long userId, // Noma danna
+            @Valid @RequestBody ResetPasswordRequest request) {
         return ResponseEntity.ok(userManagementService.resetPassword(userId, request));
     }
 

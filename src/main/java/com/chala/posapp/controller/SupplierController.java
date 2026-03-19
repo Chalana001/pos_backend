@@ -33,7 +33,7 @@ public class SupplierController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<SupplierResponse> getById(@PathVariable Long id) {
+    public ResponseEntity<SupplierResponse> getById(@PathVariable (name = "id") Long id) {
         return ResponseEntity.ok(supplierService.getSupplierById(id));
     }
 

@@ -17,10 +17,10 @@ public class CustomerOrdersController {
 
     @GetMapping("/customers/{customerId}/orders")
     public ResponseEntity<PageResponse<CustomerOrderListResponse>> list(
-            @PathVariable Long customerId,
-            @RequestParam(defaultValue = "ALL") String orderType,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size
+            @PathVariable (name = "customerId") Long customerId,
+            @RequestParam(name = "orderType", defaultValue = "ALL") String orderType,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size
     ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
 
