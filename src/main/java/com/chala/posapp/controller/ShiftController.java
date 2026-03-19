@@ -43,7 +43,7 @@ public class ShiftController {
         return ResponseEntity.ok(shifts);
     }
 
-    // current shift of logged user
+//     current shift of logged user
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/me")
     public ResponseEntity<ShiftResponse> myShift() {
@@ -51,12 +51,10 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getMyCurrentShift());
     }
 
-    // add expense
-//    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-//    @PostMapping("/expense")
-//    public ResponseEntity<ShiftResponse> expense(@Valid @RequestBody CreateExpenseRequest request) {
-//        return ResponseEntity.ok(shiftService.addExpense(request));
-//    }
+    @GetMapping("/admin-current")
+    public ResponseEntity<ShiftResponse> getAdminCurrentShift(@RequestParam(name = "branchId") Long branchId) {
+        return ResponseEntity.ok(shiftService.getAdminShift(branchId));
+    }
 
     // add cash drop
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")

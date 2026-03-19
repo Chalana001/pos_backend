@@ -92,6 +92,24 @@ public class ShiftService {
         return map(shift);
     }
 
+    @Transactional(readOnly = true)
+    public ShiftResponse getAdminShift(Long branchId) {
+        User user = getLoggedUser();
+
+        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
+            throw new RuntimeException("Not allowed: Only Admins/Managers can use this method");
+        }
+        if (branchId == null || branchId == 0) {
+            throw new BadRequestException("Please select a branch first");
+        }
+        CashShift shift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
+                branchId,
+                user.getId(),
+                ShiftStatus.OPEN
+        ).orElseThrow(() -> new ResourceNotFoundException("No active shift found for you in this branch"));
+        return map(shift);
+    }
+
 //    @Transactional
 //    public ShiftResponse addExpense(CreateExpenseRequest request) {
 //        User user = getLoggedUser();
@@ -258,26 +276,35 @@ public class ShiftService {
 //        return map(cashShiftRepository.save(shift));
 //    }
 
-    private ShiftResponse map(CashShift s) {
-        return ShiftResponse.builder()
-                .id(s.getId())
-                .branchId(s.getBranchId())
-                .cashierUserId(s.getCashierUserId())
-                .status(s.getStatus())
-                .openingCash(s.getOpeningCash())
-                .totalExpenses(s.getTotalExpenses())
-                .totalCashDrops(s.getTotalCashDrops())
-                .cashSales(s.getCashSales())
-                .expectedCash(s.getExpectedCash())
-                .countedCash(s.getCountedCash())
-                .cashDifference(s.getCashDifference())
-                .openNote(s.getOpenNote())
-                .closeNote(s.getCloseNote())
-                .openedAt(s.getOpenedAt())
-                .closedAt(s.getClosedAt())
-                .build();
-    }
+//    private ShiftResponse map(CashShift s) {
+//        return ShiftResponse.builder()
+//                .id(s.getId())
+//                .branchId(s.getBranchId())
+//                .cashierUserId(s.getCashierUserId())
+//                .status(s.getStatus())
+//                .openingCash(s.getOpeningCash())
+//                .totalExpenses(s.getTotalExpenses())
+//                .totalCashDrops(s.getTotalCashDrops())
+//                .cashSales(s.getCashSales())
+//                .expectedCash(s.getExpectedCash())
+//                .countedCash(s.getCountedCash())
+//                .cashDifference(s.getCashDifference())
+//                .openNote(s.getOpenNote())
+//                .closeNote(s.getCloseNote())
+//                .openedAt(s.getOpenedAt())
+//                .closedAt(s.getClosedAt())
+//                .build();
+//    }
+
     public List<ShiftResponse> getAllActiveShiftsByBranch(Long branchId) {
+
+        if (branchId == null || branchId == 0) {
+            List<CashShift> allActiveShifts = cashShiftRepository.findAllByStatus(ShiftStatus.OPEN);
+
+            return allActiveShifts.stream()
+                    .map(this::map)
+                    .collect(Collectors.toList());
+        }
 
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found in the system");
@@ -459,6 +486,37 @@ public class ShiftService {
         cashShiftRepository.save(shift);
 
         return map(shift);
+    }
+
+    private ShiftResponse map(CashShift s) {
+        ShiftResponse response = ShiftResponse.builder()
+                .id(s.getId())
+                .branchId(s.getBranchId())
+                .cashierUserId(s.getCashierUserId())
+                .status(s.getStatus())
+                .openingCash(s.getOpeningCash())
+                .totalExpenses(s.getTotalExpenses())
+                .totalCashDrops(s.getTotalCashDrops())
+                .cashSales(s.getCashSales())
+                .expectedCash(s.getExpectedCash())
+                .countedCash(s.getCountedCash())
+                .cashDifference(s.getCashDifference())
+                .openNote(s.getOpenNote())
+                .closeNote(s.getCloseNote())
+                .openedAt(s.getOpenedAt())
+                .closedAt(s.getClosedAt())
+                .build();
+
+        if (s.getBranchId() != null) {
+            branchRepository.findById(s.getBranchId())
+                    .ifPresent(branch -> response.setBranchName(branch.getName()));
+        }
+
+        if (s.getCashierUserId() != null) {
+            userRepository.findById(s.getCashierUserId())
+                    .ifPresent(user -> response.setCashierName(user.getUsername()));
+        }
+        return response;
     }
 
 }

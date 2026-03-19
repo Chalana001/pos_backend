@@ -25,16 +25,16 @@ public class DashboardController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/kpis")
-    public ResponseEntity<DashboardKpiResponse> todayKpis(@RequestParam(required = false) Long branchId) {
+    public ResponseEntity<DashboardKpiResponse> todayKpis(@RequestParam(value = "branchId", required = false) Long branchId) {
         return ResponseEntity.ok(dashboardService.todayKpis(branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/charts/daily")
     public ResponseEntity<List<DailySalesResponse>> dailySales(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+            @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         return ResponseEntity.ok(dashboardService.dailySales(branchId, from, to));
     }
@@ -42,11 +42,10 @@ public class DashboardController {
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/charts/monthly")
     public ResponseEntity<List<MonthlySalesResponse>> monthlySales(
-            @RequestParam(required = false) Long branchId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+            @RequestParam(value = "branchId", required = false) Long branchId,
+            @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
         return ResponseEntity.ok(dashboardService.monthlySales(branchId, from, to));
     }
-
 }
