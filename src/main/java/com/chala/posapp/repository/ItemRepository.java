@@ -1,6 +1,8 @@
 package com.chala.posapp.repository;
 
 import com.chala.posapp.entity.Item;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -64,4 +66,11 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             ORDER BY i.id DESC
             """, nativeQuery = true)
     List<Object[]> itemsWithTotalStockRaw();
+
+    @Query("SELECT i FROM Item i LEFT JOIN i.subCategory sc LEFT JOIN sc.category c " +
+            "WHERE LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))")
+    Page<Item> searchItems(@Param("search") String search, Pageable pageable);
 }

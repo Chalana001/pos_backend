@@ -14,7 +14,12 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins("http://localhost:3000")
+                        .allowedOrigins(
+                                "http://localhost:3000", // Localhost (React/CRA)
+                                "http://localhost:5173", // Localhost (Vite) - ඔයාට ඕන නම් තියාගන්න
+                                "https://pos-frontend-blue-three.vercel.app",
+                                "https://pos-frontend-2uxryhvgy-chalana001s-projects.vercel.app"// 🚀 ඔයාගේ Live Vercel Domain එක
+                        )
                         .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);

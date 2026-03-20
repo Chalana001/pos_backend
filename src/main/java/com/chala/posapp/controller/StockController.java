@@ -4,6 +4,7 @@ import com.chala.posapp.dto.stock.LowStockResponse;
 import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.service.StockService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +20,13 @@ public class StockController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/branch/{branchId}")
-    public ResponseEntity<List<StockResponseWithItems>> listBranchStock(@PathVariable (name = "branchId") Long branchId) {
-        System.out.println("braanch iddd"+branchId);
-        return ResponseEntity.ok(stockService.listBranchStock(branchId));
+    public ResponseEntity<Page<StockResponseWithItems>> listBranchStock(
+            @PathVariable(name = "branchId") Long branchId,
+            @RequestParam(name = "search", required = false, defaultValue = "") String search,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(stockService.listBranchStock(branchId, search, page, size));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

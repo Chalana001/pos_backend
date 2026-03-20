@@ -17,6 +17,7 @@ public class OrderResponse {
     private Long branchId;
     private Long cashierUserId;
     private Long customerId;
+    private String customerName;
     private OrderType orderType;
     private OrderStatus status;
 

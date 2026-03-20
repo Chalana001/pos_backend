@@ -3,6 +3,8 @@ package com.chala.posapp.repository;
 import com.chala.posapp.dto.stock.LowStockResponse;
 import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.entity.stock.StockBatch;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -30,7 +32,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "HAVING SUM(sb.quantity) <= sb.item.reorderLevel")
     List<LowStockResponse> findLowStockItems(@Param("branchId") Long branchId);
 
-    @Query("SELECT new com.chala.posapp.dto.stock.StockResponseWithItems(" +
+    @Query(value = "SELECT new com.chala.posapp.dto.stock.StockResponseWithItems(" +
             "sb.item.id, " +
             "sb.item.barcode, " +
             "sb.item.name, " +
@@ -39,8 +41,17 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "SUM(sb.quantity)) " +
             "FROM StockBatch sb " +
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
-            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice")
-    List<StockResponseWithItems> getStockSummary(@Param("branchId") Long branchId);
+            "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice",
+
+            // GROUP BY තියෙන නිසා අනිවාර්යයෙන්ම මේ Count Query එක ඕනේ. නැත්නම් Exception එකක් එයි.
+            countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
+                    "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
+                    "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<StockResponseWithItems> getStockSummary(
+            @Param("branchId") Long branchId,
+            @Param("search") String search,
+            Pageable pageable);
 
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
 }

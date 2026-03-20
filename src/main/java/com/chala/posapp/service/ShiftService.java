@@ -12,6 +12,10 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -317,8 +321,11 @@ public class ShiftService {
                 .collect(Collectors.toList());
     }
 
-    public List<ShiftResponse> getAllShifts(Long branchId, Long cashierId, LocalDateTime start, LocalDateTime end, ShiftStatus status) {
-        return cashShiftRepository.findAll((root, query, cb) -> {
+    public Page<ShiftResponse> getAllShifts(Long branchId, Long cashierId, LocalDateTime start, LocalDateTime end, ShiftStatus status, int page, int size) {
+
+        Pageable pageable = PageRequest.of(page, size, Sort.by("openedAt").descending());
+
+        Page<CashShift> shiftPage = cashShiftRepository.findAll((root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
             if (branchId != null) predicates.add(cb.equal(root.get("branchId"), branchId));
@@ -328,10 +335,9 @@ public class ShiftService {
             if (start != null && end != null) {
                 predicates.add(cb.between(root.get("openedAt"), start, end));
             }
-
-            query.orderBy(cb.desc(root.get("openedAt")));
             return cb.and(predicates.toArray(new Predicate[0]));
-        }).stream().map(this::map).collect(Collectors.toList());
+        }, pageable);
+        return shiftPage.map(this::map);
     }
 
 //    @Transactional

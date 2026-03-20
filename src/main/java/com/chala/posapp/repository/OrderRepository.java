@@ -44,4 +44,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             "AND o.orderType = 'CREDIT' AND o.dueAmount > 0 " +
             "ORDER BY o.createdAt ASC")
     List<Order> findPendingCreditOrders(@Param("customerId") Long customerId);
+
+    Page<Order> findByInvoiceNoContainingIgnoreCase(String invoiceNo, Pageable pageable);
+
+    Page<Order> findByInvoiceNoContainingIgnoreCaseAndBranchId(String search, Long branchId, Pageable pageable);
+
+    Page<Order> findByBranchId(Long branchId, Pageable pageable);
 }

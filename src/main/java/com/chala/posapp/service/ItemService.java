@@ -13,6 +13,7 @@ import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -108,6 +109,20 @@ public class ItemService {
                 .toList();
     }
 
+    public Page<ItemResponse> getAllItems(String search, int page, int size) {
+        // අලුතින්ම හදපු Item එක උඩින්ම එන්න Sort කරනවා
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Page<Item> itemPage;
+
+        if (search != null && !search.trim().isEmpty()) {
+            itemPage = itemRepository.searchItems(search.trim(), pageable);
+        } else {
+            itemPage = itemRepository.findAll(pageable);
+        }
+
+        return itemPage.map(this::mapToResponse);
+    }
+
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
@@ -125,67 +140,6 @@ public class ItemService {
             return mapToResponse(item, totalQty != null ? totalQty.doubleValue() : 0.0);
         }
     }
-//meka wada karaaaa
-//    public List<ItemResponse> searchByName(String name, Long branchId) {
-//
-//        List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
-//
-//        return items.stream().map(item -> {
-//            ItemResponse response = new ItemResponse();
-//
-//            response.setId(item.getId());
-//            response.setBarcode(item.getBarcode());
-//            response.setName(item.getName());
-//            response.setImageUrl(item.getImageUrl());
-//            response.setReorderLevel(item.getReorderLevel());
-//            response.setActive(item.isActive());
-//            response.setCreatedAt(item.getCreatedAt());
-//
-//            if (item.getSubCategory() != null) {
-//                response.setSubCategoryId(item.getSubCategory().getId());
-//                response.setSubCategoryName(item.getSubCategory().getName());
-//
-//                if (item.getSubCategory().getCategory() != null) {
-//                    response.setCategoryId(item.getSubCategory().getCategory().getId());
-//                    response.setCategoryName(item.getSubCategory().getCategory().getName());
-//                }
-//            }
-//
-//            response.setCostPrice(item.getCostPrice());
-//
-//            List<StockBatchResponse> batchDTOs = new ArrayList<>();
-//            Double totalAvailableQty = 0.0;
-//            BigDecimal currentDisplayPrice = item.getSellingPrice();
-//
-//            if (branchId != null) {
-//
-//                List<StockBatch> activeBatches = stockBatchRepository
-//                        .findByBranchIdAndItemIdAndQuantityGreaterThanOrderByIdAsc(branchId, item.getId(), 0.0);
-//
-//                batchDTOs = activeBatches.stream().map(batch -> new StockBatchResponse(
-//                        batch.getId(),
-//                        batch.getSellingPrice(),
-//                        batch.getQuantity(),
-//                        batch.getExpireDate()
-//                )).collect(Collectors.toList());
-//
-//                totalAvailableQty = batchDTOs.stream()
-//                        .mapToDouble(StockBatchResponse::getQty)
-//                        .sum();
-//
-//                if (!batchDTOs.isEmpty()) {
-//                    currentDisplayPrice = batchDTOs.get(0).getPrice();
-//                }
-//            }
-//
-//            response.setBatches(batchDTOs);
-//            response.setAvailableQty(totalAvailableQty);
-//            response.setSellingPrice(currentDisplayPrice);
-//
-//            return response;
-//
-//        }).collect(Collectors.toList());
-//    }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
 
@@ -218,15 +172,11 @@ public class ItemService {
                     BigDecimal currentDisplayPrice = item.getSellingPrice();
 
                     if (branchId != null) {
-                        // ✅ වෙනස 1: Qty > 0 ඒවා විතරක් නෙවෙයි, මේ Item එකට අදාල මේ Branch එකේ තියෙන 'ඔක්කොම' Batches ගන්නවා.
                         List<StockBatch> allBranchBatches = stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
-
-                        // ✅ වෙනස 2: කවදාවත්ම මේ Branch එකට මේ බඩුව ගෙනැල්ලා නැත්නම් (Batches මුකුත්ම නැත්නම්), null return කරනවා (පස්සේ මේක filter කරලා අයින් කරනවා)
                         if (allBranchBatches.isEmpty()) {
                             return null;
                         }
 
-                        // විකුණන්න පුළුවන් (Qty > 0) Batches ටික විතරක් වෙන් කරගන්නවා
                         List<StockBatch> activeBatches = allBranchBatches.stream()
                                 .filter(b -> b.getQuantity() > 0)
                                 .toList();
@@ -243,9 +193,8 @@ public class ItemService {
                                 .sum();
 
                         if (!batchDTOs.isEmpty()) {
-                            currentDisplayPrice = batchDTOs.get(0).getPrice(); // Qty තියෙන අලුත්ම මිල
+                            currentDisplayPrice = batchDTOs.get(0).getPrice();
                         } else if (!allBranchBatches.isEmpty()) {
-                            // බඩු ඉවර වෙලා නම්, අන්තිමට විකුණපු මිල පෙන්නනවා (Out of stock පෙන්නන්න ලේසි වෙන්න)
                             currentDisplayPrice = allBranchBatches.get(allBranchBatches.size() - 1).getSellingPrice();
                         }
                     }
@@ -257,7 +206,7 @@ public class ItemService {
                     return response;
 
                 })
-                .filter(java.util.Objects::nonNull) // ✅ වෙනස 3: අර උඩින් null කරපු (කවදාවත් ගෙනාවේ නැති) Items ටික List එකෙන් අයින් කරලා දානවා
+                .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
@@ -308,37 +257,37 @@ public class ItemService {
         return mapToResponse(itemRepository.save(item));
     }
 
-    public List<ItemWithStockResponse> itemsWithStock(Long branchId) {
-        User user = authService.getLoggedUser();
-        if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
-            branchId = user.getBranchId();
-        }
-
-        List<Object[]> raw = (branchId != null)
-                ? itemRepository.itemsWithBranchStockRaw(branchId)
-                : itemRepository.itemsWithTotalStockRaw();
-
-        return raw.stream().map(r -> ItemWithStockResponse.builder()
-
-                .id(r[0] != null ? ((Number) r[0]).longValue() : null)
-
-                .barcode(r[1] != null ? r[1].toString() : null)
-                .name(r[2] != null ? r[2].toString() : null)
-                .categoryName(r[3] != null ? r[3].toString() : null)
-                .subCategoryName(r[4] != null ? r[4].toString() : null)
-
-                .costPrice(r[5] != null ? new BigDecimal(r[5].toString()) : BigDecimal.ZERO)
-                .sellingPrice(r[6] != null ? new BigDecimal(r[6].toString()) : BigDecimal.ZERO)
-
-                .reorderLevel(r[7] != null ? ((Number) r[7]).intValue() : 0)
-
-                .active(Boolean.TRUE.equals(r[8]))
-
-                .createdAt(toLocalDateTime(r[9]))
-
-                .quantity(r.length >= 11 && r[10] != null ? ((Number) r[10]).intValue() : 0)
-                .build()).toList();
-    }
+//    public List<ItemWithStockResponse> itemsWithStock(Long branchId) {
+//        User user = authService.getLoggedUser();
+//        if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
+//            branchId = user.getBranchId();
+//        }
+//
+//        List<Object[]> raw = (branchId != null)
+//                ? itemRepository.itemsWithBranchStockRaw(branchId)
+//                : itemRepository.itemsWithTotalStockRaw();
+//
+//        return raw.stream().map(r -> ItemWithStockResponse.builder()
+//
+//                .id(r[0] != null ? ((Number) r[0]).longValue() : null)
+//
+//                .barcode(r[1] != null ? r[1].toString() : null)
+//                .name(r[2] != null ? r[2].toString() : null)
+//                .categoryName(r[3] != null ? r[3].toString() : null)
+//                .subCategoryName(r[4] != null ? r[4].toString() : null)
+//
+//                .costPrice(r[5] != null ? new BigDecimal(r[5].toString()) : BigDecimal.ZERO)
+//                .sellingPrice(r[6] != null ? new BigDecimal(r[6].toString()) : BigDecimal.ZERO)
+//
+//                .reorderLevel(r[7] != null ? ((Number) r[7]).intValue() : 0)
+//
+//                .active(Boolean.TRUE.equals(r[8]))
+//
+//                .createdAt(toLocalDateTime(r[9]))
+//
+//                .quantity(r.length >= 11 && r[10] != null ? ((Number) r[10]).intValue() : 0)
+//                .build()).toList();
+//    }
 
     private ItemResponse mapToResponse(Item item) {
         return mapToResponse(item, null);

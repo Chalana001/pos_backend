@@ -8,6 +8,7 @@ import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.service.ShiftService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -23,27 +24,26 @@ public class ShiftController {
 
     private final ShiftService shiftService;
 
-    // cashier opens shift
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/open")
     public ResponseEntity<ShiftResponse> open(@Valid @RequestBody OpenShiftRequest request) {
         return ResponseEntity.ok(shiftService.openShift(request));
     }
 
-    //histryy
     @GetMapping("/all")
-    public ResponseEntity<List<ShiftResponse>> getAllShifts(
+    public ResponseEntity<Page<ShiftResponse>> getAllShifts(
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "cashierId", required = false) Long cashierId,
             @RequestParam(name = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
             @RequestParam(name = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
-            @RequestParam(name = "status", required = false) ShiftStatus status
+            @RequestParam(name = "status", required = false) ShiftStatus status,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
     ) {
-        List<ShiftResponse> shifts = shiftService.getAllShifts(branchId, cashierId, startDate, endDate, status);
+        Page<ShiftResponse> shifts = shiftService.getAllShifts(branchId, cashierId, startDate, endDate, status, page, size);
         return ResponseEntity.ok(shifts);
     }
 
-//     current shift of logged user
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/me")
     public ResponseEntity<ShiftResponse> myShift() {
@@ -55,19 +55,18 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getAdminShift(branchId));
     }
 
-    // add cash drop
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/cashdrop")
     public ResponseEntity<ShiftResponse> cashDrop(@Valid @RequestBody CreateCashDropRequest request) {
         return ResponseEntity.ok(shiftService.addCashDrop(request));
     }
 
-    // close shift
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/close")
     public ResponseEntity<ShiftResponse> close(@Valid @RequestBody CloseShiftRequest request) {
         return ResponseEntity.ok(shiftService.closeShift(request));
     }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/active")
     public ResponseEntity<List<ShiftResponse>> activeShifts(@RequestParam(name = "branchId") Long branchId) {

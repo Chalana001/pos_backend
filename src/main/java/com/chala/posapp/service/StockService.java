@@ -10,6 +10,9 @@ import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,50 +28,45 @@ public class StockService {
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
 
-    @Transactional
-    public StockResponse addStock(StockAddRequest request) {
-
-        Item item = itemRepository.findById(request.getItemId())
-                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-
-        Branch branch = branchRepository.findById(request.getBranchId())
-                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-
-        Supplier supplier = null;
-        if (request.getSupplierId() != null) {
-            supplier = supplierRepository.findById(request.getSupplierId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
-        }
-
-        StockBatch batch = StockBatch.builder()
-                .branch(branch)
-                .item(item)
-                .quantity(request.getQuantity())
-                .originalQuantity(request.getQuantity())
-                .costPrice(request.getCostPrice())
-                .sellingPrice(request.getSellingPrice())
-                .batchCode(request.getBatchCode())
-                .supplier(supplier)
-                .expireDate(request.getExpireDate())
-                .receivedAt(LocalDateTime.now())
-                .build();
-
-        StockBatch savedBatch = stockBatchRepository.save(batch);
-
-        return mapToResponse(savedBatch);
-    }
-
-    public List<StockResponseWithItems> listBranchStock(Long branchId) {
-
-        Long filterBranchId = (branchId != null && branchId > 0) ? branchId : null;
-        return stockBatchRepository.getStockSummary(filterBranchId);
-    }
-
-//    public StockResponse getStock(Long branchId, Long itemId) {
-//        Stock stock = stockRepository.findByBranchIdAndItemId(branchId, itemId)
-//                .orElseThrow(() -> new RuntimeException("Stock record not found"));
-//        return map(stock);
+//    @Transactional
+//    public StockResponse addStock(StockAddRequest request) {
+//
+//        Item item = itemRepository.findById(request.getItemId())
+//                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+//
+//        Branch branch = branchRepository.findById(request.getBranchId())
+//                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+//
+//        Supplier supplier = null;
+//        if (request.getSupplierId() != null) {
+//            supplier = supplierRepository.findById(request.getSupplierId())
+//                    .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
+//        }
+//
+//        StockBatch batch = StockBatch.builder()
+//                .branch(branch)
+//                .item(item)
+//                .quantity(request.getQuantity())
+//                .originalQuantity(request.getQuantity())
+//                .costPrice(request.getCostPrice())
+//                .sellingPrice(request.getSellingPrice())
+//                .batchCode(request.getBatchCode())
+//                .supplier(supplier)
+//                .expireDate(request.getExpireDate())
+//                .receivedAt(LocalDateTime.now())
+//                .build();
+//
+//        StockBatch savedBatch = stockBatchRepository.save(batch);
+//
+//        return mapToResponse(savedBatch);
 //    }
+
+    public Page<StockResponseWithItems> listBranchStock(Long branchId, String search, int page, int size) {
+        Long filterBranchId = (branchId != null && branchId > 0) ? branchId : null;
+        Pageable pageable = PageRequest.of(page, size);
+        return stockBatchRepository.getStockSummary(filterBranchId, search, pageable);
+    }
+
 
     public List<LowStockResponse> lowStock(Long branchId) {
         return stockBatchRepository.findLowStockItems(branchId);
