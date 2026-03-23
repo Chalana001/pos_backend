@@ -44,7 +44,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
             "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice",
 
-            // GROUP BY තියෙන නිසා අනිවාර්යයෙන්ම මේ Count Query එක ඕනේ. නැත්නම් Exception එකක් එයි.
             countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
                     "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
                     "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')))")

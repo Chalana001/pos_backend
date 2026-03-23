@@ -12,43 +12,49 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId 
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double totalSales(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    double totalSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED' AND o.order_type = 'CASH'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double cashSales(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    double cashSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED' AND o.order_type = 'CREDIT'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double creditSales(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    double creditSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.bill_discount),0) FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double totalDiscount(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    double totalDiscount(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COUNT(*) FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    long totalOrders(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    long totalOrders(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+
 
     @Query(value = """
         SELECT 
@@ -57,14 +63,21 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(oi.line_total),0) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId 
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY oi.item_id, oi.item_name
         ORDER BY qty_sold DESC
         LIMIT :limitValue
     """, nativeQuery = true)
-    List<Object[]> topSellingRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate, @Param("limitValue") int limitValue);
+    List<Object[]> topSellingRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
+            @Param("limitValue") int limitValue
+    );
 
     @Query(value = """
         SELECT
@@ -75,25 +88,38 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(oi.line_total - (oi.qty * oi.cost_price)),0) AS profit
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY oi.item_id, oi.item_name
         ORDER BY profit DESC
         LIMIT :limitValue
     """, nativeQuery = true)
-    List<Object[]> profitReportRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate, @Param("limitValue") int limitValue);
+    List<Object[]> profitReportRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate,
+            @Param("limitValue") int limitValue
+    );
 
     @Query(value = """
         SELECT DATE(o.created_at) AS date, COALESCE(SUM(o.grand_total),0) AS sales, COUNT(o.id) AS orders
         FROM orders o
-        WHERE o.status = 'COMPLETED'
+        WHERE o.tenant_id = :tenantId
+          AND o.status = 'COMPLETED'
           AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE(o.created_at)
         ORDER BY DATE(o.created_at)
     """, nativeQuery = true)
-    List<Object[]> salesTrendRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    List<Object[]> salesTrendRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate
+    );
 
     @Query(value = """
         SELECT c.name AS category_name, SUM(oi.line_total) AS total
@@ -102,62 +128,73 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         JOIN items i ON i.id = oi.item_id
         JOIN sub_categories sc ON sc.id = i.sub_category_id
         JOIN categories c ON c.id = sc.category_id
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY c.name
     """, nativeQuery = true)
-    List<Object[]> salesByCategoryRaw(@Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
+    List<Object[]> salesByCategoryRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate
+    );
 
     @Query(value = """
-        SELECT o.id, o.invoice_no, o.grand_total, o.order_type, o.created_at
-        FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-        ORDER BY o.created_at DESC
-        LIMIT 10
-    """, nativeQuery = true)
-    List<Object[]> recentOrdersRaw(@Param("branchId") Long branchId);
+    SELECT o.id, o.invoice_no, o.grand_total, o.order_type, o.created_at
+    FROM orders o
+    WHERE o.tenant_id = :tenantId
+      AND (:branchId = 0 OR o.branch_id = :branchId)
+      AND o.status = 'COMPLETED'
+    ORDER BY o.created_at DESC
+    LIMIT 10
+""", nativeQuery = true)
+    List<Object[]> recentOrdersRaw(@Param("tenantId") String tenantId, @Param("branchId") Long branchId);
 
     @Query(value = """
-        SELECT 
-            c.id, 
-            c.name, 
-            c.phone, 
-            COUNT(o.id) as order_count, 
-            COALESCE(SUM(o.grand_total), 0) as total_spent
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-        GROUP BY c.id, c.name, c.phone
-        ORDER BY total_spent DESC
-        LIMIT :limitValue
-    """, nativeQuery = true)
-    List<Object[]> topCustomersRaw(@Param("branchId") Long branchId, @Param("limitValue") int limitValue);
+    SELECT 
+        c.id, 
+        c.name, 
+        c.phone, 
+        COUNT(o.id) as order_count, 
+        COALESCE(SUM(o.grand_total), 0) as total_spent
+    FROM orders o
+    JOIN customers c ON c.id = o.customer_id
+    WHERE o.tenant_id = :tenantId
+      AND (:branchId = 0 OR o.branch_id = :branchId)
+      AND o.status = 'COMPLETED'
+    GROUP BY c.id, c.name, c.phone
+    ORDER BY total_spent DESC
+    LIMIT :limitValue
+""", nativeQuery = true)
+    List<Object[]> topCustomersRaw(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("limitValue") int limitValue);
 
     @Query(value = """
-        SELECT 
-            s.id, 
-            s.name, 
-            s.phone, 
-            COUNT(p.id) as purchase_count, 
-            COALESCE(SUM(p.grand_total), 0) as total_purchased
-        FROM purchase p
-        JOIN suppliers s ON s.id = p.supplier_id
-        GROUP BY s.id, s.name, s.phone
-        ORDER BY total_purchased DESC
-        LIMIT :limitValue
-    """, nativeQuery = true)
-    List<Object[]> topSuppliersRaw(@Param("limitValue") int limitValue);
+    SELECT 
+        s.id, 
+        s.name, 
+        s.phone, 
+        COUNT(p.id) as purchase_count, 
+        COALESCE(SUM(p.grand_total), 0) as total_purchased
+    FROM purchase p
+    JOIN suppliers s ON s.id = p.supplier_id
+    WHERE p.tenant_id = :tenantId
+    GROUP BY s.id, s.name, s.phone
+    ORDER BY total_purchased DESC
+    LIMIT :limitValue
+""", nativeQuery = true)
+    List<Object[]> topSuppliersRaw(@Param("tenantId") String tenantId, @Param("limitValue") int limitValue);
 
     @Query(value = """
-        SELECT COALESCE(SUM(amount), 0)
-        FROM expenses
-        WHERE (:branchId = 0 OR branch_id = :branchId)
-          AND created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double getTotalExpenses(@Param("branchId") Long branchId,
+    SELECT COALESCE(SUM(amount), 0)
+    FROM expenses
+    WHERE tenant_id = :tenantId
+      AND (:branchId = 0 OR branch_id = :branchId)
+      AND created_at BETWEEN :fromDate AND :toDate
+""", nativeQuery = true)
+    double getTotalExpenses(@Param("tenantId") String tenantId,
+                            @Param("branchId") Long branchId,
                             @Param("fromDate") LocalDateTime fromDate,
                             @Param("toDate") LocalDateTime toDate);
 
@@ -165,26 +202,34 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE(o.created_at)
         ORDER BY day
     """, nativeQuery = true)
-    List<Object[]> dailySalesRaw(@Param("branchId") Long branchId,
-                                 @Param("fromDate") LocalDateTime fromDate,
-                                 @Param("toDate") LocalDateTime toDate);
+    List<Object[]> dailySalesRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate
+    );
 
     @Query(value = """
         SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
         ORDER BY month
     """, nativeQuery = true)
-    List<Object[]> monthlySalesRaw(@Param("branchId") Long branchId,
-                                   @Param("fromDate") LocalDateTime fromDate,
-                                   @Param("toDate") LocalDateTime toDate);
+    List<Object[]> monthlySalesRaw(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate
+    );
 }

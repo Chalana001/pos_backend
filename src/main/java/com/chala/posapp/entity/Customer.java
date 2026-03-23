@@ -6,10 +6,18 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "customers")
+@Table(
+        name = "customers",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "phone"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_customer_phone", columnList = "tenant_id, phone")
+        }
+)
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class Customer {
+public class Customer extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -18,7 +26,7 @@ public class Customer {
     @Column(nullable = false, length = 120)
     private String name;
 
-    @Column(nullable = false, unique = true, length = 20)
+    @Column(nullable = false, length = 20)
     private String phone;
 
     @Column(length = 255)
@@ -37,7 +45,7 @@ public class Customer {
     @PrePersist
     void onCreate() {
         createdAt = LocalDateTime.now();
-        if (!active) active = true;
-        dueAmount = 0;
+        active = true; // මෙතන පොඩි logic එකක් දැම්මා
+        if (dueAmount == 0) dueAmount = 0; // Default 0
     }
 }

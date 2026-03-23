@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Table(name = "cash_shifts")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class CashShift {
+public class CashShift extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

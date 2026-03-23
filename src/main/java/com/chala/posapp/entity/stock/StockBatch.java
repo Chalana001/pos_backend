@@ -2,27 +2,31 @@ package com.chala.posapp.entity.stock;
 
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.TenantEntity;
 import com.chala.posapp.entity.supplier.Supplier;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "stock_batches", indexes = {
-        @Index(name = "idx_batch_item_branch", columnList = "item_id, branch_id"), // Faster search for POS
-        @Index(name = "idx_batch_expiry", columnList = "expire_date") // To find expiring items
-})
-@Data
+@Table(
+        name = "stock_batches",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "batch_code"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_batch_item_branch", columnList = "tenant_id, item_id, branch_id"),
+                @Index(name = "idx_tenant_batch_expiry", columnList = "tenant_id, expire_date")
+        }
+)
+@Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class StockBatch {
+public class StockBatch extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -40,13 +44,13 @@ public class StockBatch {
     @JoinColumn(name = "supplier_id")
     private Supplier supplier;
 
-    @Column(name = "batch_code", unique = true)
+    @Column(name = "batch_code")
     private String batchCode;
 
-    @Column(name = "cost_price", nullable = false, precision = 10, scale = 2)
+    @Column(name = "cost_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal costPrice;
 
-    @Column(name = "selling_price", nullable = false, precision = 10, scale = 2)
+    @Column(name = "selling_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal sellingPrice;
 
     @Column(nullable = false)
@@ -63,6 +67,6 @@ public class StockBatch {
     private LocalDateTime expireDate;
 
     public boolean isOutOfStock() {
-        return this.quantity <= 0;
+        return this.quantity != null && this.quantity <= 0;
     }
 }

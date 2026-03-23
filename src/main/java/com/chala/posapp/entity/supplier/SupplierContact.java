@@ -1,5 +1,6 @@
 package com.chala.posapp.entity.supplier;
 
+import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -8,7 +9,7 @@ import lombok.Setter;
 @Table(name = "supplier_contacts")
 @Getter
 @Setter
-public class SupplierContact {
+public class SupplierContact extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

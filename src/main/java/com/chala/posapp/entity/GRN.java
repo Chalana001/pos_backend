@@ -8,36 +8,50 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "grn")
-@Data
+@Table(
+        name = "grn",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "grn_no"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_grn_no", columnList = "tenant_id, grn_no")
+        }
+)
+@Getter @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class GRN {
+public class GRN extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false)
+    @Column(name = "grn_no", nullable = false)
     private String grnNo;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "supplier_id", nullable = false)
     private Supplier supplier;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id", nullable = false)
     private Branch branch;
 
-    @ManyToOne
-    @JoinColumn(name = "purchase_id", nullable = false)
-    @JsonIgnore // Infinite Loop වලක්වන්න
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "purchase_id")
+    @JsonIgnore
     private Purchase purchase;
 
+    @Column(precision = 12, scale = 2)
     private BigDecimal totalAmount;
+
+    @Column(precision = 12, scale = 2)
     private BigDecimal paidAmount;
+
     private String note;
+
     private LocalDateTime receivedAt;
+
     private Long createdByUserId;
 }

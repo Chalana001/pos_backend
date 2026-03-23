@@ -6,24 +6,34 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "orders")
+@Table(
+        name = "orders",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "invoice_no"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_invoice", columnList = "tenant_id, invoice_no"),
+                @Index(name = "idx_tenant_branch_order", columnList = "tenant_id, branch_id")
+        }
+)
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class Order {
+public class Order extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 40)
+    @Column(name = "invoice_no", nullable = false, length = 40)
     private String invoiceNo;
 
-    @Column(nullable = false)
+    @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
-    @Column(nullable = false)
+    @Column(name = "cashier_user_id", nullable = false)
     private Long cashierUserId;
 
+    @Column(name = "customer_id")
     private Long customerId;
 
     @Enumerated(EnumType.STRING)
@@ -51,9 +61,13 @@ public class Order {
 
     private String note;
 
+    @Column(name = "cancel_reason")
     private String cancelReason;
 
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
     @PrePersist

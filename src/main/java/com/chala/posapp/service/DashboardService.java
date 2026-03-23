@@ -8,6 +8,7 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.DashboardRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -18,7 +19,6 @@ import com.chala.posapp.dto.chart.DailySalesResponse;
 import com.chala.posapp.dto.chart.MonthlySalesResponse;
 
 import java.util.List;
-
 
 @Service
 @RequiredArgsConstructor
@@ -50,30 +50,32 @@ public class DashboardService {
     }
 
     public DashboardKpiResponse todayKpis(Long requestedBranchId) {
+        String tenantId = TenantContext.getTenant();
 
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
-
 
         LocalDate today = LocalDate.now();
         LocalDateTime from = today.atStartOfDay();
         LocalDateTime to = today.atTime(23, 59, 59);
 
         return DashboardKpiResponse.builder()
-                .todaySales(dashboardRepository.todaySales(branchId, from, to))
-                .cashSales(dashboardRepository.cashSales(branchId, from, to))
-                .creditSales(dashboardRepository.creditSales(branchId, from, to))
-                .todayDiscount(dashboardRepository.todayDiscount(branchId, from, to))
-                .todayOrders(dashboardRepository.todayOrders(branchId, from, to))
-                .todayExpenses(dashboardRepository.todayExpenses(branchId, from, to))
-                .todayCashDrops(dashboardRepository.todayCashDrops(branchId, from, to))
-                .lowStockCount(dashboardRepository.lowStockCount(branchId))
-                .totalDue(dashboardRepository.totalDue())
+                .todaySales(dashboardRepository.todaySales(tenantId, branchId, from, to))
+                .cashSales(dashboardRepository.cashSales(tenantId, branchId, from, to))
+                .creditSales(dashboardRepository.creditSales(tenantId, branchId, from, to))
+                .todayDiscount(dashboardRepository.todayDiscount(tenantId, branchId, from, to))
+                .todayOrders(dashboardRepository.todayOrders(tenantId, branchId, from, to))
+                .todayExpenses(dashboardRepository.todayExpenses(tenantId, branchId, from, to))
+                .todayCashDrops(dashboardRepository.todayCashDrops(tenantId, branchId, from, to))
+                .lowStockCount(dashboardRepository.lowStockCount(tenantId, branchId))
+                .totalDue(dashboardRepository.totalDue(tenantId))
                 .build();
     }
+
     public List<DailySalesResponse> dailySales(Long requestedBranchId,
                                                LocalDate from,
                                                LocalDate to) {
+        String tenantId = TenantContext.getTenant();
 
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
@@ -81,7 +83,7 @@ public class DashboardService {
         LocalDateTime fromDt = from.atStartOfDay();
         LocalDateTime toDt = to.atTime(23, 59, 59);
 
-        return dashboardRepository.dailySalesRaw(branchId, fromDt, toDt).stream()
+        return dashboardRepository.dailySalesRaw(tenantId, branchId, fromDt, toDt).stream()
                 .map(r -> DailySalesResponse.builder()
                         .date(r[0].toString()) // yyyy-MM-dd
                         .sales(((Number) r[1]).doubleValue())
@@ -92,6 +94,7 @@ public class DashboardService {
     public List<MonthlySalesResponse> monthlySales(Long requestedBranchId,
                                                    LocalDate from,
                                                    LocalDate to) {
+        String tenantId = TenantContext.getTenant();
 
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
@@ -99,12 +102,12 @@ public class DashboardService {
         LocalDateTime fromDt = from.atStartOfDay();
         LocalDateTime toDt = to.atTime(23, 59, 59);
 
-        return dashboardRepository.monthlySalesRaw(branchId, fromDt, toDt).stream()
+        // tenantId එක පාස් කරනවා
+        return dashboardRepository.monthlySalesRaw(tenantId, branchId, fromDt, toDt).stream()
                 .map(r -> MonthlySalesResponse.builder()
                         .month(r[0].toString()) // yyyy-MM
                         .sales(((Number) r[1]).doubleValue())
                         .build())
                 .toList();
     }
-
 }

@@ -8,15 +8,24 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "categories")
+@Table(
+        name = "categories",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "name"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_category_name", columnList = "tenant_id, name")
+        }
+)
 @Getter
 @Setter
-public class Category {
+public class Category extends TenantEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String name;
 
     @OneToMany(mappedBy = "category", cascade = CascadeType.ALL)

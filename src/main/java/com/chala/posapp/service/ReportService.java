@@ -9,6 +9,7 @@ import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -50,15 +51,19 @@ public class ReportService {
     }
 
     public SalesSummaryResponse salesSummary(Long requestedBranchId, Instant from, Instant to) {
+        // Current Tenant එක Context එකෙන් ගන්නවා
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         LocalDateTime f = toLDT(from);
         LocalDateTime t = toLDT(to);
 
-        double total = reportRepository.totalSales(branchId, f, t);
-        double cash = reportRepository.cashSales(branchId, f, t);
-        double credit = reportRepository.creditSales(branchId, f, t);
-        double discount = reportRepository.totalDiscount(branchId, f, t);
-        long orders = reportRepository.totalOrders(branchId, f, t);
+        // Repository එකට tenantId එකත් එක්කම පාස් කරනවා
+        double total = reportRepository.totalSales(tenantId, branchId, f, t);
+        double cash = reportRepository.cashSales(tenantId, branchId, f, t);
+        double credit = reportRepository.creditSales(tenantId, branchId, f, t);
+        double discount = reportRepository.totalDiscount(tenantId, branchId, f, t);
+        long orders = reportRepository.totalOrders(tenantId, branchId, f, t);
 
         return SalesSummaryResponse.builder()
                 .totalSales(total)
@@ -69,9 +74,13 @@ public class ReportService {
                 .build();
     }
 
+    // 🟢 2. Top Selling එකට Tenant ID එක එකතු කිරීම
     public List<TopSellingItemResponse> topSelling(Long requestedBranchId, Instant from, Instant to, int limit) {
+        String tenantId = TenantContext.getTenant();
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        return reportRepository.topSellingRaw(branchId, toLDT(from), toLDT(to), limit).stream()
+
+        // මෙතනත් Repository එකට tenantId එක යවනවා
+        return reportRepository.topSellingRaw(tenantId, branchId, toLDT(from), toLDT(to), limit).stream()
                 .map(r -> TopSellingItemResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
@@ -82,8 +91,12 @@ public class ReportService {
     }
 
     public List<ProfitReportResponse> profitReport(Long requestedBranchId, Instant from, Instant to, int limit) {
+
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        return reportRepository.profitReportRaw(branchId, toLDT(from), toLDT(to), limit).stream()
+
+        return reportRepository.profitReportRaw(tenantId, branchId, toLDT(from), toLDT(to), limit).stream()
                 .map(r -> ProfitReportResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
@@ -107,9 +120,13 @@ public class ReportService {
 //    }
 
     public List<SalesTrendPoint> salesTrend(Long requestedBranchId, Instant from, Instant to, String type) {
+        // 1. Current Tenant එක Context එකෙන් ගන්නවා
+        String tenantId = TenantContext.getTenant();
+
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
 
+        // Branch එක null නම් 0L (All Branches) විදිහට සලකනවා
         Long effectiveBranchId = (branchId == null) ? 0L : branchId;
 
         ZoneId zone = ZoneId.systemDefault();
@@ -117,40 +134,40 @@ public class ReportService {
         LocalDateTime toDt = LocalDateTime.ofInstant(to, zone);
 
         if ("MONTHLY".equalsIgnoreCase(type)) {
-
-            List<Object[]> rows = reportRepository.monthlySalesRaw(effectiveBranchId, fromDt, toDt);
+            // 2. Repository එකට tenantId එකත් එක්ක දත්ත පාස් කරනවා
+            List<Object[]> rows = reportRepository.monthlySalesRaw(tenantId, effectiveBranchId, fromDt, toDt);
 
             return rows.stream().map(r -> {
                 String monthStr = (String) r[0];
                 double amount = ((Number) r[1]).doubleValue();
-
                 LocalDate date = LocalDate.parse(monthStr + "-01");
-
                 return new SalesTrendPoint(date, amount, 0);
             }).toList();
 
         } else {
-            List<Object[]> rows = reportRepository.dailySalesRaw(effectiveBranchId, fromDt, toDt);
+            // 3. මෙතනත් tenantId එක පාස් කරනවා
+            List<Object[]> rows = reportRepository.dailySalesRaw(tenantId, effectiveBranchId, fromDt, toDt);
 
             return rows.stream().map(r -> {
-
                 LocalDate date;
                 if (r[0] instanceof java.sql.Date) {
                     date = ((java.sql.Date) r[0]).toLocalDate();
                 } else {
                     date = LocalDate.parse(r[0].toString());
                 }
-
                 double amount = ((Number) r[1]).doubleValue();
-
                 return new SalesTrendPoint(date, amount, 0);
             }).toList();
         }
     }
 
+    // 🟢 1. Sales By Category
     public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, Instant from, Instant to) {
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        List<Object[]> rows = reportRepository.salesByCategoryRaw(branchId, toLDT(from), toLDT(to));
+
+        List<Object[]> rows = reportRepository.salesByCategoryRaw(tenantId, branchId, toLDT(from), toLDT(to));
 
         return rows.stream().map(r -> new CategorySalesResponse(
                 (String) r[0],
@@ -158,9 +175,13 @@ public class ReportService {
         )).toList();
     }
 
+    // 🟢 2. Recent Orders
     public List<RecentOrderResponse> recentOrders(Long requestedBranchId) {
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        List<Object[]> rows = reportRepository.recentOrdersRaw(branchId);
+
+        List<Object[]> rows = reportRepository.recentOrdersRaw(tenantId, branchId);
 
         return rows.stream().map(r -> new RecentOrderResponse(
                 ((Number) r[0]).longValue(),
@@ -187,9 +208,13 @@ public class ReportService {
                 .toList();
     }
 
+    // 🟢 1. Top Customers (Multi-tenant safe)
     public List<TopCustomerResponse> topCustomers(Long requestedBranchId, int limit) {
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        return reportRepository.topCustomersRaw(branchId, limit).stream()
+
+        return reportRepository.topCustomersRaw(tenantId, branchId, limit).stream()
                 .map(r -> TopCustomerResponse.builder()
                         .customerId(((Number) r[0]).longValue())
                         .customerName((String) r[1])
@@ -201,7 +226,9 @@ public class ReportService {
     }
 
     public List<TopSupplierResponse> topSuppliers(Long requestedBranchId, int limit) {
-        return reportRepository.topSuppliersRaw(limit).stream()
+        String tenantId = TenantContext.getTenant();
+
+        return reportRepository.topSuppliersRaw(tenantId, limit).stream()
                 .map(r -> TopSupplierResponse.builder()
                         .supplierId(((Number) r[0]).longValue())
                         .supplierName((String) r[1])
@@ -213,11 +240,14 @@ public class ReportService {
     }
 
     public ProfitSummaryResponse getProfitSummary(Long requestedBranchId, Instant from, Instant to) {
+
+        String tenantId = TenantContext.getTenant();
+
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         LocalDateTime f = toLDT(from);
         LocalDateTime t = toLDT(to);
 
-        List<Object[]> rawData = reportRepository.profitReportRaw(branchId, f, t, 1000000);
+        List<Object[]> rawData = reportRepository.profitReportRaw(tenantId, branchId, f, t, 1000000);
 
         double totalRevenue = 0;
         double totalCost = 0;
@@ -229,7 +259,7 @@ public class ReportService {
             grossProfit += ((Number) row[5]).doubleValue();
         }
 
-        double totalExpenses = reportRepository.getTotalExpenses(branchId, f, t);
+        double totalExpenses = reportRepository.getTotalExpenses(tenantId, branchId, f, t);
 
         double netProfit = grossProfit - totalExpenses;
 

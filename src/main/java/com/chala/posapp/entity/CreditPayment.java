@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Table(name = "credit_payments")
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class CreditPayment {
+public class CreditPayment extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

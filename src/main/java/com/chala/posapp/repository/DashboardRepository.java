@@ -8,63 +8,72 @@ import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
 import java.util.List;
 
-
 public interface DashboardRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double todaySales(@Param("branchId") Long branchId,
+    double todaySales(@Param("tenantId") String tenantId,
+                      @Param("branchId") Long branchId,
                       @Param("fromDate") LocalDateTime fromDate,
                       @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.order_type = 'CASH'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double cashSales(@Param("branchId") Long branchId,
+    double cashSales(@Param("tenantId") String tenantId,
+                     @Param("branchId") Long branchId,
                      @Param("fromDate") LocalDateTime fromDate,
                      @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0)
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.order_type = 'CREDIT'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double creditSales(@Param("branchId") Long branchId,
+    double creditSales(@Param("tenantId") String tenantId,
+                       @Param("branchId") Long branchId,
                        @Param("fromDate") LocalDateTime fromDate,
                        @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COALESCE(SUM(o.bill_discount),0)
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double todayDiscount(@Param("branchId") Long branchId,
+    double todayDiscount(@Param("tenantId") String tenantId,
+                         @Param("branchId") Long branchId,
                          @Param("fromDate") LocalDateTime fromDate,
                          @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
         SELECT COUNT(*)
         FROM orders o
-        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    long todayOrders(@Param("branchId") Long branchId,
+    long todayOrders(@Param("tenantId") String tenantId,
+                     @Param("branchId") Long branchId,
                      @Param("fromDate") LocalDateTime fromDate,
                      @Param("toDate") LocalDateTime toDate);
 
@@ -72,10 +81,12 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(e.amount),0)
         FROM expenses e
-        WHERE (:branchId = 0 OR e.branch_id = :branchId)
+        WHERE e.tenant_id = :tenantId
+          AND (:branchId = 0 OR e.branch_id = :branchId)
           AND e.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double todayExpenses(@Param("branchId") Long branchId,
+    double todayExpenses(@Param("tenantId") String tenantId,
+                         @Param("branchId") Long branchId,
                          @Param("fromDate") LocalDateTime fromDate,
                          @Param("toDate") LocalDateTime toDate);
 
@@ -83,10 +94,12 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT COALESCE(SUM(cd.amount),0)
         FROM cash_drops cd
-        WHERE (:branchId = 0 OR cd.branch_id = :branchId)
+        WHERE cd.tenant_id = :tenantId
+          AND (:branchId = 0 OR cd.branch_id = :branchId)
           AND cd.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    double todayCashDrops(@Param("branchId") Long branchId,
+    double todayCashDrops(@Param("tenantId") String tenantId,
+                          @Param("branchId") Long branchId,
                           @Param("fromDate") LocalDateTime fromDate,
                           @Param("toDate") LocalDateTime toDate);
 
@@ -95,45 +108,52 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
         SELECT COUNT(*)
         FROM stock s
         JOIN items i ON i.id = s.item_id
-        WHERE (:branchId = 0 OR s.branch_id = :branchId)
+        WHERE s.tenant_id = :tenantId
+          AND (:branchId = 0 OR s.branch_id = :branchId)
           AND s.quantity <= i.reorder_level
     """, nativeQuery = true)
-    long lowStockCount(@Param("branchId") Long branchId);
+    long lowStockCount(@Param("tenantId") String tenantId,
+                       @Param("branchId") Long branchId);
 
-    // ✅ Total due (all customers)
+    // ✅ Total due (all customers for this tenant)
     @Query(value = """
         SELECT COALESCE(SUM(c.due_amount),0)
         FROM customers c
-        WHERE c.due_amount > 0
+        WHERE c.tenant_id = :tenantId
+          AND c.due_amount > 0
     """, nativeQuery = true)
-    double totalDue();
+    double totalDue(@Param("tenantId") String tenantId);
 
     // ✅ Daily Sales
     @Query(value = """
-    SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
-    FROM orders o
-    WHERE (:branchId = 0 OR o.branch_id = :branchId)
-      AND o.status = 'COMPLETED'
-      AND o.created_at BETWEEN :fromDate AND :toDate
-    GROUP BY DATE(o.created_at)
-    ORDER BY day
-""", nativeQuery = true)
-    List<Object[]> dailySalesRaw(@Param("branchId") Long branchId,
+        SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.status = 'COMPLETED'
+          AND o.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY DATE(o.created_at)
+        ORDER BY day
+    """, nativeQuery = true)
+    List<Object[]> dailySalesRaw(@Param("tenantId") String tenantId,
+                                 @Param("branchId") Long branchId,
                                  @Param("fromDate") LocalDateTime fromDate,
                                  @Param("toDate") LocalDateTime toDate);
 
 
     // ✅ Monthly Sales
     @Query(value = """
-    SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
-    FROM orders o
-    WHERE (:branchId = 0 OR o.branch_id = :branchId)
-      AND o.status = 'COMPLETED'
-      AND o.created_at BETWEEN :fromDate AND :toDate
-    GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
-    ORDER BY month
-""", nativeQuery = true)
-    List<Object[]> monthlySalesRaw(@Param("branchId") Long branchId,
+        SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
+        FROM orders o
+        WHERE o.tenant_id = :tenantId
+          AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.status = 'COMPLETED'
+          AND o.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
+        ORDER BY month
+    """, nativeQuery = true)
+    List<Object[]> monthlySalesRaw(@Param("tenantId") String tenantId,
+                                   @Param("branchId") Long branchId,
                                    @Param("fromDate") LocalDateTime fromDate,
                                    @Param("toDate") LocalDateTime toDate);
 

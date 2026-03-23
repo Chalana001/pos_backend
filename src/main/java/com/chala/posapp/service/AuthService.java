@@ -51,9 +51,15 @@ public class AuthService {
 
         if (!user.isEnabled()) throw new BadRequestException("User disabled");
 
-        String token = jwtService.generateToken(user.getUsername(), user.getRole().name());
+        String token = jwtService.generateToken(
+                user.getUsername(),
+                user.getRole().name(),
+                user.getTenantId()
+        );
+
         return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId());
     }
+
     public User getLoggedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
@@ -62,4 +68,3 @@ public class AuthService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
     }
 }
-

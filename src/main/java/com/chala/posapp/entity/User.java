@@ -6,16 +6,20 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(
+        name = "users",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"username", "tenant_id"})
+)
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class User {
+
+public class User extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 80)
+    @Column(nullable = false, length = 80)
     private String username;
 
     @Column(nullable = false)
@@ -28,7 +32,7 @@ public class User {
     @Column(nullable = false)
     private boolean enabled;
 
-    private Long branchId; // later: FK to Branch table
+    private Long branchId;
 
     private LocalDateTime createdAt;
 

@@ -10,18 +10,24 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(name = "items", indexes = {
-        @Index(name = "idx_item_barcode", columnList = "barcode") // Barcode Search එක වේගවත් කරන්න
-})
+@Table(
+        name = "items",
+        uniqueConstraints = {
+                @UniqueConstraint(columnNames = {"tenant_id", "barcode"})
+        },
+        indexes = {
+                @Index(name = "idx_tenant_barcode", columnList = "tenant_id, barcode")
+        }
+)
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class Item {
+public class Item extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 80)
+    @Column(nullable = false, length = 80)
     private String barcode;
 
     @Column(nullable = false, length = 160)

@@ -1,5 +1,6 @@
 package com.chala.posapp.entity.stock;
 
+import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -12,7 +13,7 @@ import java.time.LocalDateTime;
 )
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
-public class Stock {
+public class Stock extends TenantEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
