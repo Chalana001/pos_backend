@@ -30,6 +30,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.openShift(request));
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/all")
     public ResponseEntity<Page<ShiftResponse>> getAllShifts(
             @RequestParam(name = "branchId", required = false) Long branchId,
@@ -50,6 +51,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getMyCurrentShift());
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/admin-current")
     public ResponseEntity<ShiftResponse> getAdminCurrentShift(@RequestParam(name = "branchId") Long branchId) {
         return ResponseEntity.ok(shiftService.getAdminShift(branchId));

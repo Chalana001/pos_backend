@@ -4,9 +4,13 @@ import com.chala.posapp.dto.branch.BranchCreateRequest;
 import com.chala.posapp.dto.branch.BranchResponse;
 import com.chala.posapp.dto.branch.BranchUpdateRequest;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.TenantSubscription;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.TenantSubscriptionRepository;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,9 +22,12 @@ import java.util.List;
 public class BranchService {
 
     private final BranchRepository branchRepository;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
     public BranchResponse createBranch(BranchCreateRequest request) {
         String code = request.getCode().trim().toUpperCase();
+
+        validateBranchLimit();
 
         if (branchRepository.existsByCode(code))
             throw new AlreadyExistsException("Branch code already exists: " + code);
@@ -35,6 +42,27 @@ public class BranchService {
 
         Branch saved = branchRepository.save(branch);
         return mapToResponse(saved);
+    }
+
+    private void validateBranchLimit() {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return;
+        }
+
+        TenantSubscription subscription = tenantSubscriptionRepository.findByTenantId(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found for tenant"));
+
+        int allowedBranches = subscription.getPlan().getMaxBranches() + subscription.getExtraBranches();
+        long currentBranches = branchRepository.count();
+
+        if (currentBranches >= allowedBranches) {
+            throw new BadRequestException(
+                    "Branch limit reached. Allowed branches: " + allowedBranches +
+                            ", current branches: " + currentBranches +
+                            ". Please purchase extra branches or upgrade the package."
+            );
+        }
     }
 
     public BranchResponse getBranch(Long id) {

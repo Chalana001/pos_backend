@@ -2,6 +2,8 @@ package com.chala.posapp.repository;
 
 import com.chala.posapp.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -12,5 +14,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findAllByBranchId(Long branchId);
 
     Optional<User> findByUsernameAndTenantId(String superAdminUsername, String superAdminTenant);
+
+    @Query(value = "SELECT * FROM users WHERE tenant_id = :tenantId AND role = 'ADMIN' ORDER BY id ASC LIMIT 1", nativeQuery = true)
+    Optional<User> findFirstAdminByTenantIdNative(@Param("tenantId") String tenantId);
 }
 

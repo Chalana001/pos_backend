@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.tenant.TenantContext;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -29,7 +30,7 @@ public abstract class TenantEntity {
         if (tenantId == null) {
             String tenant = TenantContext.getTenant();
             if (tenant == null) {
-                throw new RuntimeException("Tenant not found");
+                throw new BadRequestException("Tenant not found in request");
             }
             this.tenantId = tenant;
         }

@@ -5,6 +5,7 @@ import com.chala.posapp.service.GrnService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -14,6 +15,7 @@ public class GrnController {
 
     private final GrnService grnService;
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping
     public ResponseEntity<Page<GrnResponse>> getAll(
             @RequestParam(value = "search", defaultValue = "") String search,
@@ -23,6 +25,7 @@ public class GrnController {
         return ResponseEntity.ok(grnService.getGrns(search, page, size));
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/{id}")
     public ResponseEntity<GrnResponse> getById(@PathVariable(name = "id") Long id) {
         return ResponseEntity.ok(grnService.getGrnById(id));

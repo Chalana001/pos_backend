@@ -6,6 +6,8 @@ import com.chala.posapp.dto.SubCategoryDto;
 import com.chala.posapp.dto.SubCategoryRequest;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.SubCategory;
+import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CategoryRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import org.springframework.stereotype.Service;
@@ -38,7 +40,7 @@ public class CategoryService {
     public CategoryDto createCategory(CategoryRequest request) {
         // Check if category already exists (optional but recommended)
         if (categoryRepository.existsByName(request.getName())) {
-            throw new RuntimeException("Category name already exists!");
+            throw new AlreadyExistsException("Category name already exists");
         }
 
         Category category = new Category();
@@ -60,7 +62,7 @@ public class CategoryService {
     public SubCategoryDto createSubCategory(SubCategoryRequest request) {
         // Fetch the parent category
         Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new RuntimeException("Category not found with ID: " + request.getCategoryId()));
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found with ID: " + request.getCategoryId()));
 
         SubCategory subCategory = new SubCategory();
         subCategory.setName(request.getName());

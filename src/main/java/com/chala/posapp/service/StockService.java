@@ -7,12 +7,15 @@ import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.supplier.Supplier;
+import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,35 @@ public class StockService {
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
+    private final UserRepository userRepository;
+
+    private User getLoggedUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private boolean isAdminLike(User user) {
+        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
+    }
+
+    private Long enforceBranchAccess(Long branchId) {
+        User user = getLoggedUser();
+
+        if (isAdminLike(user)) {
+            return branchId;
+        }
+
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("User branch not assigned");
+        }
+
+        if (!user.getBranchId().equals(branchId)) {
+            throw new BadRequestException("Cannot access another branch");
+        }
+
+        return branchId;
+    }
 
 //    @Transactional
 //    public StockResponse addStock(StockAddRequest request) {
@@ -62,14 +94,15 @@ public class StockService {
 //    }
 
     public Page<StockResponseWithItems> listBranchStock(Long branchId, String search, int page, int size) {
-        Long filterBranchId = (branchId != null && branchId > 0) ? branchId : null;
+        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long filterBranchId = (allowedBranchId != null && allowedBranchId > 0) ? allowedBranchId : null;
         Pageable pageable = PageRequest.of(page, size);
         return stockBatchRepository.getStockSummary(filterBranchId, search, pageable);
     }
 
 
     public List<LowStockResponse> lowStock(Long branchId) {
-        return stockBatchRepository.findLowStockItems(branchId);
+        return stockBatchRepository.findLowStockItems(enforceBranchAccess(branchId));
     }
 
     private StockResponse mapToResponse(StockBatch batch) {

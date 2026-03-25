@@ -98,6 +98,7 @@ public class ReportController {
         return ResponseEntity.ok(reportService.creditDueList());
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/top-customers")
     public ResponseEntity<List<TopCustomerResponse>> topCustomers(
             @RequestParam(name = "branchId", required = false) Long branchId,
@@ -105,6 +106,7 @@ public class ReportController {
         return ResponseEntity.ok(reportService.topCustomers(branchId, limit));
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/top-suppliers")
     public ResponseEntity<List<TopSupplierResponse>> topSuppliers(
             @RequestParam(name = "branchId", required = false) Long branchId,

@@ -12,11 +12,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class TenantFilter extends OncePerRequestFilter {
+
+    private static final Pattern IPV4_PATTERN = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$");
 
     private final JwtService jwtService;
 
@@ -69,11 +72,15 @@ public class TenantFilter extends OncePerRequestFilter {
         }
 
         String host = request.getServerName();
-        if (host.equals("localhost") || host.startsWith("127.0.0.1")) {
+        if (host.equals("localhost") || host.startsWith("127.0.0.1") || isIpAddress(host)) {
             return request.getParameter("tenant");
         } else {
             String[] parts = host.split("\\.");
             return (parts.length > 1) ? parts[0] : null;
         }
+    }
+
+    private boolean isIpAddress(String host) {
+        return IPV4_PATTERN.matcher(host).matches();
     }
 }

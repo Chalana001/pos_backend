@@ -19,6 +19,9 @@ public class JwtService {
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.expiration}") long expirationMs
     ) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("JWT secret is not configured.");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes());
         this.expirationMs = expirationMs;
     }

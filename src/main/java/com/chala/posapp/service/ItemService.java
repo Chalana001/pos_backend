@@ -52,7 +52,7 @@ public class ItemService {
         }
 
         SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
-                .orElseThrow(() -> new RuntimeException("SubCategory not found with ID: " + request.getSubCategoryId()));
+                .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found with ID: " + request.getSubCategoryId()));
 
         Item item = Item.builder()
                 .barcode(barcode)
@@ -89,7 +89,7 @@ public class ItemService {
         List<Item> newItemList = requestList.stream()
                 .map(req -> {
                     SubCategory subCat = subCategoryRepository.findById(req.getSubCategoryId())
-                            .orElseThrow(() -> new RuntimeException("SubCategory ID " + req.getSubCategoryId() + " not found"));
+                            .orElseThrow(() -> new ResourceNotFoundException("SubCategory ID " + req.getSubCategoryId() + " not found"));
 
                     return Item.builder()
                             .name(req.getName().trim())

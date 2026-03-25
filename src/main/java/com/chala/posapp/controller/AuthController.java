@@ -7,16 +7,17 @@ import com.chala.posapp.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping({"/auth", "/api/auth"})
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
 
-    // Only to create first admin
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping("/register-admin")
     public ResponseEntity<?> registerAdmin(@Valid @RequestBody RegisterRequest request){
         authService.registerAdmin(request);

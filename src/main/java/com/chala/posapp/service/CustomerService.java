@@ -8,6 +8,7 @@ import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.OrderRepository;
@@ -84,12 +85,12 @@ public class CustomerService {
     public CustomerResponse recordPayment(Long customerId, CustomerPaymentRequest request) {
 
         Customer customer = customerRepository.findById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found with ID: " + customerId));
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found with ID: " + customerId));
 
         double paymentAmount = request.getAmount();
 
         if (paymentAmount > customer.getDueAmount()) {
-            throw new RuntimeException("Payment amount exceeds the total due amount: " + customer.getDueAmount());
+            throw new BadRequestException("Payment amount exceeds the total due amount: " + customer.getDueAmount());
         }
 
         customer.setDueAmount(customer.getDueAmount() - paymentAmount);

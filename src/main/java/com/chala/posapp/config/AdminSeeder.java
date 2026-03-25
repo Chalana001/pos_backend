@@ -6,6 +6,7 @@ import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -19,12 +20,21 @@ public class AdminSeeder implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    @Value("${app.bootstrap.super-admin.username:}")
+    private String superAdminUsername;
+    @Value("${app.bootstrap.super-admin.password:}")
+    private String superAdminPassword;
 
     @Override
     public void run(String... args) throws Exception {
 
         String superAdminTenant = "MASTER";
-        String superAdminUsername = "chala_admin";
+
+        if (superAdminUsername == null || superAdminUsername.isBlank()
+                || superAdminPassword == null || superAdminPassword.isBlank()) {
+            log.warn("Skipping bootstrap super admin seeding because credentials are not configured.");
+            return;
+        }
 
         TenantContext.setTenant(superAdminTenant);
 
@@ -36,7 +46,7 @@ public class AdminSeeder implements CommandLineRunner {
 
                 User superAdmin = User.builder()
                         .username(superAdminUsername)
-                        .passwordHash(passwordEncoder.encode("superSecretPassword123"))
+                        .passwordHash(passwordEncoder.encode(superAdminPassword))
                         .role(Role.SUPER_ADMIN)
                         .enabled(true)
                         .branchId(null)

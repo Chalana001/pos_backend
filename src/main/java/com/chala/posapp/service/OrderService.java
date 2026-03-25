@@ -6,6 +6,7 @@ import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import lombok.RequiredArgsConstructor;
@@ -44,16 +45,39 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
+    private boolean isAdminLike(User user) {
+        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
+    }
+
+    private Long requireAssignedBranch(User user) {
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("User branch not assigned");
+        }
+        return user.getBranchId();
+    }
+
+    private void ensureBranchAccess(User user, Long branchId) {
+        if (isAdminLike(user)) {
+            return;
+        }
+
+        Long userBranchId = requireAssignedBranch(user);
+        if (!userBranchId.equals(branchId)) {
+            throw new BadRequestException("Cannot access another branch");
+        }
+    }
+
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
 
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = getLoggedUser();
 
         Long branchId;
-        if (user.getRole() == Role.CASHIER) {
-            branchId = user.getBranchId();
+        if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
+            branchId = requireAssignedBranch(user);
+            if (request.getBranchId() != null && !branchId.equals(request.getBranchId())) {
+                throw new BadRequestException("Cannot create orders for another branch");
+            }
         } else {
             if (request.getBranchId() == null) throw new BadRequestException("BranchId required");
             branchId = request.getBranchId();
@@ -189,9 +213,7 @@ public class OrderService {
     @Transactional
     public OrderResponse cancelOrder(String invoiceNo, CancelOrderRequest request) {
 
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = getLoggedUser();
 
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
@@ -199,8 +221,7 @@ public class OrderService {
         if (order.getStatus() == OrderStatus.CANCELED)
             throw new AlreadyExistsException("Order already canceled");
 
-        if (user.getRole() != Role.ADMIN && !order.getBranchId().equals(user.getBranchId()))
-            throw new BadRequestException("Cannot cancel other branch order");
+        ensureBranchAccess(user, order.getBranchId());
 
         if (order.getOrderType() == OrderType.CREDIT && order.getCustomerId() != null) {
             Customer customer = customerRepository.findById(order.getCustomerId())
@@ -242,8 +263,11 @@ public class OrderService {
     }
 
     public OrderResponse getOrder(String invoiceNo) {
+        User user = getLoggedUser();
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        ensureBranchAccess(user, order.getBranchId());
 
         return mapToOrderResponse(order, true);
     }
@@ -252,7 +276,7 @@ public class OrderService {
 
         User user = getLoggedUser();
 
-        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
+        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Access denied: Only Admin or Manager can perform this action.");
         }
 
@@ -271,6 +295,15 @@ public class OrderService {
         if (branchId != 0L) {
             branchRepository.findById(branchId)
                     .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+        }
+
+        if (!isAdminLike(user)) {
+            Long userBranchId = requireAssignedBranch(user);
+            if (branchId == 0L) {
+                branchId = userBranchId;
+            } else if (!userBranchId.equals(branchId)) {
+                throw new BadRequestException("Cannot view another branch");
+            }
         }
 
         boolean hasSearch = (search != null && !search.isEmpty());

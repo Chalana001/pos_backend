@@ -42,7 +42,7 @@ public class OrderController {
         return ResponseEntity.ok(orderService.cancelOrder(invoiceNo, request));
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping
     public ResponseEntity<Page<OrderResponse>> list(
             @RequestParam(value = "search", required = false, defaultValue = "") String search,

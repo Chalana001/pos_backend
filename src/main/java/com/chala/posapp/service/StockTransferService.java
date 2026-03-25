@@ -37,6 +37,44 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
+    private boolean isAdminLike(User user) {
+        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
+    }
+
+    private void ensureManagerBranchAccess(User user, Long branchId) {
+        if (user.getRole() != Role.MANAGER) {
+            return;
+        }
+
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("Manager branch not assigned");
+        }
+
+        if (!user.getBranchId().equals(branchId)) {
+            throw new BadRequestException("Manager can only access their branch");
+        }
+    }
+
+    private void ensureTransferAccess(User user, StockTransfer transfer) {
+        if (isAdminLike(user)) {
+            return;
+        }
+
+        if (user.getRole() != Role.MANAGER) {
+            throw new BadRequestException("Not allowed");
+        }
+
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("Manager branch not assigned");
+        }
+
+        boolean allowed = user.getBranchId().equals(transfer.getFromBranchId())
+                || user.getBranchId().equals(transfer.getToBranchId());
+        if (!allowed) {
+            throw new BadRequestException("Manager cannot access this transfer");
+        }
+    }
+
     private void validateBranches(Long fromBranchId, Long toBranchId) {
         Branch from = branchRepository.findById(fromBranchId)
                 .orElseThrow(() -> new ResourceNotFoundException("From branch not found"));
@@ -66,11 +104,10 @@ public class StockTransferService {
             throw new BadRequestException("Cannot transfer stock to the same branch");
         }
 
+        validateBranches(request.getFromBranchId(), request.getToBranchId());
+
         if (user.getRole() == Role.MANAGER) {
-            if (user.getBranchId() == null)
-                throw new NotAssignedException("Manager branch not assigned");
-            if (!user.getBranchId().equals(request.getFromBranchId()))
-                throw new BadRequestException("Manager can only transfer FROM their branch");
+            ensureManagerBranchAccess(user, request.getFromBranchId());
         }
 
         String transferNo = transferNumberService.generateTransferNo(request.getFromBranchId());
@@ -139,7 +176,7 @@ public class StockTransferService {
         User user = getLoggedUser();
 
         if (user.getRole() == Role.CASHIER)
-            throw new RuntimeException("Cashier cannot receive transfers");
+            throw new BadRequestException("Cashier cannot receive transfers");
 
         StockTransfer transfer = transferRepository.findById(transferId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
@@ -148,11 +185,7 @@ public class StockTransferService {
             throw new BadRequestException("Transfer is not IN_TRANSIT status");
 
         if (user.getRole() == Role.MANAGER) {
-            if (user.getBranchId() == null)
-                throw new NotAssignedException("Manager branch not assigned");
-
-            if (!user.getBranchId().equals(transfer.getToBranchId()))
-                throw new BadRequestException("Manager can only receive transfers to their branch");
+            ensureManagerBranchAccess(user, transfer.getToBranchId());
         }
 
         Branch toBranch = branchRepository.findById(transfer.getToBranchId())
@@ -208,14 +241,7 @@ public class StockTransferService {
             throw new BadRequestException("Only IN_TRANSIT (Pending) transfers can be canceled");
 
         if (user.getRole() == Role.MANAGER) {
-            if (user.getBranchId() == null)
-                throw new BadRequestException("Manager branch not assigned");
-
-            boolean allowed = user.getBranchId().equals(transfer.getFromBranchId())
-                    || user.getBranchId().equals(transfer.getToBranchId());
-
-            if (!allowed)
-                throw new BadRequestException("Manager cannot cancel this transfer");
+            ensureTransferAccess(user, transfer);
         }
 
         Branch fromBranch = branchRepository.findById(transfer.getFromBranchId())
@@ -260,14 +286,18 @@ public class StockTransferService {
     }
 
     public StockTransferResponse getTransfer(String transferNo) {
+        User user = getLoggedUser();
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
+
+        ensureTransferAccess(user, transfer);
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
         return buildResponse(transfer, items);
     }
 
     public List<StockTransferResponse> incomingPending(Long branchId) {
+        ensureManagerBranchAccess(getLoggedUser(), branchId);
         return transferRepository.findByToBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
                 .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
@@ -275,6 +305,7 @@ public class StockTransferService {
     }
 
     public List<StockTransferResponse> outgoingPending(Long branchId) {
+        ensureManagerBranchAccess(getLoggedUser(), branchId);
         return transferRepository.findByFromBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
                 .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
@@ -282,12 +313,14 @@ public class StockTransferService {
     }
 
     public List<StockTransferResponse> listOutgoing(Long fromBranchId) {
+        ensureManagerBranchAccess(getLoggedUser(), fromBranchId);
         return transferRepository.findByFromBranchIdOrderByRequestedAtDesc(fromBranchId).stream()
                 .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
                 .toList();
     }
 
     public List<StockTransferResponse> listIncoming(Long toBranchId) {
+        ensureManagerBranchAccess(getLoggedUser(), toBranchId);
         return transferRepository.findByToBranchIdOrderByRequestedAtDesc(toBranchId).stream()
                 .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
                 .toList();

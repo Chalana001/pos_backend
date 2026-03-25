@@ -34,6 +34,7 @@ public class SubscriptionFilter extends OncePerRequestFilter {
         if (tenantId == null ||
                 tenantId.equals("MASTER") ||
                 path.startsWith("/auth/") ||
+                path.startsWith("/api/auth/") ||
                 path.startsWith("/api/saas/")) {
 
             filterChain.doFilter(request, response);
@@ -44,6 +45,7 @@ public class SubscriptionFilter extends OncePerRequestFilter {
 
         if (subscriptionOpt.isEmpty() ||
                 !subscriptionOpt.get().isActive() ||
+                subscriptionOpt.get().isBlocked() ||
                 subscriptionOpt.get().getValidUntil().isBefore(LocalDateTime.now())) {
 
             log.warn("Subscription blocked for tenant: {}", tenantId);
