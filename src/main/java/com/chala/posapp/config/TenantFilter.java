@@ -7,11 +7,13 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class TenantFilter extends OncePerRequestFilter {
@@ -24,7 +26,7 @@ public class TenantFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        String tenantFromUrl = extractTenantFromUrl(request);
+        String tenantFromRequest = extractTenantFromUrl(request);
         String tenantFromToken = null;
 
         final String authHeader = request.getHeader("Authorization");
@@ -33,19 +35,24 @@ public class TenantFilter extends OncePerRequestFilter {
             try {
                 tenantFromToken = jwtService.extractTenantId(jwt);
             } catch (Exception e) {
-                System.out.println("Invalid or Expired JWT");
+                log.warn("Invalid or Expired JWT");
             }
         }
 
         if (tenantFromToken != null) {
-            if (!tenantFromToken.equals(tenantFromUrl)) {
-                response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant mismatch! You cannot access this shop.");
-                return;
+            if (tenantFromToken.equals("MASTER")) {
+                TenantContext.setTenant("MASTER");
             }
-            TenantContext.setTenant(tenantFromToken);
+            else {
+                if (tenantFromRequest != null && !tenantFromToken.equals(tenantFromRequest)) {
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant mismatch! You cannot access this shop.");
+                    return;
+                }
+                TenantContext.setTenant(tenantFromToken);
+            }
         }
-        else if (tenantFromUrl != null && !tenantFromUrl.isEmpty()) {
-            TenantContext.setTenant(tenantFromUrl);
+        else if (tenantFromRequest != null && !tenantFromRequest.isEmpty()) {
+            TenantContext.setTenant(tenantFromRequest);
         }
 
         try {
@@ -56,12 +63,17 @@ public class TenantFilter extends OncePerRequestFilter {
     }
 
     private String extractTenantFromUrl(HttpServletRequest request) {
+        String tenantHeader = request.getHeader("X-Tenant-ID");
+        if (tenantHeader != null && !tenantHeader.isEmpty()) {
+            return tenantHeader;
+        }
+
         String host = request.getServerName();
         if (host.equals("localhost") || host.startsWith("127.0.0.1")) {
-            String tenant = request.getHeader("X-Tenant-ID");
-            return (tenant != null) ? tenant : request.getParameter("tenant");
+            return request.getParameter("tenant");
         } else {
-            return host.split("\\.")[0];
+            String[] parts = host.split("\\.");
+            return (parts.length > 1) ? parts[0] : null;
         }
     }
 }

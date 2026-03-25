@@ -27,6 +27,8 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final TenantFilter tenantFilter;
+    private final SubscriptionFilter subscriptionFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder(){
@@ -65,16 +67,18 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-
                         .requestMatchers("/auth/**").permitAll()
-
+                        .requestMatchers("/api/saas/plans").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-
                         .anyRequest().authenticated()
                 )
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
+                .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
+
+                .addFilterAfter(subscriptionFilter, TenantFilter.class)
+
+                .addFilterAfter(jwtAuthFilter, SubscriptionFilter.class);
 
         return http.build();
     }
-
 }

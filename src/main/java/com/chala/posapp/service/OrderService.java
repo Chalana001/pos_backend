@@ -319,7 +319,6 @@ public class OrderService {
         return unitPrice - value;
     }
 
-    // IncludeItems Flag එක අනුව තීරණය කරනවා Data Base එකෙන් Items ගන්නවද නැද්ද කියලා
     private OrderResponse mapToOrderResponse(Order order, boolean includeItems) {
         List<OrderItem> items = includeItems ? orderItemRepository.findByOrderId(order.getId()) : Collections.emptyList();
         return buildOrderResponse(order, items);
