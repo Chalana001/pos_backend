@@ -4,18 +4,17 @@ import com.chala.posapp.dto.ExpenseResponse;
 import com.chala.posapp.dto.CreateExpenseRequest;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,50 +28,54 @@ public class ExpenseService {
     @Transactional
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
         User user = getLoggedUser();
+        Long branchId = resolveBranchId(user, request.getBranchId());
 
-        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
-            request.setBranchId(user.getBranchId());
+        if (!branchRepository.existsById(branchId)) {
+            throw new ResourceNotFoundException("Branch not found");
         }
 
         CashShift activeShift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
-                request.getBranchId(), user.getId(), ShiftStatus.OPEN).orElse(null);
+                branchId, user.getId(), ShiftStatus.OPEN).orElse(null);
 
-        if (activeShift == null && user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
-            throw new BadRequestException("Cashiers must have an open shift to record expenses from the drawer.");
+        if (activeShift == null) {
+            throw new BadRequestException("An open shift is required to record an expense.");
         }
 
         Expense expense = Expense.builder()
                 .amount(request.getAmount())
                 .category(request.getCategory())
                 .description(request.getDescription().trim())
-                .branchId(request.getBranchId())
+                .branchId(branchId)
                 .cashierUserId(user.getId())
-                .shiftId(activeShift != null ? activeShift.getId() : null)
+                .shiftId(activeShift.getId())
                 .createdAt(LocalDateTime.now())
                 .build();
 
         Expense savedExpense = expenseRepository.save(expense);
 
-        if (request.isFromDrawer() && activeShift != null) {
+        if (request.isFromDrawer()) {
             activeShift.setTotalExpenses(activeShift.getTotalExpenses() + request.getAmount());
             cashShiftRepository.save(activeShift);
         }
         return mapToResponse(savedExpense);
     }
 
-    public List<ExpenseResponse> getExpenses(Long branchId, Instant from, Instant to) {
-        ZoneId zone = ZoneId.systemDefault();
-        LocalDateTime f = LocalDateTime.ofInstant(from, zone);
-        LocalDateTime t = LocalDateTime.ofInstant(to, zone);
+    public Page<ExpenseResponse> getFilteredExpenses(Long requestedBranchId, LocalDateTime from, LocalDateTime to, Pageable pageable) {
 
-        List<Expense> expenses;
-        if (branchId == null || branchId == 0) {
-            expenses = expenseRepository.findByCreatedAtBetweenOrderByCreatedAtDesc(f, t);
-        } else {
-            expenses = expenseRepository.findByBranchIdAndCreatedAtBetweenOrderByCreatedAtDesc(branchId, f, t);
+        User currentUser = getLoggedUser();
+        Long finalBranchId = requestedBranchId;
+        Long cashierUserId = null;
+
+        if (currentUser.getRole() == Role.CASHIER) {
+            finalBranchId = requireAssignedBranch(currentUser);
+            cashierUserId = currentUser.getId();
+        } else if (currentUser.getRole() == Role.MANAGER) {
+            finalBranchId = requireAssignedBranch(currentUser);
         }
 
-        return expenses.stream().map(this::mapToResponse).collect(Collectors.toList());
+        Page<Expense> expenses = expenseRepository.findWithFilters(finalBranchId, cashierUserId, from, to, pageable);
+
+        return expenses.map(this::mapToResponse);
     }
 
     private ExpenseResponse mapToResponse(Expense expense) {
@@ -101,6 +104,24 @@ public class ExpenseService {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private Long resolveBranchId(User user, Long requestedBranchId) {
+        if (user.getRole() == Role.ADMIN) {
+            if (requestedBranchId == null || requestedBranchId == 0) {
+                throw new BadRequestException("Branch is required");
+            }
+            return requestedBranchId;
+        }
+
+        return requireAssignedBranch(user);
+    }
+
+    private Long requireAssignedBranch(User user) {
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("User branch not assigned");
+        }
+        return user.getBranchId();
     }
 
 }

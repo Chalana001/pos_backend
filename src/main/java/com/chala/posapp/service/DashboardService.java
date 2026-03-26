@@ -1,5 +1,7 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.dto.chart.DailySalesResponse;
+import com.chala.posapp.dto.chart.MonthlySalesResponse;
 import com.chala.posapp.dto.dashboard.DashboardKpiResponse;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
@@ -9,15 +11,13 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.DashboardRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.util.DateRangeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import com.chala.posapp.dto.chart.DailySalesResponse;
-import com.chala.posapp.dto.chart.MonthlySalesResponse;
-
 import java.util.List;
 
 @Service
@@ -35,14 +35,16 @@ public class DashboardService {
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {
-            if (requestedBranchId == null)
+            if (requestedBranchId == null) {
                 throw new NotAssignedException("branchId required for admin");
+            }
             return requestedBranchId;
         }
 
         if (user.getRole() == Role.MANAGER) {
-            if (user.getBranchId() == null)
+            if (user.getBranchId() == null) {
                 throw new NotAssignedException("Manager branch not assigned");
+            }
             return user.getBranchId();
         }
 
@@ -51,7 +53,6 @@ public class DashboardService {
 
     public DashboardKpiResponse todayKpis(Long requestedBranchId) {
         String tenantId = TenantContext.getTenant();
-
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
 
@@ -72,40 +73,29 @@ public class DashboardService {
                 .build();
     }
 
-    public List<DailySalesResponse> dailySales(Long requestedBranchId,
-                                               LocalDate from,
-                                               LocalDate to) {
+    public List<DailySalesResponse> dailySales(Long requestedBranchId, LocalDate from, LocalDate to) {
         String tenantId = TenantContext.getTenant();
-
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        LocalDateTime fromDt = from.atStartOfDay();
-        LocalDateTime toDt = to.atTime(23, 59, 59);
-
-        return dashboardRepository.dailySalesRaw(tenantId, branchId, fromDt, toDt).stream()
+        return dashboardRepository.dailySalesRaw(tenantId, branchId, range.from(), range.to()).stream()
                 .map(r -> DailySalesResponse.builder()
-                        .date(r[0].toString()) // yyyy-MM-dd
+                        .date(r[0].toString())
                         .sales(((Number) r[1]).doubleValue())
                         .build())
                 .toList();
     }
 
-    public List<MonthlySalesResponse> monthlySales(Long requestedBranchId,
-                                                   LocalDate from,
-                                                   LocalDate to) {
+    public List<MonthlySalesResponse> monthlySales(Long requestedBranchId, LocalDate from, LocalDate to) {
         String tenantId = TenantContext.getTenant();
-
         User user = getLoggedUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        LocalDateTime fromDt = from.atStartOfDay();
-        LocalDateTime toDt = to.atTime(23, 59, 59);
-
-        // tenantId එක පාස් කරනවා
-        return dashboardRepository.monthlySalesRaw(tenantId, branchId, fromDt, toDt).stream()
+        return dashboardRepository.monthlySalesRaw(tenantId, branchId, range.from(), range.to()).stream()
                 .map(r -> MonthlySalesResponse.builder()
-                        .month(r[0].toString()) // yyyy-MM
+                        .month(r[0].toString())
                         .sales(((Number) r[1]).doubleValue())
                         .build())
                 .toList();
