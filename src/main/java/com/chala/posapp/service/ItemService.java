@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ItemService {
 
     private final ItemRepository itemRepository;
@@ -39,6 +40,7 @@ public class ItemService {
     private final AuthService authService;
     private final StockBatchRepository stockBatchRepository;
 
+    @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
 
         String barcode = request.getBarcode() != null ? request.getBarcode().trim() : "";
@@ -109,6 +111,7 @@ public class ItemService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     public Page<ItemResponse> getAllItems(String search, int page, int size) {
         // අලුතින්ම හදපු Item එක උඩින්ම එන්න Sort කරනවා
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
@@ -123,12 +126,14 @@ public class ItemService {
         return itemPage.map(this::mapToResponse);
     }
 
+    @Transactional(readOnly = true)
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         return mapToResponse(item);
     }
 
+    @Transactional(readOnly = true)
     public ItemResponse getByBarcode(String barcode, Long branchId) {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
@@ -141,9 +146,13 @@ public class ItemService {
         }
     }
 
+    @Transactional(readOnly = true)
     public List<ItemResponse> searchByName(String name, Long branchId) {
 
-        List<Item> items = itemRepository.findByNameContainingIgnoreCase(name.trim());
+        String searchTerm = name.trim(); // Frontend එකෙන් එවන Search Query එක (නම හරි Barcode එක හරි වෙන්න පුළුවන්)
+
+        // 🚀 මෙන්න මෙතන තමයි වෙනස. නමෙනුයි Barcode එකෙනුයි දෙකෙන්ම හොයන්න කියනවා.
+        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream().map(item -> {
                     ItemResponse response = new ItemResponse();
@@ -210,6 +219,7 @@ public class ItemService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public List<ItemResponse> searchForBarcodePrint(String query) {
 
         String searchTerm = query.trim();
@@ -228,6 +238,7 @@ public class ItemService {
         }).collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public List<ItemResponse> listAll(Boolean activeOnly) {
         return itemRepository.findAll().stream()
                 .filter(i -> activeOnly == null || !activeOnly || i.isActive())
@@ -315,6 +326,7 @@ public class ItemService {
                 .build();
     }
 
+    @Transactional
     public void deactivateItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
@@ -339,6 +351,7 @@ public class ItemService {
         return newBarcode;
     }
 
+    @Transactional(readOnly = true)
     public List<ItemResponse> getRecentlyAddedItems(int limit) {
 
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));

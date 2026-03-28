@@ -46,12 +46,20 @@ public class SecurityConfig {
 
         config.setAllowedOriginPatterns(Arrays.asList(
                 "http://*.localhost:[*]",
+                "https://*.localhost:[*]",
                 "http://localhost:[*]",
-                "https://*.chalanawijesingha.xyz"
+                "https://localhost:[*]",
+                "https://admin-panel-pos.vercel.app",
+                "https://admin-panel-afzk8r7iw-chalana001s-projects.vercel.app",
+                "https://admin.chalanawijesingha.xyz",
+                "https://*.chalanawijesingha.xyz",
+                "https://chalanawijesingha.xyz" // 🚀 Root Domain එකත් අනිවාර්යයෙන්ම දාගන්න
         ));
 
-        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Tenant-ID"));
+        config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+
+        config.setAllowedHeaders(Arrays.asList("*"));
+
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
 
@@ -76,10 +84,8 @@ public class SecurityConfig {
                 )
 
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
-
-                .addFilterAfter(subscriptionFilter, TenantFilter.class)
-
-                .addFilterAfter(jwtAuthFilter, SubscriptionFilter.class);
+                .addFilterBefore(subscriptionFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

@@ -25,12 +25,14 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class UserManagementService {
 
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Transactional
     public UserResponse createUser(CreateUserRequest request) {
         String username = request.getUsername().trim();
 
@@ -64,6 +66,7 @@ public class UserManagementService {
         return map(userRepository.save(user));
     }
 
+    @Transactional(readOnly = true)
     public List<UserResponse> listUsers() {
         return userRepository.findAll().stream().map(this::map).toList();
     }

@@ -21,6 +21,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class StockTransferService {
 
     private final StockTransferRepository transferRepository;

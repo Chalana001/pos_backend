@@ -15,13 +15,18 @@ import com.chala.posapp.util.DateRangeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class DashboardService {
 
     private final DashboardRepository dashboardRepository;
@@ -93,10 +98,18 @@ public class DashboardService {
         Long branchId = resolveBranchId(user, requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        return dashboardRepository.monthlySalesRaw(tenantId, branchId, range.from(), range.to()).stream()
-                .map(r -> MonthlySalesResponse.builder()
-                        .month(r[0].toString())
-                        .sales(((Number) r[1]).doubleValue())
+        Map<YearMonth, Double> monthlyTotals = new LinkedHashMap<>();
+
+        for (Object[] row : dashboardRepository.dailySalesRaw(tenantId, branchId, range.from(), range.to())) {
+            YearMonth month = YearMonth.parse(row[0].toString().substring(0, 7));
+            double amount = ((Number) row[1]).doubleValue();
+            monthlyTotals.merge(month, amount, Double::sum);
+        }
+
+        return monthlyTotals.entrySet().stream()
+                .map(entry -> MonthlySalesResponse.builder()
+                        .month(entry.getKey().toString())
+                        .sales(entry.getValue())
                         .build())
                 .toList();
     }

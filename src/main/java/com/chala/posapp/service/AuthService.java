@@ -16,9 +16,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class AuthService {
 
     private final UserRepository userRepository;
@@ -26,6 +28,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
 
+    @Transactional
     public void registerAdmin(RegisterRequest request) {
         if (userRepository.existsByUsername(request.getUsername()))
             throw new AlreadyExistsException("Username already exists");

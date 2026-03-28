@@ -35,6 +35,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
+        System.out.println("========== INCOMING TOKEN: " + authHeader + " ==========");
+
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             filterChain.doFilter(request, response);
             return;

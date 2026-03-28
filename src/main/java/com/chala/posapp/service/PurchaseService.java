@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class PurchaseService {
 
     private final PurchaseRepository purchaseRepository;
@@ -159,6 +160,7 @@ public class PurchaseService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
     public Page<PurchaseResponse> getAllPurchases(int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
         Page<Purchase> purchasePage = purchaseRepository.findAllByOrderByIdDesc(pageable);
@@ -173,6 +175,7 @@ public class PurchaseService {
                 .build());
     }
 
+    @Transactional(readOnly = true)
     public PurchaseResponse getPurchaseById(Long id) {
 
         Purchase purchase = purchaseRepository.findById(id)

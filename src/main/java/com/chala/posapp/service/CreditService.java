@@ -20,6 +20,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CreditService {
 
     private final CustomerRepository customerRepository;

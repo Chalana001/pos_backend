@@ -24,6 +24,7 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class StockService {
 
     private final ItemRepository itemRepository;

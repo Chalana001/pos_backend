@@ -20,11 +20,13 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
 
+    @Transactional
     public CustomerResponse create(CustomerCreateRequest request) {
         String phone = request.getPhone().trim();
 

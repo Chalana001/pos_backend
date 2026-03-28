@@ -126,14 +126,14 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
 
     // ✅ Daily Sales
     @Query(value = """
-        SELECT DATE(o.created_at) AS day, COALESCE(SUM(o.grand_total),0) AS sales
+        SELECT DATE(o.created_at) AS sales_date, COALESCE(SUM(o.grand_total),0) AS sales
         FROM orders o
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE(o.created_at)
-        ORDER BY day
+        ORDER BY sales_date
     """, nativeQuery = true)
     List<Object[]> dailySalesRaw(@Param("tenantId") String tenantId,
                                  @Param("branchId") Long branchId,
@@ -143,14 +143,14 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
 
     // ✅ Monthly Sales
     @Query(value = """
-        SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS month, COALESCE(SUM(o.grand_total),0) AS sales
+        SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS sales_month, COALESCE(SUM(o.grand_total),0) AS sales
         FROM orders o
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
-        ORDER BY month
+        ORDER BY sales_month
     """, nativeQuery = true)
     List<Object[]> monthlySalesRaw(@Param("tenantId") String tenantId,
                                    @Param("branchId") Long branchId,

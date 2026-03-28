@@ -7,17 +7,18 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;

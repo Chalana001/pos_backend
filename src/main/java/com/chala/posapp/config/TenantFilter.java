@@ -76,7 +76,12 @@ public class TenantFilter extends OncePerRequestFilter {
             return request.getParameter("tenant");
         } else {
             String[] parts = host.split("\\.");
-            return (parts.length > 1) ? parts[0] : null;
+            String extractedSubdomain = (parts.length > 1) ? parts[0] : null;
+            if ("api".equalsIgnoreCase(extractedSubdomain) || "www".equalsIgnoreCase(extractedSubdomain)) {
+                return null;
+            }
+
+            return extractedSubdomain;
         }
     }
 

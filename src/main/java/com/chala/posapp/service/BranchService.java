@@ -19,11 +19,13 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class BranchService {
 
     private final BranchRepository branchRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
+    @Transactional
     public BranchResponse createBranch(BranchCreateRequest request) {
         String code = request.getCode().trim().toUpperCase();
 
@@ -94,6 +96,7 @@ public class BranchService {
         return mapToResponse(branch);
     }
 
+    @Transactional
     public void deleteBranch(Long id) {
         Branch branch = branchRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));

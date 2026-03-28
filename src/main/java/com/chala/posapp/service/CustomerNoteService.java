@@ -10,9 +10,11 @@ import com.chala.posapp.dto.customer.CustomerNoteUpdateRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class CustomerNoteService {
 
     private final CustomerNoteRepository noteRepository;
@@ -27,6 +29,7 @@ public class CustomerNoteService {
                 .map(this::map);
     }
 
+    @Transactional
     public CustomerNoteResponse create(Long customerId, CustomerNoteCreateRequest request) {
         customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
@@ -41,6 +44,7 @@ public class CustomerNoteService {
         return map(noteRepository.save(note));
     }
 
+    @Transactional
     public CustomerNoteResponse update(Long noteId, CustomerNoteUpdateRequest request) {
         CustomerNote note = noteRepository.findById(noteId)
                 .orElseThrow(() -> new ResourceNotFoundException("Note not found"));
@@ -49,6 +53,7 @@ public class CustomerNoteService {
         return map(noteRepository.save(note));
     }
 
+    @Transactional
     public void delete(Long noteId) {
         if (!noteRepository.existsById(noteId))
             throw new ResourceNotFoundException("Note not found");

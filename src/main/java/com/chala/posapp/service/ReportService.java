@@ -24,13 +24,19 @@ import com.chala.posapp.util.DateRangeUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Timestamp;
+import java.time.LocalDateTime;
 import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ReportService {
 
     private final ReportRepository reportRepository;
@@ -114,14 +120,17 @@ public class ReportService {
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         if ("MONTHLY".equalsIgnoreCase(type)) {
-            List<Object[]> rows = reportRepository.monthlySalesRaw(tenantId, effectiveBranchId, range.from(), range.to());
+            Map<YearMonth, Double> monthlyTotals = new LinkedHashMap<>();
 
-            return rows.stream().map(r -> {
-                String monthStr = (String) r[0];
-                double amount = ((Number) r[1]).doubleValue();
-                LocalDate date = LocalDate.parse(monthStr + "-01");
-                return new SalesTrendPoint(date, amount, 0);
-            }).toList();
+            for (Object[] row : reportRepository.dailySalesRaw(tenantId, effectiveBranchId, range.from(), range.to())) {
+                YearMonth month = YearMonth.parse(row[0].toString().substring(0, 7));
+                double amount = ((Number) row[1]).doubleValue();
+                monthlyTotals.merge(month, amount, Double::sum);
+            }
+
+            return monthlyTotals.entrySet().stream()
+                    .map(entry -> new SalesTrendPoint(entry.getKey().atDay(1), entry.getValue(), 0))
+                    .toList();
         }
 
         List<Object[]> rows = reportRepository.dailySalesRaw(tenantId, effectiveBranchId, range.from(), range.to());
@@ -161,7 +170,7 @@ public class ReportService {
                 (String) r[1],
                 ((Number) r[2]).doubleValue(),
                 (String) r[3],
-                ((Timestamp) r[4]).toLocalDateTime()
+                toLocalDateTime(r[4])
         )).toList();
     }
 
@@ -236,5 +245,15 @@ public class ReportService {
                 .totalExpenses(totalExpenses)
                 .netProfit(netProfit)
                 .build();
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime;
+        }
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        return LocalDateTime.parse(value.toString().replace(' ', 'T'));
     }
 }

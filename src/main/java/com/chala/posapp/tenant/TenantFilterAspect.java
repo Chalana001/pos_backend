@@ -1,6 +1,7 @@
 package com.chala.posapp.tenant;
 
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
 import org.hibernate.Session;
@@ -10,18 +11,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class TenantFilterAspect {
 
-    private final EntityManager entityManager;
+    @PersistenceContext
+    private EntityManager entityManager;
 
-    public TenantFilterAspect(EntityManager entityManager) {
-        this.entityManager = entityManager;
-    }
-
-    @Before("execution(* com.chala.posapp.repository..*(..))")
+    @Before("this(org.springframework.data.repository.Repository)")
     public void enableTenantFilter() {
         String tenantId = TenantContext.getTenant();
-        if (tenantId != null) {
+
+        if (tenantId != null && !tenantId.equalsIgnoreCase("MASTER")) {
             Session session = entityManager.unwrap(Session.class);
-            session.enableFilter("tenantFilter").setParameter("tenantId", tenantId);
+            if (session != null) {
+                session.enableFilter("tenantFilter").setParameter("tenantId", tenantId);
+            }
         }
     }
 }

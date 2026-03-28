@@ -9,15 +9,16 @@ import com.chala.posapp.entity.supplier.SupplierContact;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.SupplierRepository;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class SupplierService {
     private final SupplierRepository supplierRepository;
 
@@ -57,6 +58,7 @@ public class SupplierService {
         return supplierRepository.save(supplier);
     }
 
+    @Transactional
     public Supplier createQuickSupplier(SupplierQuickCreateRequest req) {
 
         Supplier s = new Supplier();
@@ -68,6 +70,7 @@ public class SupplierService {
         return supplierRepository.save(s);
     }
 
+    @Transactional(readOnly = true)
     public List<SupplierResponse> getAllActiveSuppliers() {
         List<Supplier> suppliers = supplierRepository.findByActiveTrue();
 
@@ -76,6 +79,7 @@ public class SupplierService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public SupplierResponse getSupplierById(Long id) {
         Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + id));
