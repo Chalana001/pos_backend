@@ -36,7 +36,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final InvoiceService invoiceService;
     private final CustomerRepository customerRepository;
-    private final ShiftService shiftService;
+    private final CashShiftRepository cashShiftRepository;
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
 
@@ -208,6 +208,8 @@ public class OrderService {
             customerRepository.save(customer);
         }
 
+        addCashSaleToOpenShift(savedOrder);
+
         return buildOrderResponse(savedOrder, orderItemsToSave);
     }
 
@@ -237,6 +239,7 @@ public class OrderService {
         order.setCancelReason(request.getReason());
         order.setCanceledAt(LocalDateTime.now());
         Order saved = orderRepository.save(order);
+        reverseCashSaleFromOpenShift(saved);
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         Branch branch = branchRepository.findById(order.getBranchId())
@@ -351,6 +354,41 @@ public class OrderService {
         if (value < 0) value = 0;
         if (value > unitPrice) value = unitPrice;
         return unitPrice - value;
+    }
+
+    private void addCashSaleToOpenShift(Order order) {
+        if (order.getOrderType() != OrderType.CASH || order.getStatus() != OrderStatus.COMPLETED) {
+            return;
+        }
+
+        cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
+                        order.getBranchId(),
+                        order.getCashierUserId(),
+                        ShiftStatus.OPEN
+                )
+                .ifPresent(shift -> {
+                    double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
+                    shift.setCashSales(currentCashSales + order.getGrandTotal());
+                    cashShiftRepository.save(shift);
+                });
+    }
+
+    private void reverseCashSaleFromOpenShift(Order order) {
+        if (order.getOrderType() != OrderType.CASH) {
+            return;
+        }
+
+        cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
+                        order.getBranchId(),
+                        order.getCashierUserId(),
+                        ShiftStatus.OPEN
+                )
+                .filter(shift -> !order.getCreatedAt().isBefore(shift.getOpenedAt()))
+                .ifPresent(shift -> {
+                    double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
+                    shift.setCashSales(Math.max(0.0, currentCashSales - order.getGrandTotal()));
+                    cashShiftRepository.save(shift);
+                });
     }
 
     private OrderResponse mapToOrderResponse(Order order, boolean includeItems) {

@@ -10,5 +10,6 @@ public class AuthResponse {
     private String username;
     private String role;
     private Long branchId;
+    private String shopName;
 }
 

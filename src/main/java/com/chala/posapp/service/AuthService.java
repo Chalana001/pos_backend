@@ -8,6 +8,7 @@ import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.security.JwtService;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
     @Transactional
     public void registerAdmin(RegisterRequest request) {
@@ -60,7 +62,11 @@ public class AuthService {
                 user.getTenantId()
         );
 
-        return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId());
+        String shopName = tenantSubscriptionRepository.findByTenantId(user.getTenantId())
+                .map(subscription -> subscription.getShopName())
+                .orElse(null);
+
+        return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId(), shopName);
     }
 
     public User getLoggedUser() {

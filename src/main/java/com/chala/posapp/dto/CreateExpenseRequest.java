@@ -1,5 +1,7 @@
 package com.chala.posapp.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.entity.ExpenseCategory;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -18,7 +20,9 @@ public class CreateExpenseRequest {
     @NotNull
     private Long branchId;
 
-    private boolean isFromDrawer=true;
+    @JsonProperty("fromDrawer")
+    @JsonAlias("isFromDrawer")
+    private boolean fromDrawer;
 
     @NotBlank
     private String description;
