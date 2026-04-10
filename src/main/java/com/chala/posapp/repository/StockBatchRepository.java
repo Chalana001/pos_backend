@@ -55,4 +55,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
 
     List<StockBatch> findByItemId(Long id);
+
+    List<StockBatch> findByBranchIdAndBatchCodeStartingWith(Long branchId, String batchCodePrefix);
 }

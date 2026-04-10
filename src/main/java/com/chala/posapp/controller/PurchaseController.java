@@ -2,7 +2,9 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.CreatePurchaseRequest;
 import com.chala.posapp.dto.PurchaseResponse;
+import com.chala.posapp.dto.CancelPurchaseRequest;
 import com.chala.posapp.service.PurchaseService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
@@ -35,5 +37,14 @@ public class PurchaseController {
     @GetMapping("/{id}")
     public ResponseEntity<PurchaseResponse> getById(@PathVariable(name = "id") Long id) {
         return ResponseEntity.ok(purchaseService.getPurchaseById(id));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<PurchaseResponse> cancel(
+            @PathVariable(name = "id") Long id,
+            @Valid @RequestBody CancelPurchaseRequest request
+    ) {
+        return ResponseEntity.ok(purchaseService.cancelPurchase(id, request));
     }
 }

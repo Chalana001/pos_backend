@@ -38,6 +38,16 @@ public class Purchase extends TenantEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal grandTotal;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20, columnDefinition = "ENUM('CANCELED','COMPLETED') DEFAULT 'COMPLETED'")
+    private PurchaseStatus status;
+
+    @Column(name = "cancel_reason", length = 255)
+    private String cancelReason;
+
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
+
     @OneToMany(mappedBy = "purchase", cascade = CascadeType.ALL)
     @Builder.Default
     private List<GRN> grnList = new ArrayList<>();
@@ -45,5 +55,6 @@ public class Purchase extends TenantEntity {
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
+        if (status == null) status = PurchaseStatus.COMPLETED;
     }
 }

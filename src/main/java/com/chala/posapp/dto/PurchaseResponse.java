@@ -1,6 +1,7 @@
 package com.chala.posapp.dto;
 
 import com.chala.posapp.dto.grn.GrnResponse;
+import com.chala.posapp.entity.PurchaseStatus;
 import lombok.Builder;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -14,6 +15,9 @@ public class PurchaseResponse {
     private String invoiceNo;
     private String supplierName;
     private BigDecimal grandTotal;
+    private PurchaseStatus status;
+    private String cancelReason;
     private LocalDateTime createdAt;
+    private LocalDateTime canceledAt;
     private List<GrnResponse> grnList;
 }
