@@ -149,9 +149,8 @@ public class ItemService {
     @Transactional(readOnly = true)
     public List<ItemResponse> searchByName(String name, Long branchId) {
 
-        String searchTerm = name.trim(); // Frontend එකෙන් එවන Search Query එක (නම හරි Barcode එක හරි වෙන්න පුළුවන්)
+        String searchTerm = name.trim();
 
-        // 🚀 මෙන්න මෙතන තමයි වෙනස. නමෙනුයි Barcode එකෙනුයි දෙකෙන්ම හොයන්න කියනවා.
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream().map(item -> {
@@ -181,12 +180,20 @@ public class ItemService {
                     BigDecimal currentDisplayPrice = item.getSellingPrice();
 
                     if (branchId != null) {
-                        List<StockBatch> allBranchBatches = stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
-                        if (allBranchBatches.isEmpty()) {
+                        List<StockBatch> allTargetBatches;
+
+                        if (branchId == 0L) {
+                            allTargetBatches = stockBatchRepository.findByItemId(item.getId());
+                        } else {
+                            allTargetBatches = stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
+                        }
+
+                        // කොහෙන් හරි batches නැත්නම් item එක skip කරනවා
+                        if (allTargetBatches.isEmpty()) {
                             return null;
                         }
 
-                        List<StockBatch> activeBatches = allBranchBatches.stream()
+                        List<StockBatch> activeBatches = allTargetBatches.stream()
                                 .filter(b -> b.getQuantity() > 0)
                                 .toList();
 
@@ -203,8 +210,8 @@ public class ItemService {
 
                         if (!batchDTOs.isEmpty()) {
                             currentDisplayPrice = batchDTOs.get(0).getPrice();
-                        } else if (!allBranchBatches.isEmpty()) {
-                            currentDisplayPrice = allBranchBatches.get(allBranchBatches.size() - 1).getSellingPrice();
+                        } else if (!allTargetBatches.isEmpty()) {
+                            currentDisplayPrice = allTargetBatches.get(allTargetBatches.size() - 1).getSellingPrice();
                         }
                     }
 

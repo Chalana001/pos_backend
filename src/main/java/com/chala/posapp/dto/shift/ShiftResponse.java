@@ -13,6 +13,8 @@ public class ShiftResponse {
     private Long id;
     private Long branchId;
     private String branchName;
+    private String branchAddress;
+    private String branchPhone;
     private Long cashierUserId;
     private String cashierName;
 

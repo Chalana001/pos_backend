@@ -15,6 +15,9 @@ public class OrderResponse {
     private Long id;
     private String invoiceNo;
     private Long branchId;
+    private String branchName;
+    private String branchAddress;
+    private String branchPhone;
     private Long cashierUserId;
     private Long customerId;
     private String customerName;

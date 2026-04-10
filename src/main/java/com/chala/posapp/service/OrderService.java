@@ -90,6 +90,9 @@ public class OrderService {
         if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null)
             throw new BadRequestException("Customer required for CREDIT order");
 
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+
         String invoiceNo = invoiceService.generateInvoiceNo(branchId);
 
         double subTotal = 0;
@@ -174,6 +177,9 @@ public class OrderService {
         Order order = Order.builder()
                 .invoiceNo(invoiceNo)
                 .branchId(branchId)
+                .receiptBranchName(branch.getName())
+                .receiptBranchAddress(branch.getAddress())
+                .receiptBranchPhone(branch.getPhone())
                 .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
                 .orderType(request.getOrderType())
@@ -422,10 +428,26 @@ public class OrderService {
                                 .build())
                         .collect(Collectors.toList());
 
+        String branchName = order.getReceiptBranchName();
+        String branchAddress = order.getReceiptBranchAddress();
+        String branchPhone = order.getReceiptBranchPhone();
+
+        if (order.getBranchId() != null && branchName == null && branchAddress == null && branchPhone == null) {
+            Branch branch = branchRepository.findById(order.getBranchId()).orElse(null);
+            if (branch != null) {
+                branchName = branch.getName();
+                branchAddress = branch.getAddress();
+                branchPhone = branch.getPhone();
+            }
+        }
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .invoiceNo(order.getInvoiceNo())
                 .branchId(order.getBranchId())
+                .branchName(branchName)
+                .branchAddress(branchAddress)
+                .branchPhone(branchPhone)
                 .cashierUserId(order.getCashierUserId())
                 .customerId(order.getCustomerId())
                 .customerName(customerName)

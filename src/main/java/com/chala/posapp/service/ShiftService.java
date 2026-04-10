@@ -569,7 +569,11 @@ public class ShiftService {
 
         if (s.getBranchId() != null) {
             branchRepository.findById(s.getBranchId())
-                    .ifPresent(branch -> response.setBranchName(branch.getName()));
+                    .ifPresent(branch -> {
+                        response.setBranchName(branch.getName());
+                        response.setBranchAddress(branch.getAddress());
+                        response.setBranchPhone(branch.getPhone());
+                    });
         }
 
         if (s.getCashierUserId() != null) {

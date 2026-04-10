@@ -53,4 +53,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             Pageable pageable);
 
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
+
+    List<StockBatch> findByItemId(Long id);
 }

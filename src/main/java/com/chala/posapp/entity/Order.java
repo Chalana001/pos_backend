@@ -30,6 +30,15 @@ public class Order extends TenantEntity {
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
+    @Column(name = "receipt_branch_name", length = 120)
+    private String receiptBranchName;
+
+    @Column(name = "receipt_branch_address", length = 255)
+    private String receiptBranchAddress;
+
+    @Column(name = "receipt_branch_phone", length = 30)
+    private String receiptBranchPhone;
+
     @Column(name = "cashier_user_id", nullable = false)
     private Long cashierUserId;
 
