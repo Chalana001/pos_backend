@@ -1,6 +1,9 @@
 package com.chala.posapp.dto.saas;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -44,4 +47,9 @@ public class ShopOnboardRequest {
 
     @Size(max = 255)
     private String note;
+
+    @Min(1)
+    @Max(12)
+    @JsonAlias({"subscriptionMonths", "subscriptionYears"})
+    private Integer subscriptionCycles = 1;
 }

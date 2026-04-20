@@ -120,7 +120,8 @@ public class SuperAdminSaasService {
 
         String adminUsername = request.getAdminUsername().trim();
         String shopName = request.getShopName().trim();
-        LocalDateTime validUntil = extendByBillingCycle(LocalDateTime.now(), plan.getBillingCycle(), 1);
+        int subscriptionCycles = request.getSubscriptionCycles() != null ? request.getSubscriptionCycles() : 1;
+        LocalDateTime validUntil = extendByBillingCycle(LocalDateTime.now(), plan.getBillingCycle(), subscriptionCycles);
 
         TenantSubscription subscription = TenantSubscription.builder()
                 .tenantId(tenantId)
@@ -164,7 +165,7 @@ public class SuperAdminSaasService {
                 tenantId,
                 shopName,
                 BillingActionType.ONBOARDING,
-                request.getAmountPaid() != null ? request.getAmountPaid() : plan.getInitialPrice(),
+                request.getAmountPaid() != null ? request.getAmountPaid() : plan.getInitialPrice() * subscriptionCycles,
                 request.getNote(),
                 superAdmin.getUsername()
         );
@@ -204,6 +205,7 @@ public class SuperAdminSaasService {
                 .shopName(subscription.getShopName())
                 .adminUsername(resolveAdminUsername(subscription))
                 .planName(subscription.getPlan() != null ? subscription.getPlan().getName() : "N/A")
+                .planBillingCycle(subscription.getPlan() != null ? subscription.getPlan().getBillingCycle().name() : null)
                 .active(subscription.isActive())
                 .blocked(subscription.isBlocked())
                 .maxBranches(baseBranches)
@@ -342,6 +344,7 @@ public class SuperAdminSaasService {
                 .shopName(subscription.getShopName())
                 .adminUsername(resolveAdminUsername(subscription))
                 .planName(subscription.getPlan() != null ? subscription.getPlan().getName() : "N/A")
+                .planBillingCycle(subscription.getPlan() != null ? subscription.getPlan().getBillingCycle().name() : null)
                 .active(subscription.isActive())
                 .blocked(subscription.isBlocked())
                 .maxBranches(baseBranches)

@@ -11,7 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -22,7 +24,17 @@ public class SubscriptionService {
 
     @Transactional(readOnly = true)
     public List<SubscriptionPlan> getAllPlans() {
-        return planRepository.findAll();
+        Map<String, Integer> displayOrder = Map.of(
+                "MONTHLY_LITE", 1,
+                "YEARLY_LITE", 2,
+                "MONTHLY_PRO", 3,
+                "YEARLY_PRO", 4
+        );
+
+        return planRepository.findAll().stream()
+                .filter(plan -> displayOrder.containsKey(plan.getName()))
+                .sorted(Comparator.comparingInt(plan -> displayOrder.get(plan.getName())))
+                .toList();
     }
 
     @Transactional(readOnly = true)

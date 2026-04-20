@@ -12,6 +12,7 @@ public class ShopSummaryResponse {
     private String shopName;
     private String adminUsername;
     private String planName;
+    private String planBillingCycle;
     private boolean active;
     private boolean blocked;
     private int maxBranches;
