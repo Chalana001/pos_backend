@@ -7,7 +7,7 @@ import java.time.LocalDate;
 @Data
 public class GrnItemRequest {
     private Long itemId;
-    private Integer qty;
+    private BigDecimal qty;
 
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;

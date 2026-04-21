@@ -89,7 +89,7 @@ public class ReportService {
                 .map(r -> TopSellingItemResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
-                        .qtySold(((Number) r[2]).longValue())
+                        .qtySold(((Number) r[2]).doubleValue())
                         .revenue(((Number) r[3]).doubleValue())
                         .build())
                 .toList();
@@ -104,7 +104,7 @@ public class ReportService {
                 .map(r -> ProfitReportResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
-                        .qtySold(((Number) r[2]).longValue())
+                        .qtySold(((Number) r[2]).doubleValue())
                         .revenue(((Number) r[3]).doubleValue())
                         .cost(((Number) r[4]).doubleValue())
                         .profit(((Number) r[5]).doubleValue())

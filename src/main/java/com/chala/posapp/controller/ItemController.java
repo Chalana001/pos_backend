@@ -84,6 +84,15 @@ public class ItemController {
         return ResponseEntity.ok(itemService.searchByName(name, branchId));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/searchForPos")
+    public ResponseEntity<List<ItemResponse>> searchForPos(
+            @RequestParam(name = "name") String name,
+            @RequestParam(name = "branchId", required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.searchForPos(name, branchId));
+    }
+
     @GetMapping("/recent")
     public ResponseEntity<List<ItemResponse>> getRecentItems(
             @RequestParam(name = "limit", defaultValue = "50") int limit) {

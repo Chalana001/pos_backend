@@ -1,9 +1,11 @@
 package com.chala.posapp.entity.stock;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -39,6 +41,13 @@ public class StockAdjustment extends TenantEntity {
 
     @Column(name = "qty_change", nullable = false)
     private int qtyChange;
+
+    @Column(name = "display_qty_change", nullable = false, precision = 12, scale = 3)
+    private BigDecimal displayQtyChange;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qty_unit", nullable = false, length = 10)
+    private MeasurementUnit qtyUnit;
 
     @Column(nullable = false, length = 255)
     private String reason;

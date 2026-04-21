@@ -2,19 +2,28 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.stock.CreateStockAdjustmentRequest;
 import com.chala.posapp.dto.stock.StockAdjustmentResponse;
-import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockAdjustment;
 import com.chala.posapp.entity.stock.StockAdjustmentType;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
-import com.chala.posapp.repository.*;
+import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.ItemRepository;
+import com.chala.posapp.repository.StockAdjustmentRepository;
+import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -38,38 +47,37 @@ public class StockAdjustmentService {
     }
 
     private int computeQtyChange(StockAdjustmentType type, int qty) {
-
-        if (type == StockAdjustmentType.EXPIRED ||
-                type == StockAdjustmentType.DAMAGED ||
-                type == StockAdjustmentType.LOST) {
+        if (type == StockAdjustmentType.EXPIRED
+                || type == StockAdjustmentType.DAMAGED
+                || type == StockAdjustmentType.LOST) {
             return -qty;
         }
-
-        if (type == StockAdjustmentType.FOUND) return qty;
-
         return qty;
     }
 
     @Transactional
     public StockAdjustmentResponse create(CreateStockAdjustmentRequest request) {
-
         User user = getLoggedUser();
 
-        if (user.getRole() == Role.CASHIER)
+        if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot adjust stock");
+        }
 
         if (user.getRole() == Role.MANAGER) {
-            if (user.getBranchId() == null)
+            if (user.getBranchId() == null) {
                 throw new NotAssignedException("User branch not assigned");
-            if (!user.getBranchId().equals(request.getBranchId()))
+            }
+            if (!user.getBranchId().equals(request.getBranchId())) {
                 throw new BadRequestException("Managers can adjust only their branch");
+            }
         }
 
         Item item = itemRepository.findById(request.getItemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
-        if (!item.isActive())
+        if (!item.isActive()) {
             throw new BadRequestException("Item inactive");
+        }
 
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
@@ -81,14 +89,15 @@ public class StockAdjustmentService {
         StockBatch batch = stockBatchRepository.findById(request.getBatchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));
 
-        if (!batch.getBranch().getId().equals(request.getBranchId())) {
+        if (!batch.getBranch().getId().equals(branch.getId())) {
             throw new BadRequestException("Selected batch does not belong to this branch");
         }
         if (!batch.getItem().getId().equals(request.getItemId())) {
             throw new BadRequestException("Selected batch does not belong to this item");
         }
 
-        int qtyChange = computeQtyChange(request.getType(), request.getQty());
+        int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, request.getQty(), request.getQtyUnit());
+        int qtyChange = computeQtyChange(request.getType(), normalizedQty);
 
         if (qtyChange < 0) {
             int qtyToRemove = Math.abs(qtyChange);
@@ -96,33 +105,32 @@ public class StockAdjustmentService {
                 throw new BadRequestException("Not enough stock in the selected batch to reduce. Available: " + batch.getQuantity());
             }
         }
+
         batch.setQuantity(batch.getQuantity() + qtyChange);
         stockBatchRepository.save(batch);
+
+        BigDecimal signedDisplayQty = request.getType() == StockAdjustmentType.EXPIRED
+                || request.getType() == StockAdjustmentType.DAMAGED
+                || request.getType() == StockAdjustmentType.LOST
+                ? request.getQty().negate()
+                : request.getQty();
 
         StockAdjustment adjustment = StockAdjustment.builder()
                 .branchId(request.getBranchId())
                 .itemId(request.getItemId())
                 .type(request.getType())
                 .qtyChange(qtyChange)
+                .displayQtyChange(signedDisplayQty.stripTrailingZeros())
+                .qtyUnit(item.isWeightItem()
+                        ? (request.getQtyUnit() == null ? item.getDefaultUnit() : request.getQtyUnit())
+                        : item.getDefaultUnit())
                 .reason(request.getReason().trim())
                 .userId(user.getId())
                 .createdAt(LocalDateTime.now())
                 .build();
 
         StockAdjustment saved = adjustmentRepository.save(adjustment);
-
-        return StockAdjustmentResponse.builder()
-                .id(saved.getId())
-                .branchId(saved.getBranchId())
-                .itemId(saved.getItemId())
-                .itemBarcode(item.getBarcode())
-                .itemName(item.getName())
-                .type(saved.getType())
-                .qtyChange(saved.getQtyChange())
-                .reason(saved.getReason())
-                .userId(saved.getUserId())
-                .createdAt(saved.getCreatedAt())
-                .build();
+        return map(saved, item);
     }
 
     public List<StockAdjustmentResponse> historyByBranch(Long branchId) {
@@ -135,7 +143,7 @@ public class StockAdjustmentService {
                 .collect(Collectors.toMap(Item::getId, item -> item));
 
         return adjustments.stream()
-                .map(a -> map(a, itemMap.get(a.getItemId())))
+                .map(adjustment -> map(adjustment, itemMap.get(adjustment.getItemId())))
                 .toList();
     }
 
@@ -145,23 +153,25 @@ public class StockAdjustmentService {
                 .toList();
     }
 
-    private StockAdjustmentResponse map(StockAdjustment a, Item item) {
+    private StockAdjustmentResponse map(StockAdjustment adjustment, Item item) {
         return StockAdjustmentResponse.builder()
-                .id(a.getId())
-                .branchId(a.getBranchId())
-                .itemId(a.getItemId())
+                .id(adjustment.getId())
+                .branchId(adjustment.getBranchId())
+                .itemId(adjustment.getItemId())
                 .itemBarcode(item != null ? item.getBarcode() : "UNKNOWN")
                 .itemName(item != null ? item.getName() : "Unknown Item")
-                .type(a.getType())
-                .qtyChange(a.getQtyChange())
-                .reason(a.getReason())
-                .userId(a.getUserId())
-                .createdAt(a.getCreatedAt())
+                .type(adjustment.getType())
+                .qtyChange(adjustment.getQtyChange())
+                .displayQtyChange(adjustment.getDisplayQtyChange())
+                .qtyUnit(adjustment.getQtyUnit())
+                .reason(adjustment.getReason())
+                .userId(adjustment.getUserId())
+                .createdAt(adjustment.getCreatedAt())
                 .build();
     }
 
-    private StockAdjustmentResponse map(StockAdjustment a) {
-        Item item = itemRepository.findById(a.getItemId()).orElse(null);
-        return map(a, item);
+    private StockAdjustmentResponse map(StockAdjustment adjustment) {
+        Item item = itemRepository.findById(adjustment.getItemId()).orElse(null);
+        return map(adjustment, item);
     }
 }

@@ -1,6 +1,9 @@
 package com.chala.posapp.dto.stock;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -10,5 +13,6 @@ public class StockTransferItemResponse {
     private Long itemId;
     private String barcode;
     private String itemName;
-    private int qty;
+    private BigDecimal qty;
+    private MeasurementUnit qtyUnit;
 }

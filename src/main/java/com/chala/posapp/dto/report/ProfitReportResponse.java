@@ -9,7 +9,7 @@ import lombok.*;
 public class ProfitReportResponse {
     private Long itemId;
     private String itemName;
-    private long qtySold;
+    private double qtySold;
     private double revenue;
     private double cost;
     private double profit;

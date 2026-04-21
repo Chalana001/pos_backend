@@ -59,7 +59,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT 
             oi.item_id, oi.item_name,
-            COALESCE(SUM(oi.qty),0) AS qty_sold,
+            COALESCE(SUM(oi.display_qty),0) AS qty_sold,
             COALESCE(SUM(oi.line_total),0) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
@@ -82,10 +82,10 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT
             oi.item_id, oi.item_name,
-            COALESCE(SUM(oi.qty),0) AS qty_sold,
+            COALESCE(SUM(oi.display_qty),0) AS qty_sold,
             COALESCE(SUM(oi.line_total),0) AS revenue,
-            COALESCE(SUM(oi.qty * oi.cost_price),0) AS cost, 
-            COALESCE(SUM(oi.line_total - (oi.qty * oi.cost_price)),0) AS profit
+            COALESCE(SUM(oi.line_cost),0) AS cost,
+            COALESCE(SUM(oi.line_total - oi.line_cost),0) AS profit
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         WHERE o.tenant_id = :tenantId

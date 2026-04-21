@@ -3,6 +3,8 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "order_items",
@@ -37,6 +39,13 @@ public class OrderItem extends TenantEntity {
     @Column(nullable = false)
     private int qty;
 
+    @Column(name = "display_qty", nullable = false, precision = 12, scale = 3)
+    private BigDecimal displayQty;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qty_unit", nullable = false, length = 10)
+    private MeasurementUnit qtyUnit;
+
     @Column(name = "cost_price", nullable = false)
     private double costPrice;
 
@@ -52,6 +61,9 @@ public class OrderItem extends TenantEntity {
 
     @Column(name = "final_unit_price", nullable = false)
     private double finalUnitPrice;
+
+    @Column(name = "line_cost", nullable = false)
+    private double lineCost;
 
     @Column(name = "line_total", nullable = false)
     private double lineTotal;

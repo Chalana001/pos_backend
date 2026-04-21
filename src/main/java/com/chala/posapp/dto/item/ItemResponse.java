@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.item;
 
 import com.chala.posapp.dto.stock.StockBatchResponse;
+import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -23,8 +24,12 @@ public class ItemResponse {
 
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
-    private Double availableQty;
-    private int reorderLevel;
+    private BigDecimal availableQty;
+    private Integer availableBaseQty;
+    private BigDecimal reorderLevel;
+    private Integer reorderLevelBaseQty;
+    private boolean weightItem;
+    private MeasurementUnit defaultUnit;
     private String imageUrl;
     private boolean active;
     private LocalDateTime createdAt;

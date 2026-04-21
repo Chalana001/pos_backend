@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.item;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -20,8 +21,12 @@ public class ItemUpdateRequest {
     @PositiveOrZero
     private BigDecimal sellingPrice;
 
-    @Min(0)
-    private Integer reorderLevel;
+    @PositiveOrZero
+    private BigDecimal reorderLevel;
+
+    private Boolean weightItem;
+
+    private MeasurementUnit defaultUnit;
 
     @Size(max = 500)
     private String imageUrl;

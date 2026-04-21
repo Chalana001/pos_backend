@@ -1,8 +1,11 @@
 package com.chala.posapp.entity.stock;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Entity
 @Table(
@@ -39,4 +42,11 @@ public class StockTransferItem extends TenantEntity {
 
     @Column(nullable = false)
     private int qty;
+
+    @Column(name = "display_qty", nullable = false, precision = 12, scale = 3)
+    private BigDecimal displayQty;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qty_unit", nullable = false, length = 10)
+    private MeasurementUnit qtyUnit;
 }

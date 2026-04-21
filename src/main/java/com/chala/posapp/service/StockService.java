@@ -19,6 +19,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.chala.posapp.util.QuantityConversionUtil;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -98,7 +100,15 @@ public class StockService {
         Long allowedBranchId = enforceBranchAccess(branchId);
         Long filterBranchId = (allowedBranchId != null && allowedBranchId > 0) ? allowedBranchId : null;
         Pageable pageable = PageRequest.of(page, size);
-        return stockBatchRepository.getStockSummary(filterBranchId, search, pageable);
+        return stockBatchRepository.getStockSummary(filterBranchId, search, pageable)
+                .map(row -> {
+                    row.setDisplayQuantity(QuantityConversionUtil.toDisplayQuantity(
+                            row.isWeightItem(),
+                            row.getDefaultUnit(),
+                            row.getTotalQuantity() != null ? row.getTotalQuantity().intValue() : 0
+                    ));
+                    return row;
+                });
     }
 
 

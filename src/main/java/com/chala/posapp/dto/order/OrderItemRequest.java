@@ -1,9 +1,13 @@
 package com.chala.posapp.dto.order;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.DiscountType;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
+
+import java.math.BigDecimal;
 
 @Data
 public class OrderItemRequest {
@@ -13,15 +17,17 @@ public class OrderItemRequest {
 
     private Long batchId;
 
-    @Min(1)
-    private int qty;
+    @Positive
+    private BigDecimal qty;
 
-    @Min(0)
+    private MeasurementUnit qtyUnit;
+
+    @PositiveOrZero
     private double unitPrice;
 
     @NotNull
     private DiscountType discountType;
 
-    @Min(0)
+    @PositiveOrZero
     private double discountValue;
 }

@@ -1,6 +1,9 @@
 package com.chala.posapp.dto.order;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
+
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -11,7 +14,8 @@ public class OrderItemResponse {
     private String barcode;
     private String itemName;
     private Long batchId;
-    private int qty;
+    private BigDecimal qty;
+    private MeasurementUnit qtyUnit;
     private double unitPrice;
     private String discountType;
     private double discountValue;

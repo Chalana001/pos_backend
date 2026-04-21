@@ -9,6 +9,6 @@ import lombok.*;
 public class TopSellingItemResponse {
     private Long itemId;
     private String itemName;
-    private long qtySold;
+    private double qtySold;
     private double revenue;
 }

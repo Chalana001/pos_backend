@@ -1,8 +1,10 @@
 package com.chala.posapp.dto.stock;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.stock.StockAdjustmentType;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Getter
@@ -18,6 +20,8 @@ public class StockAdjustmentResponse {
     private String itemName;
     private StockAdjustmentType type;
     private int qtyChange;
+    private BigDecimal displayQtyChange;
+    private MeasurementUnit qtyUnit;
     private String reason;
     private Long userId;
     private LocalDateTime createdAt;

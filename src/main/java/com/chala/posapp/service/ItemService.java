@@ -3,15 +3,18 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.item.ItemCreateRequest;
 import com.chala.posapp.dto.item.ItemResponse;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
-import com.chala.posapp.dto.item.ItemWithStockResponse;
 import com.chala.posapp.dto.stock.StockBatchResponse;
-import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.Category;
+import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
+import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -21,10 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -37,24 +36,23 @@ public class ItemService {
 
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
-    private final AuthService authService;
     private final StockBatchRepository stockBatchRepository;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
-
         String barcode = request.getBarcode() != null ? request.getBarcode().trim() : "";
 
         if (barcode.isEmpty()) {
             barcode = generateFiveDigitBarcode();
-        } else {
-            if (itemRepository.existsByBarcode(barcode)) {
-                throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
-            }
+        } else if (itemRepository.existsByBarcode(barcode)) {
+            throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
         }
 
         SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found with ID: " + request.getSubCategoryId()));
+
+        boolean weightItem = Boolean.TRUE.equals(request.getWeightItem());
+        MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(weightItem, request.getDefaultUnit());
 
         Item item = Item.builder()
                 .barcode(barcode)
@@ -62,16 +60,18 @@ public class ItemService {
                 .subCategory(subCategory)
                 .costPrice(request.getCostPrice())
                 .sellingPrice(request.getSellingPrice())
-                .reorderLevel(request.getReorderLevel())
+                .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, request.getReorderLevel()))
+                .weightItem(weightItem)
+                .defaultUnit(defaultUnit)
                 .imageUrl(request.getImageUrl())
-                .active(true)
+                .active(request.getActive() == null || request.getActive())
                 .build();
-        return mapToResponse(itemRepository.save(item));
+
+        return mapToResponse(itemRepository.save(item), null, List.of());
     }
 
     @Transactional
     public List<ItemResponse> bulkCreate(List<ItemCreateRequest> requestList) {
-
         requestList.forEach(req -> {
             if (req.getBarcode() == null || req.getBarcode().trim().isEmpty()) {
                 req.setBarcode(generateFiveDigitBarcode());
@@ -90,166 +90,121 @@ public class ItemService {
 
         List<Item> newItemList = requestList.stream()
                 .map(req -> {
-                    SubCategory subCat = subCategoryRepository.findById(req.getSubCategoryId())
+                    SubCategory subCategory = subCategoryRepository.findById(req.getSubCategoryId())
                             .orElseThrow(() -> new ResourceNotFoundException("SubCategory ID " + req.getSubCategoryId() + " not found"));
+
+                    boolean weightItem = Boolean.TRUE.equals(req.getWeightItem());
+                    MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(weightItem, req.getDefaultUnit());
 
                     return Item.builder()
                             .name(req.getName().trim())
                             .barcode(req.getBarcode())
-                            .subCategory(subCat)
+                            .subCategory(subCategory)
                             .costPrice(req.getCostPrice())
                             .sellingPrice(req.getSellingPrice())
-                            .reorderLevel(req.getReorderLevel())
+                            .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, req.getReorderLevel()))
+                            .weightItem(weightItem)
+                            .defaultUnit(defaultUnit)
                             .imageUrl(req.getImageUrl())
-                            .active(true)
+                            .active(req.getActive() == null || req.getActive())
                             .build();
                 })
                 .toList();
 
         return itemRepository.saveAll(newItemList).stream()
-                .map(this::mapToResponse)
+                .map(item -> mapToResponse(item, null, List.of()))
                 .toList();
     }
 
-    @Transactional(readOnly = true)
     public Page<ItemResponse> getAllItems(String search, int page, int size) {
-        // අලුතින්ම හදපු Item එක උඩින්ම එන්න Sort කරනවා
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        Page<Item> itemPage;
+        Page<Item> itemPage = (search != null && !search.trim().isEmpty())
+                ? itemRepository.searchItems(search.trim(), pageable)
+                : itemRepository.findAll(pageable);
 
-        if (search != null && !search.trim().isEmpty()) {
-            itemPage = itemRepository.searchItems(search.trim(), pageable);
-        } else {
-            itemPage = itemRepository.findAll(pageable);
-        }
-
-        return itemPage.map(this::mapToResponse);
+        return itemPage.map(item -> mapToResponse(item, null, List.of()));
     }
 
-    @Transactional(readOnly = true)
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        return mapToResponse(item);
+        return mapToResponse(item, null, List.of());
     }
 
-    @Transactional(readOnly = true)
     public ItemResponse getByBarcode(String barcode, Long branchId) {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
         if (branchId == null) {
-            return mapToResponse(item);
-        } else {
-            Integer totalQty = stockBatchRepository.getTotalQuantityByItemAndBranch(branchId, item.getId());
-            return mapToResponse(item, totalQty != null ? totalQty.doubleValue() : 0.0);
+            return mapToResponse(item, null, List.of());
         }
+
+        List<StockBatch> batches = branchId == 0L
+                ? stockBatchRepository.findByItemId(item.getId())
+                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
+
+        return mapToResponse(item, totalQuantity(batches), activeBatchesToResponse(item, batches));
     }
 
-    @Transactional(readOnly = true)
     public List<ItemResponse> searchByName(String name, Long branchId) {
-
         String searchTerm = name.trim();
-
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
-        return items.stream().map(item -> {
-                    ItemResponse response = new ItemResponse();
-
-                    response.setId(item.getId());
-                    response.setBarcode(item.getBarcode());
-                    response.setName(item.getName());
-                    response.setImageUrl(item.getImageUrl());
-                    response.setReorderLevel(item.getReorderLevel());
-                    response.setActive(item.isActive());
-                    response.setCreatedAt(item.getCreatedAt());
-                    response.setCostPrice(item.getCostPrice());
-
-                    if (item.getSubCategory() != null) {
-                        response.setSubCategoryId(item.getSubCategory().getId());
-                        response.setSubCategoryName(item.getSubCategory().getName());
-
-                        if (item.getSubCategory().getCategory() != null) {
-                            response.setCategoryId(item.getSubCategory().getCategory().getId());
-                            response.setCategoryName(item.getSubCategory().getCategory().getName());
-                        }
-                    }
-
-                    List<StockBatchResponse> batchDTOs = new ArrayList<>();
-                    Double totalAvailableQty = 0.0;
-                    BigDecimal currentDisplayPrice = item.getSellingPrice();
+        return items.stream()
+                .map(item -> {
+                    List<StockBatch> batches = List.of();
+                    Integer totalQty = null;
 
                     if (branchId != null) {
-                        List<StockBatch> allTargetBatches;
-
-                        if (branchId == 0L) {
-                            allTargetBatches = stockBatchRepository.findByItemId(item.getId());
-                        } else {
-                            allTargetBatches = stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
-                        }
-
-                        // කොහෙන් හරි batches නැත්නම් item එක skip කරනවා
-                        if (allTargetBatches.isEmpty()) {
-                            return null;
-                        }
-
-                        List<StockBatch> activeBatches = allTargetBatches.stream()
-                                .filter(b -> b.getQuantity() > 0)
-                                .toList();
-
-                        batchDTOs = activeBatches.stream().map(batch -> new StockBatchResponse(
-                                batch.getId(),
-                                batch.getSellingPrice(),
-                                batch.getQuantity(),
-                                batch.getExpireDate()
-                        )).collect(Collectors.toList());
-
-                        totalAvailableQty = batchDTOs.stream()
-                                .mapToDouble(StockBatchResponse::getQty)
-                                .sum();
-
-                        if (!batchDTOs.isEmpty()) {
-                            currentDisplayPrice = batchDTOs.get(0).getPrice();
-                        } else if (!allTargetBatches.isEmpty()) {
-                            currentDisplayPrice = allTargetBatches.get(allTargetBatches.size() - 1).getSellingPrice();
-                        }
+                        batches = branchId == 0L
+                                ? stockBatchRepository.findByItemId(item.getId())
+                                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
+                        totalQty = totalQuantity(batches);
                     }
 
-                    response.setBatches(batchDTOs);
-                    response.setAvailableQty(totalAvailableQty);
-                    response.setSellingPrice(currentDisplayPrice);
+                    return mapToResponse(item, totalQty, activeBatchesToResponse(item, batches));
+                })
+                .collect(Collectors.toList());
+    }
 
-                    return response;
+    public List<ItemResponse> searchForPos(String name, Long branchId) {
+        String searchTerm = name.trim();
+        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
+        return items.stream()
+                .map(item -> {
+                    List<StockBatch> batches = List.of();
+                    Integer totalQty = null;
+
+                    if (branchId != null) {
+                        batches = branchId == 0L
+                                ? stockBatchRepository.findByItemId(item.getId())
+                                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
+                        totalQty = totalQuantity(batches);
+                    }
+                    if (batches == null || batches.isEmpty()) {
+                        return null;
+                    }
+
+                    return mapToResponse(item, totalQty, activeBatchesToResponse(item, batches));
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
     public List<ItemResponse> searchForBarcodePrint(String query) {
-
         String searchTerm = query.trim();
-
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
-        return items.stream().map(item -> {
-            ItemResponse response = new ItemResponse();
-
-            response.setId(item.getId());
-            response.setBarcode(item.getBarcode());
-            response.setName(item.getName());
-            response.setSellingPrice(item.getSellingPrice());
-
-            return response;
-        }).collect(Collectors.toList());
+        return items.stream()
+                .map(item -> mapToResponse(item, null, List.of()))
+                .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
     public List<ItemResponse> listAll(Boolean activeOnly) {
         return itemRepository.findAll().stream()
-                .filter(i -> activeOnly == null || !activeOnly || i.isActive())
-                .map(this::mapToResponse)
+                .filter(item -> activeOnly == null || !activeOnly || item.isActive())
+                .map(item -> mapToResponse(item, null, List.of()))
                 .toList();
     }
 
@@ -258,78 +213,91 @@ public class ItemService {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
-        if (request.getName() != null && !request.getName().isBlank()) item.setName(request.getName().trim());
+        if (request.getName() != null && !request.getName().isBlank()) {
+            item.setName(request.getName().trim());
+        }
 
         if (request.getSubCategoryId() != null) {
-            SubCategory subCat = subCategoryRepository.findById(request.getSubCategoryId())
+            SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                     .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found"));
-            item.setSubCategory(subCat);
+            item.setSubCategory(subCategory);
         }
+
+        boolean weightItem = request.getWeightItem() != null ? request.getWeightItem() : item.isWeightItem();
+        MeasurementUnit defaultUnit = request.getDefaultUnit() != null
+                ? QuantityConversionUtil.normalizeItemUnit(weightItem, request.getDefaultUnit())
+                : QuantityConversionUtil.normalizeItemUnit(weightItem, item.getDefaultUnit());
+
+        item.setWeightItem(weightItem);
+        item.setDefaultUnit(defaultUnit);
 
         if (request.getCostPrice() != null) item.setCostPrice(request.getCostPrice());
         if (request.getSellingPrice() != null) item.setSellingPrice(request.getSellingPrice());
-        if (request.getReorderLevel() != null) item.setReorderLevel(request.getReorderLevel());
+        if (request.getReorderLevel() != null) {
+            item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, request.getReorderLevel()));
+        }
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
         if (request.getActive() != null) item.setActive(request.getActive());
 
-        return mapToResponse(itemRepository.save(item));
+        return mapToResponse(itemRepository.save(item), null, List.of());
     }
 
-//    public List<ItemWithStockResponse> itemsWithStock(Long branchId) {
-//        User user = authService.getLoggedUser();
-//        if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
-//            branchId = user.getBranchId();
-//        }
-//
-//        List<Object[]> raw = (branchId != null)
-//                ? itemRepository.itemsWithBranchStockRaw(branchId)
-//                : itemRepository.itemsWithTotalStockRaw();
-//
-//        return raw.stream().map(r -> ItemWithStockResponse.builder()
-//
-//                .id(r[0] != null ? ((Number) r[0]).longValue() : null)
-//
-//                .barcode(r[1] != null ? r[1].toString() : null)
-//                .name(r[2] != null ? r[2].toString() : null)
-//                .categoryName(r[3] != null ? r[3].toString() : null)
-//                .subCategoryName(r[4] != null ? r[4].toString() : null)
-//
-//                .costPrice(r[5] != null ? new BigDecimal(r[5].toString()) : BigDecimal.ZERO)
-//                .sellingPrice(r[6] != null ? new BigDecimal(r[6].toString()) : BigDecimal.ZERO)
-//
-//                .reorderLevel(r[7] != null ? ((Number) r[7]).intValue() : 0)
-//
-//                .active(Boolean.TRUE.equals(r[8]))
-//
-//                .createdAt(toLocalDateTime(r[9]))
-//
-//                .quantity(r.length >= 11 && r[10] != null ? ((Number) r[10]).intValue() : 0)
-//                .build()).toList();
-//    }
+    private List<StockBatchResponse> activeBatchesToResponse(Item item, List<StockBatch> batches) {
+        if (batches == null || batches.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-    private ItemResponse mapToResponse(Item item) {
-        return mapToResponse(item, null);
+        return batches.stream()
+                .filter(batch -> batch.getQuantity() != null && batch.getQuantity() > 0)
+                .map(batch -> new StockBatchResponse(
+                        batch.getId(),
+                        batch.getSellingPrice(),
+                        batch.getQuantity(),
+                        QuantityConversionUtil.toDisplayQuantity(item, batch.getQuantity()),
+                        item.getDefaultUnit(),
+                        batch.getExpireDate()
+                ))
+                .collect(Collectors.toList());
     }
 
-    private ItemResponse mapToResponse(Item item, Double qty) {
-        SubCategory sc = item.getSubCategory();
-        Category c = (sc != null) ? sc.getCategory() : null;
+    private Integer totalQuantity(List<StockBatch> batches) {
+        if (batches == null || batches.isEmpty()) {
+            return 0;
+        }
+        return batches.stream()
+                .filter(batch -> batch.getQuantity() != null)
+                .mapToInt(StockBatch::getQuantity)
+                .sum();
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches) {
+        SubCategory subCategory = item.getSubCategory();
+        Category category = subCategory != null ? subCategory.getCategory() : null;
+
+        BigDecimal availableQty = availableBaseQty == null
+                ? null
+                : QuantityConversionUtil.toDisplayQuantity(item, availableBaseQty);
 
         return ItemResponse.builder()
                 .id(item.getId())
                 .barcode(item.getBarcode())
                 .name(item.getName())
-                .subCategoryId(sc != null ? sc.getId() : null)
-                .subCategoryName(sc != null ? sc.getName() : "N/A")
-                .categoryId(c != null ? c.getId() : null)
-                .categoryName(c != null ? c.getName() : "N/A")
+                .subCategoryId(subCategory != null ? subCategory.getId() : null)
+                .subCategoryName(subCategory != null ? subCategory.getName() : "N/A")
+                .categoryId(category != null ? category.getId() : null)
+                .categoryName(category != null ? category.getName() : "N/A")
                 .costPrice(item.getCostPrice())
                 .sellingPrice(item.getSellingPrice())
-                .reorderLevel(item.getReorderLevel())
+                .availableQty(availableQty)
+                .availableBaseQty(availableBaseQty)
+                .reorderLevel(QuantityConversionUtil.toDisplayQuantity(item.isWeightItem(), item.getDefaultUnit(), item.getReorderLevel()))
+                .reorderLevelBaseQty(item.getReorderLevel())
+                .weightItem(item.isWeightItem())
+                .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
                 .active(item.isActive())
                 .createdAt(item.getCreatedAt())
-                .availableQty(qty)
+                .batches(batches)
                 .build();
     }
 
@@ -339,13 +307,6 @@ public class ItemService {
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         item.setActive(false);
         itemRepository.save(item);
-    }
-
-    private LocalDateTime toLocalDateTime(Object v) {
-        if (v == null) return null;
-        if (v instanceof LocalDateTime ldt) return ldt;
-        if (v instanceof Timestamp ts) return ts.toLocalDateTime();
-        return Instant.ofEpochMilli(((Number) v).longValue()).atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     public String generateFiveDigitBarcode() {
@@ -358,13 +319,11 @@ public class ItemService {
         return newBarcode;
     }
 
-    @Transactional(readOnly = true)
     public List<ItemResponse> getRecentlyAddedItems(int limit) {
-
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));
 
         return itemRepository.findAll(pageable).stream()
-                .map(this::mapToResponse)
+                .map(item -> mapToResponse(item, null, List.of()))
                 .toList();
     }
 }

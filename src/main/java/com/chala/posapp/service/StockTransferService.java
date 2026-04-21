@@ -1,7 +1,14 @@
 package com.chala.posapp.service;
 
-import com.chala.posapp.dto.stock.*;
-import com.chala.posapp.entity.*;
+import com.chala.posapp.dto.stock.CancelTransferRequest;
+import com.chala.posapp.dto.stock.CreateStockTransferRequest;
+import com.chala.posapp.dto.stock.StockTransferItemRequest;
+import com.chala.posapp.dto.stock.StockTransferItemResponse;
+import com.chala.posapp.dto.stock.StockTransferResponse;
+import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockTransfer;
 import com.chala.posapp.entity.stock.StockTransferItem;
@@ -9,7 +16,13 @@ import com.chala.posapp.entity.stock.StockTransferStatus;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
-import com.chala.posapp.repository.*;
+import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.ItemRepository;
+import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockTransferItemRepository;
+import com.chala.posapp.repository.StockTransferRepository;
+import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -79,68 +92,63 @@ public class StockTransferService {
     private void validateBranches(Long fromBranchId, Long toBranchId) {
         Branch from = branchRepository.findById(fromBranchId)
                 .orElseThrow(() -> new ResourceNotFoundException("From branch not found"));
-
         Branch to = branchRepository.findById(toBranchId)
                 .orElseThrow(() -> new ResourceNotFoundException("To branch not found"));
 
         if (!from.isActive()) throw new BadRequestException("From branch inactive");
         if (!to.isActive()) throw new BadRequestException("To branch inactive");
-
-        if (fromBranchId.equals(toBranchId))
+        if (fromBranchId.equals(toBranchId)) {
             throw new BadRequestException("From and To branch cannot be same");
+        }
     }
 
     @Transactional
     public StockTransferResponse createTransfer(CreateStockTransferRequest request) {
-
         User user = getLoggedUser();
 
-        if (user.getRole() == Role.CASHIER)
+        if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot create transfers");
-
-        if (request.getItems() == null || request.getItems().isEmpty())
+        }
+        if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Transfer items required");
-
+        }
         if (request.getFromBranchId().equals(request.getToBranchId())) {
             throw new BadRequestException("Cannot transfer stock to the same branch");
         }
 
         validateBranches(request.getFromBranchId(), request.getToBranchId());
-
         if (user.getRole() == Role.MANAGER) {
             ensureManagerBranchAccess(user, request.getFromBranchId());
         }
 
         String transferNo = transferNumberService.generateTransferNo(request.getFromBranchId());
-
         List<StockTransferItem> transferItems = new ArrayList<>();
 
-        for (StockTransferItemRequest ri : request.getItems()) {
+        for (StockTransferItemRequest reqItem : request.getItems()) {
+            Item item = itemRepository.findById(reqItem.getItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + reqItem.getItemId()));
 
-            Item item = itemRepository.findById(ri.getItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + ri.getItemId()));
-
-            if (ri.getBatchId() == null) {
+            if (reqItem.getBatchId() == null) {
                 throw new BadRequestException("Batch ID is required for item: " + item.getName());
             }
 
-            StockBatch batch = stockBatchRepository.findById(ri.getBatchId())
+            StockBatch batch = stockBatchRepository.findById(reqItem.getBatchId())
                     .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));
 
             if (!batch.getBranch().getId().equals(request.getFromBranchId())) {
                 throw new BadRequestException("Selected batch does not belong to the source branch");
             }
-            if (!batch.getItem().getId().equals(ri.getItemId())) {
+            if (!batch.getItem().getId().equals(reqItem.getItemId())) {
                 throw new BadRequestException("Selected batch does not match the requested item");
             }
 
-            int qtyNeeded = ri.getQty();
-            if (batch.getQuantity() < qtyNeeded) {
-                throw new BadRequestException("Not enough stock in the selected batch for item: " + item.getName() +
-                        " (Available: " + batch.getQuantity() + ")");
+            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, reqItem.getQty(), reqItem.getQtyUnit());
+            if (batch.getQuantity() < normalizedQty) {
+                throw new BadRequestException("Not enough stock in the selected batch for item: " + item.getName()
+                        + " (Available: " + batch.getQuantity() + ")");
             }
 
-            batch.setQuantity(batch.getQuantity() - qtyNeeded);
+            batch.setQuantity(batch.getQuantity() - normalizedQty);
             stockBatchRepository.save(batch);
 
             transferItems.add(StockTransferItem.builder()
@@ -149,7 +157,11 @@ public class StockTransferService {
                     .batchId(batch.getId())
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
-                    .qty(ri.getQty())
+                    .qty(normalizedQty)
+                    .displayQty(reqItem.getQty().stripTrailingZeros())
+                    .qtyUnit(item.isWeightItem()
+                            ? (reqItem.getQtyUnit() == null ? item.getDefaultUnit() : reqItem.getQtyUnit())
+                            : item.getDefaultUnit())
                     .build());
         }
 
@@ -164,8 +176,8 @@ public class StockTransferService {
                 .build();
 
         StockTransfer savedTransfer = transferRepository.save(transfer);
-        for (StockTransferItem ti : transferItems) {
-            ti.setTransferId(savedTransfer.getId());
+        for (StockTransferItem transferItem : transferItems) {
+            transferItem.setTransferId(savedTransfer.getId());
         }
         transferItemRepository.saveAll(transferItems);
 
@@ -176,14 +188,16 @@ public class StockTransferService {
     public StockTransferResponse receiveTransferById(Long transferId) {
         User user = getLoggedUser();
 
-        if (user.getRole() == Role.CASHIER)
+        if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot receive transfers");
+        }
 
         StockTransfer transfer = transferRepository.findById(transferId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
-        if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
+        if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT) {
             throw new BadRequestException("Transfer is not IN_TRANSIT status");
+        }
 
         if (user.getRole() == Role.MANAGER) {
             ensureManagerBranchAccess(user, transfer.getToBranchId());
@@ -193,23 +207,18 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Receiving branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
-
-        for (StockTransferItem ti : items) {
-
-            Item item = itemRepository.findById(ti.getItemId())
+        for (StockTransferItem transferItem : items) {
+            Item item = itemRepository.findById(transferItem.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch newBatch = StockBatch.builder()
                     .branch(toBranch)
                     .item(item)
-                    .quantity(ti.getQty())
-                    .originalQuantity(ti.getQty())
-
+                    .quantity(transferItem.getQty())
+                    .originalQuantity(transferItem.getQty())
                     .costPrice(item.getCostPrice())
                     .sellingPrice(item.getSellingPrice())
-
                     .batchCode("TRN-" + transfer.getTransferNo())
-
                     .receivedAt(LocalDateTime.now())
                     .build();
 
@@ -232,14 +241,14 @@ public class StockTransferService {
 
     @Transactional
     public StockTransferResponse cancelTransferById(Long transferId, CancelTransferRequest request) {
-
         User user = getLoggedUser();
 
         StockTransfer transfer = transferRepository.findById(transferId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
-        if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT)
-            throw new BadRequestException("Only IN_TRANSIT (Pending) transfers can be canceled");
+        if (transfer.getStatus() != StockTransferStatus.IN_TRANSIT) {
+            throw new BadRequestException("Only IN_TRANSIT transfers can be canceled");
+        }
 
         if (user.getRole() == Role.MANAGER) {
             ensureTransferAccess(user, transfer);
@@ -249,23 +258,18 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Sender branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
-
-        for (StockTransferItem ti : items) {
-
-            Item item = itemRepository.findById(ti.getItemId())
+        for (StockTransferItem transferItem : items) {
+            Item item = itemRepository.findById(transferItem.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch cancelBatch = StockBatch.builder()
-                    .branch(fromBranch) // Sender Branch
+                    .branch(fromBranch)
                     .item(item)
-                    .quantity(ti.getQty())
-                    .originalQuantity(ti.getQty())
-
+                    .quantity(transferItem.getQty())
+                    .originalQuantity(transferItem.getQty())
                     .costPrice(item.getCostPrice())
                     .sellingPrice(item.getSellingPrice())
-
                     .batchCode("CNL-" + transfer.getTransferNo())
-
                     .receivedAt(LocalDateTime.now())
                     .build();
 
@@ -292,7 +296,6 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
         ensureTransferAccess(user, transfer);
-
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
         return buildResponse(transfer, items);
     }
@@ -301,7 +304,7 @@ public class StockTransferService {
         ensureManagerBranchAccess(getLoggedUser(), branchId);
         return transferRepository.findByToBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
-                .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
     }
 
@@ -309,30 +312,28 @@ public class StockTransferService {
         ensureManagerBranchAccess(getLoggedUser(), branchId);
         return transferRepository.findByFromBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
-                .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
     }
 
     public List<StockTransferResponse> listOutgoing(Long fromBranchId) {
         ensureManagerBranchAccess(getLoggedUser(), fromBranchId);
         return transferRepository.findByFromBranchIdOrderByRequestedAtDesc(fromBranchId).stream()
-                .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
     }
 
     public List<StockTransferResponse> listIncoming(Long toBranchId) {
         ensureManagerBranchAccess(getLoggedUser(), toBranchId);
         return transferRepository.findByToBranchIdOrderByRequestedAtDesc(toBranchId).stream()
-                .map(t -> buildResponse(t, transferItemRepository.findByTransferId(t.getId())))
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
     }
 
     private StockTransferResponse buildResponse(StockTransfer transfer, List<StockTransferItem> items) {
-
         String fromBranchName = branchRepository.findById(transfer.getFromBranchId())
                 .map(Branch::getName)
                 .orElse("Unknown Branch");
-
         String toBranchName = branchRepository.findById(transfer.getToBranchId())
                 .map(Branch::getName)
                 .orElse("Unknown Branch");
@@ -349,32 +350,27 @@ public class StockTransferService {
         }
 
         List<StockTransferItemResponse> itemResponses = items.stream()
-                .map(i -> StockTransferItemResponse.builder()
-                        .itemId(i.getItemId())
-                        .barcode(i.getBarcode())
-                        .itemName(i.getItemName())
-                        .qty(i.getQty())
+                .map(item -> StockTransferItemResponse.builder()
+                        .itemId(item.getItemId())
+                        .barcode(item.getBarcode())
+                        .itemName(item.getItemName())
+                        .qty(item.getDisplayQty())
+                        .qtyUnit(item.getQtyUnit())
                         .build())
                 .toList();
 
         return StockTransferResponse.builder()
                 .id(transfer.getId())
                 .transferNo(transfer.getTransferNo())
-
                 .fromBranchId(transfer.getFromBranchId())
                 .toBranchId(transfer.getToBranchId())
-
                 .fromBranchName(fromBranchName)
                 .toBranchName(toBranchName)
-
                 .status(transfer.getStatus())
-
                 .requestedByUserId(transfer.getRequestedByUserId())
                 .requestedByUserName(reqUserName)
-
                 .receivedByUserId(transfer.getReceivedByUserId())
                 .receivedByUserName(recUserName)
-
                 .note(transfer.getNote())
                 .cancelReason(transfer.getCancelReason())
                 .requestedAt(transfer.getRequestedAt())

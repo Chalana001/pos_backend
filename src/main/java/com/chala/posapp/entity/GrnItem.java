@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -26,6 +27,13 @@ public class GrnItem extends TenantEntity {
     private Item item;
 
     private Integer qty;
+
+    @Column(name = "display_qty", nullable = false, precision = 12, scale = 3)
+    private BigDecimal displayQty;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "qty_unit", nullable = false, length = 10)
+    private MeasurementUnit qtyUnit;
 
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;

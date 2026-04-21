@@ -1,14 +1,36 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.customer.CustomerOrderListResponse;
-import com.chala.posapp.dto.order.*;
-import com.chala.posapp.entity.*;
+import com.chala.posapp.dto.order.CancelOrderRequest;
+import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.dto.order.OrderItemRequest;
+import com.chala.posapp.dto.order.OrderItemResponse;
+import com.chala.posapp.dto.order.OrderResponse;
+import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.Customer;
+import com.chala.posapp.entity.DiscountType;
+import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.Order;
+import com.chala.posapp.entity.OrderItem;
+import com.chala.posapp.entity.OrderStatus;
+import com.chala.posapp.entity.OrderType;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ShiftStatus;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
-import com.chala.posapp.repository.*;
+import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.CashShiftRepository;
+import com.chala.posapp.repository.CustomerRepository;
+import com.chala.posapp.repository.ItemRepository;
+import com.chala.posapp.repository.OrderItemRepository;
+import com.chala.posapp.repository.OrderRepository;
+import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -70,7 +92,6 @@ public class OrderService {
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
-
         User user = getLoggedUser();
 
         Long branchId;
@@ -84,11 +105,13 @@ public class OrderService {
             branchId = request.getBranchId();
         }
 
-        if (request.getItems() == null || request.getItems().isEmpty())
+        if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Order items required");
+        }
 
-        if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null)
+        if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null) {
             throw new BadRequestException("Customer required for CREDIT order");
+        }
 
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
@@ -100,12 +123,12 @@ public class OrderService {
         List<StockBatch> batchesToUpdate = new ArrayList<>();
 
         for (OrderItemRequest itemReq : request.getItems()) {
-
             Item item = itemRepository.findById(itemReq.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemReq.getItemId()));
 
-            if (!item.isActive())
+            if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
+            }
 
             if (itemReq.getBatchId() == null) {
                 throw new BadRequestException("Batch ID is missing for item: " + item.getName());
@@ -121,12 +144,13 @@ public class OrderService {
                 throw new BadRequestException("Batch does not belong to this branch");
             }
 
-            if (batch.getQuantity() < itemReq.getQty()) {
-                throw new BadRequestException("Insufficient stock for " + item.getName() +
-                        " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
+            if (batch.getQuantity() < normalizedQty) {
+                throw new BadRequestException("Insufficient stock for " + item.getName()
+                        + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
             }
 
-            batch.setQuantity(batch.getQuantity() - itemReq.getQty());
+            batch.setQuantity(batch.getQuantity() - normalizedQty);
             batchesToUpdate.add(batch);
 
             double unitPrice = itemReq.getUnitPrice();
@@ -136,23 +160,29 @@ public class OrderService {
             double discountValue = itemReq.getDiscountValue();
 
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
-            double lineTotal = finalUnitPrice * itemReq.getQty();
+            double lineTotal = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(finalUnitPrice), normalizedQty).doubleValue();
+            double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(costPrice), normalizedQty).doubleValue();
 
-            OrderItem oi = OrderItem.builder()
+            OrderItem orderItem = OrderItem.builder()
                     .itemId(item.getId())
                     .batchId(batch.getId())
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
-                    .qty(itemReq.getQty())
+                    .qty(normalizedQty)
+                    .displayQty(itemReq.getQty().stripTrailingZeros())
+                    .qtyUnit(item.isWeightItem()
+                            ? (itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit())
+                            : item.getDefaultUnit())
                     .unitPrice(unitPrice)
                     .costPrice(costPrice)
                     .discountType(discountType)
                     .discountValue(discountValue)
                     .finalUnitPrice(finalUnitPrice)
+                    .lineCost(lineCost)
                     .lineTotal(lineTotal)
                     .build();
 
-            orderItemsToSave.add(oi);
+            orderItemsToSave.add(orderItem);
             subTotal += lineTotal;
         }
 
@@ -169,8 +199,9 @@ public class OrderService {
             paidAmount = 0;
             dueAmount = grandTotal;
         } else {
-            if (paidAmount < grandTotal)
+            if (paidAmount < grandTotal) {
                 throw new BadRequestException("Paid amount cannot be less than grand total for CASH sale");
+            }
             dueAmount = 0;
         }
 
@@ -195,8 +226,8 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        for (OrderItem oi : orderItemsToSave) {
-            oi.setOrderId(savedOrder.getId());
+        for (OrderItem orderItem : orderItemsToSave) {
+            orderItem.setOrderId(savedOrder.getId());
         }
         orderItemRepository.saveAll(orderItemsToSave);
         stockBatchRepository.saveAll(batchesToUpdate);
@@ -205,30 +236,29 @@ public class OrderService {
             Customer customer = customerRepository.findById(savedOrder.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
-            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0) {
-                if (customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
-                    throw new BadRequestException("Customer credit limit exceeded");
-                }
+            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0
+                    && customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
+                throw new BadRequestException("Customer credit limit exceeded");
             }
+
             customer.setDueAmount(customer.getDueAmount() + savedOrder.getDueAmount());
             customerRepository.save(customer);
         }
 
         addCashSaleToOpenShift(savedOrder);
-
         return buildOrderResponse(savedOrder, orderItemsToSave);
     }
 
     @Transactional
     public OrderResponse cancelOrder(String invoiceNo, CancelOrderRequest request) {
-
         User user = getLoggedUser();
 
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
-        if (order.getStatus() == OrderStatus.CANCELED)
+        if (order.getStatus() == OrderStatus.CANCELED) {
             throw new AlreadyExistsException("Order already canceled");
+        }
 
         ensureBranchAccess(user, order.getBranchId());
 
@@ -251,16 +281,16 @@ public class OrderService {
         Branch branch = branchRepository.findById(order.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
-        for (OrderItem oi : items) {
-            Item item = itemRepository.findById(oi.getItemId())
+        for (OrderItem orderItem : items) {
+            Item item = itemRepository.findById(orderItem.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
             StockBatch returnBatch = StockBatch.builder()
                     .branch(branch)
                     .item(item)
-                    .quantity(oi.getQty())
-                    .originalQuantity(oi.getQty())
-                    .costPrice(BigDecimal.valueOf(oi.getCostPrice()))
+                    .quantity(orderItem.getQty())
+                    .originalQuantity(orderItem.getQty())
+                    .costPrice(BigDecimal.valueOf(orderItem.getCostPrice()))
                     .sellingPrice(item.getSellingPrice())
                     .batchCode("RTN-" + order.getInvoiceNo())
                     .receivedAt(LocalDateTime.now())
@@ -278,12 +308,10 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
         ensureBranchAccess(user, order.getBranchId());
-
         return mapToOrderResponse(order, true);
     }
 
     public Page<OrderResponse> getAllOrders(String search, int page, int size, String branchIdString) {
-
         User user = getLoggedUser();
 
         if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
@@ -297,7 +325,7 @@ public class OrderService {
         if (branchIdString != null && !branchIdString.isEmpty()) {
             try {
                 branchId = Long.parseLong(branchIdString);
-            } catch (NumberFormatException e) {
+            } catch (NumberFormatException ignored) {
                 branchId = 0L;
             }
         }
@@ -316,17 +344,13 @@ public class OrderService {
             }
         }
 
-        boolean hasSearch = (search != null && !search.isEmpty());
-
+        boolean hasSearch = search != null && !search.isEmpty();
         if (hasSearch && branchId != 0L) {
             orderPage = orderRepository.findByInvoiceNoContainingIgnoreCaseAndBranchId(search, branchId, pageable);
-
-        } else if (hasSearch && branchId == 0L) {
+        } else if (hasSearch) {
             orderPage = orderRepository.findByInvoiceNoContainingIgnoreCase(search, pageable);
-
-        } else if (!hasSearch && branchId != 0L) {
+        } else if (branchId != 0L) {
             orderPage = orderRepository.findByBranchId(branchId, pageable);
-
         } else {
             orderPage = orderRepository.findAll(pageable);
         }
@@ -402,31 +426,30 @@ public class OrderService {
         return buildOrderResponse(order, items);
     }
 
-    // Main Builder
     private OrderResponse buildOrderResponse(Order order, List<OrderItem> items) {
-
         String customerName = "Walk-in Customer";
         if (order.getCustomerId() != null) {
             customerName = customerRepository.findById(order.getCustomerId())
-                    .map(customer -> customer.getName())
+                    .map(Customer::getName)
                     .orElse("Unknown Customer");
         }
 
-        List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList() :
-                items.stream()
-                        .map(oi -> OrderItemResponse.builder()
-                                .itemId(oi.getItemId())
-                                .barcode(oi.getBarcode())
-                                .itemName(oi.getItemName())
-                                .batchId(oi.getBatchId())
-                                .qty(oi.getQty())
-                                .unitPrice(oi.getUnitPrice())
-                                .discountType(oi.getDiscountType() != null ? oi.getDiscountType().toString() : null)
-                                .discountValue(oi.getDiscountValue())
-                                .finalUnitPrice(oi.getFinalUnitPrice())
-                                .lineTotal(oi.getLineTotal())
-                                .build())
-                        .collect(Collectors.toList());
+        List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
+                : items.stream()
+                .map(orderItem -> OrderItemResponse.builder()
+                        .itemId(orderItem.getItemId())
+                        .barcode(orderItem.getBarcode())
+                        .itemName(orderItem.getItemName())
+                        .batchId(orderItem.getBatchId())
+                        .qty(orderItem.getDisplayQty())
+                        .qtyUnit(orderItem.getQtyUnit())
+                        .unitPrice(orderItem.getUnitPrice())
+                        .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
+                        .discountValue(orderItem.getDiscountValue())
+                        .finalUnitPrice(orderItem.getFinalUnitPrice())
+                        .lineTotal(orderItem.getLineTotal())
+                        .build())
+                .collect(Collectors.toList());
 
         String branchName = order.getReceiptBranchName();
         String branchAddress = order.getReceiptBranchAddress();
@@ -464,17 +487,17 @@ public class OrderService {
                 .build();
     }
 
-    private CustomerOrderListResponse map(Order o) {
+    private CustomerOrderListResponse map(Order order) {
         return CustomerOrderListResponse.builder()
-                .id(o.getId())
-                .invoiceNo(o.getInvoiceNo())
-                .branchId(o.getBranchId())
-                .orderType(o.getOrderType())
-                .status(o.getStatus())
-                .grandTotal(o.getGrandTotal())
-                .paidAmount(o.getPaidAmount())
-                .dueAmount(o.getDueAmount())
-                .createdAt(o.getCreatedAt())
+                .id(order.getId())
+                .invoiceNo(order.getInvoiceNo())
+                .branchId(order.getBranchId())
+                .orderType(order.getOrderType())
+                .status(order.getStatus())
+                .grandTotal(order.getGrandTotal())
+                .paidAmount(order.getPaidAmount())
+                .dueAmount(order.getDueAmount())
+                .createdAt(order.getCreatedAt())
                 .build();
     }
 }

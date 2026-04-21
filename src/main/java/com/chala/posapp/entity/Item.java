@@ -46,6 +46,15 @@ public class Item extends TenantEntity {
     @Column(nullable = false)
     private int reorderLevel;
 
+    @Column(name = "weight_item", nullable = false)
+    @Builder.Default
+    private boolean weightItem = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "default_unit", nullable = false, length = 10)
+    @Builder.Default
+    private MeasurementUnit defaultUnit = MeasurementUnit.PCS;
+
     @Column(length = 500)
     private String imageUrl;
 

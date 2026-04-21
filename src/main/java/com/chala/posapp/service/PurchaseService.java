@@ -11,6 +11,7 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
@@ -29,6 +30,7 @@ import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SupplierRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -127,10 +129,7 @@ public class PurchaseService {
     }
 
     private PurchaseStatus normalizeStatus(Purchase purchase) {
-        if (purchase.getStatus() == null) {
-            return PurchaseStatus.COMPLETED;
-        }
-        return purchase.getStatus();
+        return purchase.getStatus() == null ? PurchaseStatus.COMPLETED : purchase.getStatus();
     }
 
     private String resolveInvoiceNo(String rawInvoiceNo) {
@@ -198,6 +197,13 @@ public class PurchaseService {
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
+                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
+                        item.isWeightItem(),
+                        item.getDefaultUnit(),
+                        itemReq.getQty(),
+                        item.isWeightItem() ? MeasurementUnit.KG : MeasurementUnit.PCS
+                );
+
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
                         ? itemReq.getExpiryDate().atStartOfDay()
                         : null;
@@ -207,8 +213,8 @@ public class PurchaseService {
                         .branch(branch)
                         .item(item)
                         .supplier(supplier)
-                        .quantity(itemReq.getQty())
-                        .originalQuantity(itemReq.getQty())
+                        .quantity(normalizedQty)
+                        .originalQuantity(normalizedQty)
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
                         .batchCode(batchCode)
@@ -217,12 +223,14 @@ public class PurchaseService {
                         .build();
                 stockBatchRepository.save(batch);
 
-                BigDecimal lineTotal = itemReq.getCostPrice().multiply(BigDecimal.valueOf(itemReq.getQty()));
+                BigDecimal lineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
 
                 GrnItem grnItem = GrnItem.builder()
                         .grn(savedGrn)
                         .item(item)
-                        .qty(itemReq.getQty())
+                        .qty(normalizedQty)
+                        .displayQty(itemReq.getQty().stripTrailingZeros())
+                        .qtyUnit(item.isWeightItem() ? MeasurementUnit.KG : MeasurementUnit.PCS)
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
                         .amount(lineTotal)
@@ -235,7 +243,8 @@ public class PurchaseService {
                         .itemId(item.getId())
                         .itemName(item.getName())
                         .barcode(item.getBarcode())
-                        .qty(itemReq.getQty())
+                        .qty(grnItem.getDisplayQty())
+                        .qtyUnit(grnItem.getQtyUnit())
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
                         .lineTotal(lineTotal)
@@ -275,7 +284,6 @@ public class PurchaseService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
     public Page<PurchaseResponse> getAllPurchases(int page, int size) {
         User user = getLoggedUser();
         Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
@@ -317,7 +325,6 @@ public class PurchaseService {
         return new PageImpl<>(responses, pageable, accessiblePurchases.size());
     }
 
-    @Transactional(readOnly = true)
     public PurchaseResponse getPurchaseById(Long id) {
         User user = getLoggedUser();
 
@@ -334,7 +341,8 @@ public class PurchaseService {
                                     .itemId(item.getItem().getId())
                                     .itemName(item.getItem().getName())
                                     .barcode(item.getItem().getBarcode())
-                                    .qty(item.getQty())
+                                    .qty(item.getDisplayQty())
+                                    .qtyUnit(item.getQtyUnit())
                                     .costPrice(item.getCostPrice())
                                     .sellingPrice(item.getSellingPrice())
                                     .lineTotal(item.getAmount())
@@ -384,9 +392,9 @@ public class PurchaseService {
             );
 
             boolean stockChanged = batches.stream().anyMatch(batch ->
-                    batch.getQuantity() == null ||
-                            batch.getOriginalQuantity() == null ||
-                            !Objects.equals(batch.getQuantity(), batch.getOriginalQuantity()));
+                    batch.getQuantity() == null
+                            || batch.getOriginalQuantity() == null
+                            || !Objects.equals(batch.getQuantity(), batch.getOriginalQuantity()));
             if (stockChanged) {
                 throw new BadRequestException("Cannot cancel purchase because stock from this purchase has already been sold or adjusted");
             }

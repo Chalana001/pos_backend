@@ -38,11 +38,13 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "sb.item.name, " +
             "sb.item.costPrice, " +
             "sb.item.sellingPrice, " +
-            "SUM(sb.quantity)) " +
+            "SUM(sb.quantity), " +
+            "sb.item.weightItem, " +
+            "sb.item.defaultUnit) " +
             "FROM StockBatch sb " +
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
             "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
-            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice",
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.weightItem, sb.item.defaultUnit",
 
             countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
                     "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
