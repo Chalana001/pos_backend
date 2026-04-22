@@ -11,6 +11,7 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
@@ -193,15 +194,21 @@ public class PurchaseService {
                 Item item = itemRepository.findById(itemReq.getItemId())
                         .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
+                // ✅ සර්විස් අයිටම් එකක් GRN එකට දාන්න හැදුවොත් Block කරනවා
+                if (item.getItemType() == ItemType.SERVICE) {
+                    throw new BadRequestException("SERVICE items cannot be purchased or added to GRN. Item: " + item.getName());
+                }
+
                 item.setCostPrice(itemReq.getCostPrice());
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
+                // ✅ item.isWeightItem() වෙනුවට item.getItemType() පාවිච්චි කිරීම
                 int normalizedQty = QuantityConversionUtil.normalizeQuantity(
-                        item.isWeightItem(),
+                        item.getItemType(),
                         item.getDefaultUnit(),
                         itemReq.getQty(),
-                        item.isWeightItem() ? MeasurementUnit.KG : MeasurementUnit.PCS
+                        item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS
                 );
 
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
@@ -230,7 +237,7 @@ public class PurchaseService {
                         .item(item)
                         .qty(normalizedQty)
                         .displayQty(itemReq.getQty().stripTrailingZeros())
-                        .qtyUnit(item.isWeightItem() ? MeasurementUnit.KG : MeasurementUnit.PCS)
+                        .qtyUnit(item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS)
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
                         .amount(lineTotal)

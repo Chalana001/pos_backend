@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.item;
 
 import com.chala.posapp.dto.stock.StockBatchResponse;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
 
@@ -28,10 +29,11 @@ public class ItemResponse {
     private Integer availableBaseQty;
     private BigDecimal reorderLevel;
     private Integer reorderLevelBaseQty;
-    private boolean weightItem;
+    private ItemType itemType;
     private MeasurementUnit defaultUnit;
     private String imageUrl;
     private boolean active;
     private LocalDateTime createdAt;
+    private List<Long> branchIds;
     private List<StockBatchResponse> batches;
 }

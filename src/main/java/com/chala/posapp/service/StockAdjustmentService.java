@@ -4,6 +4,7 @@ import com.chala.posapp.dto.stock.CreateStockAdjustmentRequest;
 import com.chala.posapp.dto.stock.StockAdjustmentResponse;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockAdjustment;
@@ -79,6 +80,11 @@ public class StockAdjustmentService {
             throw new BadRequestException("Item inactive");
         }
 
+        // ✅ අලුතින් දැමූ කොටස: SERVICE අයිටම් වලට Stock අදාළ නොවන නිසා එය Block කිරීම
+        if (item.getItemType() == ItemType.SERVICE) {
+            throw new BadRequestException("Stock adjustments are not applicable for SERVICE items");
+        }
+
         Branch branch = branchRepository.findById(request.getBranchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
@@ -121,7 +127,7 @@ public class StockAdjustmentService {
                 .type(request.getType())
                 .qtyChange(qtyChange)
                 .displayQtyChange(signedDisplayQty.stripTrailingZeros())
-                .qtyUnit(item.isWeightItem()
+                .qtyUnit(item.getItemType() == ItemType.WEIGHT
                         ? (request.getQtyUnit() == null ? item.getDefaultUnit() : request.getQtyUnit())
                         : item.getDefaultUnit())
                 .reason(request.getReason().trim())

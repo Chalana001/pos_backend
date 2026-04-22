@@ -27,7 +27,7 @@ public class OrderItem extends TenantEntity {
     @Column(name = "item_id", nullable = false)
     private Long itemId;
 
-    @Column(name = "batch_id", nullable = false)
+    @Column(name = "batch_id")
     private Long batchId;
 
     @Column(nullable = false, length = 80)

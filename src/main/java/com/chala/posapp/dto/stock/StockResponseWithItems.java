@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.stock;
 
+import com.chala.posapp.entity.ItemType; // ✅ Enum එක Import කරන්න
 import com.chala.posapp.entity.MeasurementUnit;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -17,7 +18,9 @@ public class StockResponseWithItems {
     private BigDecimal sellingPrice;
     private Long totalQuantity;
     private BigDecimal displayQuantity;
-    private boolean weightItem;
+
+    // ✅ boolean weightItem එක වෙනුවට අලුත් ItemType එක දැම්මා
+    private ItemType itemType;
     private MeasurementUnit defaultUnit;
 
     public StockResponseWithItems(
@@ -27,7 +30,7 @@ public class StockResponseWithItems {
             BigDecimal costPrice,
             BigDecimal sellingPrice,
             Long totalQuantity,
-            boolean weightItem,
+            ItemType itemType, // ✅ මෙතනත් වෙනස් කළා
             MeasurementUnit defaultUnit
     ) {
         this.itemId = itemId;
@@ -36,7 +39,7 @@ public class StockResponseWithItems {
         this.costPrice = costPrice;
         this.sellingPrice = sellingPrice;
         this.totalQuantity = totalQuantity;
-        this.weightItem = weightItem;
+        this.itemType = itemType; // ✅ මෙතනත් වෙනස් කළා
         this.defaultUnit = defaultUnit;
     }
 }

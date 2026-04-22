@@ -1,11 +1,13 @@
 package com.chala.posapp.dto.item;
 
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class ItemUpdateRequest {
@@ -24,9 +26,10 @@ public class ItemUpdateRequest {
     @PositiveOrZero
     private BigDecimal reorderLevel;
 
-    private Boolean weightItem;
+    private ItemType itemType;
 
     private MeasurementUnit defaultUnit;
+    private List<Long> branchIds;
 
     @Size(max = 500)
     private String imageUrl;

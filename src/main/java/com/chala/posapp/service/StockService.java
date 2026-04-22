@@ -63,54 +63,22 @@ public class StockService {
         return branchId;
     }
 
-//    @Transactional
-//    public StockResponse addStock(StockAddRequest request) {
-//
-//        Item item = itemRepository.findById(request.getItemId())
-//                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-//
-//        Branch branch = branchRepository.findById(request.getBranchId())
-//                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-//
-//        Supplier supplier = null;
-//        if (request.getSupplierId() != null) {
-//            supplier = supplierRepository.findById(request.getSupplierId())
-//                    .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
-//        }
-//
-//        StockBatch batch = StockBatch.builder()
-//                .branch(branch)
-//                .item(item)
-//                .quantity(request.getQuantity())
-//                .originalQuantity(request.getQuantity())
-//                .costPrice(request.getCostPrice())
-//                .sellingPrice(request.getSellingPrice())
-//                .batchCode(request.getBatchCode())
-//                .supplier(supplier)
-//                .expireDate(request.getExpireDate())
-//                .receivedAt(LocalDateTime.now())
-//                .build();
-//
-//        StockBatch savedBatch = stockBatchRepository.save(batch);
-//
-//        return mapToResponse(savedBatch);
-//    }
-
     public Page<StockResponseWithItems> listBranchStock(Long branchId, String search, int page, int size) {
         Long allowedBranchId = enforceBranchAccess(branchId);
         Long filterBranchId = (allowedBranchId != null && allowedBranchId > 0) ? allowedBranchId : null;
         Pageable pageable = PageRequest.of(page, size);
         return stockBatchRepository.getStockSummary(filterBranchId, search, pageable)
                 .map(row -> {
+                    ItemType type = row.getItemType();
+
                     row.setDisplayQuantity(QuantityConversionUtil.toDisplayQuantity(
-                            row.isWeightItem(),
+                            type,
                             row.getDefaultUnit(),
                             row.getTotalQuantity() != null ? row.getTotalQuantity().intValue() : 0
                     ));
                     return row;
                 });
     }
-
 
     public List<LowStockResponse> lowStock(Long branchId) {
         return stockBatchRepository.findLowStockItems(enforceBranchAccess(branchId));
@@ -119,15 +87,12 @@ public class StockService {
     private StockResponse mapToResponse(StockBatch batch) {
         return StockResponse.builder()
                 .id(batch.getId())
-
                 .branchId(batch.getBranch().getId())
                 .itemId(batch.getItem().getId())
-
                 .batchCode(batch.getBatchCode())
                 .quantity(batch.getQuantity())
                 .costPrice(batch.getCostPrice())
                 .sellingPrice(batch.getSellingPrice())
-
                 .receivedAt(batch.getReceivedAt())
                 .expireDate(batch.getExpireDate())
                 .build();

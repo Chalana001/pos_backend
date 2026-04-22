@@ -10,6 +10,7 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderItem;
 import com.chala.posapp.entity.OrderStatus;
@@ -23,6 +24,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.ItemRepository;
@@ -61,6 +63,7 @@ public class OrderService {
     private final CashShiftRepository cashShiftRepository;
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
+    private final BranchServiceItemRepository branchServiceItemRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -130,31 +133,46 @@ public class OrderService {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
 
-            if (itemReq.getBatchId() == null) {
-                throw new BadRequestException("Batch ID is missing for item: " + item.getName());
-            }
-
-            StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + itemReq.getBatchId()));
-
-            if (!batch.getItem().getId().equals(item.getId())) {
-                throw new BadRequestException("Batch ID does not match Item ID");
-            }
-            if (!batch.getBranch().getId().equals(branchId)) {
-                throw new BadRequestException("Batch does not belong to this branch");
-            }
-
+            Long batchId = null;
+            double costPrice = 0.0;
             int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
-            if (batch.getQuantity() < normalizedQty) {
-                throw new BadRequestException("Insufficient stock for " + item.getName()
-                        + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+
+            // ✅ SERVICE item එකක් නම් Batch ගැන හොයන්නේ නෑ, Stock අඩු කරන්නේ නෑ
+            if (item.getItemType() == ItemType.SERVICE) {
+                if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
+                    throw new BadRequestException("Service item is not assigned to this branch: " + item.getName());
+                }
+                costPrice = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
+            } else {
+                // NORMAL හෝ WEIGHT අයිටම් එකක් නම් අනිවාර්යයෙන් Batch එකක් තියෙන්නම ඕනේ
+                if (itemReq.getBatchId() == null) {
+                    throw new BadRequestException("Batch ID is missing for item: " + item.getName());
+                }
+
+                StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + itemReq.getBatchId()));
+
+                if (!batch.getItem().getId().equals(item.getId())) {
+                    throw new BadRequestException("Batch ID does not match Item ID");
+                }
+                if (!batch.getBranch().getId().equals(branchId)) {
+                    throw new BadRequestException("Batch does not belong to this branch");
+                }
+
+                if (batch.getQuantity() < normalizedQty) {
+                    throw new BadRequestException("Insufficient stock for " + item.getName()
+                            + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+                }
+
+                batch.setQuantity(batch.getQuantity() - normalizedQty);
+                batchesToUpdate.add(batch);
+
+                batchId = batch.getId();
+                costPrice = batch.getCostPrice().doubleValue();
             }
 
-            batch.setQuantity(batch.getQuantity() - normalizedQty);
-            batchesToUpdate.add(batch);
-
+            // Frontend එකෙන් එවන (edit කරපු) unit price එක පාවිච්චි කරනවා
             double unitPrice = itemReq.getUnitPrice();
-            double costPrice = batch.getCostPrice().doubleValue();
 
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
@@ -165,12 +183,12 @@ public class OrderService {
 
             OrderItem orderItem = OrderItem.builder()
                     .itemId(item.getId())
-                    .batchId(batch.getId())
+                    .batchId(batchId) // Service එකට මේක null
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
                     .qty(normalizedQty)
                     .displayQty(itemReq.getQty().stripTrailingZeros())
-                    .qtyUnit(item.isWeightItem()
+                    .qtyUnit(item.getItemType() == ItemType.WEIGHT
                             ? (itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit())
                             : item.getDefaultUnit())
                     .unitPrice(unitPrice)
@@ -230,7 +248,11 @@ public class OrderService {
             orderItem.setOrderId(savedOrder.getId());
         }
         orderItemRepository.saveAll(orderItemsToSave);
-        stockBatchRepository.saveAll(batchesToUpdate);
+
+        // Stock අඩු කරපු ඒවා විතරක් Save කරනවා
+        if (!batchesToUpdate.isEmpty()) {
+            stockBatchRepository.saveAll(batchesToUpdate);
+        }
 
         if (savedOrder.getOrderType() == OrderType.CREDIT) {
             Customer customer = customerRepository.findById(savedOrder.getCustomerId())
@@ -278,29 +300,33 @@ public class OrderService {
         reverseCashSaleFromOpenShift(saved);
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
-        Branch branch = branchRepository.findById(order.getBranchId())
-                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-
         for (OrderItem orderItem : items) {
-            Item item = itemRepository.findById(orderItem.getItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+            restoreStockToOriginalBatch(orderItem, order.getBranchId());
+        }
+/*
 
-            StockBatch returnBatch = StockBatch.builder()
-                    .branch(branch)
-                    .item(item)
-                    .quantity(orderItem.getQty())
-                    .originalQuantity(orderItem.getQty())
-                    .costPrice(BigDecimal.valueOf(orderItem.getCostPrice()))
-                    .sellingPrice(item.getSellingPrice())
-                    .batchCode("RTN-" + order.getInvoiceNo())
-                    .receivedAt(LocalDateTime.now())
-                    .build();
+            // ✅ SERVICE එකක් නම් return batch එකක් හදන්නේ නෑ (තොගයක් තිබ්බේ නෑනේ)
+            if (item.getItemType() != ItemType.SERVICE) {
+                StockBatch returnBatch = StockBatch.builder()
+                        .branch(branch)
+                        .item(item)
+                        .quantity(orderItem.getQty())
+                        .originalQuantity(orderItem.getQty())
+                        .costPrice(BigDecimal.valueOf(orderItem.getCostPrice()))
+                        .sellingPrice(item.getSellingPrice())
+                        .batchCode("RTN-" + order.getInvoiceNo())
+                        .receivedAt(LocalDateTime.now())
+                        .build();
 
-            stockBatchRepository.save(returnBatch);
+                stockBatchRepository.save(returnBatch);
+            }
         }
 
+*/
         return buildOrderResponse(saved, items);
     }
+
+    // ... (අනිත් methods වල කිසිම වෙනසක් කරලා නැහැ, ඒවා කලින් විදිහටම තියෙනවා)
 
     public OrderResponse getOrder(String invoiceNo) {
         User user = getLoggedUser();
@@ -386,6 +412,32 @@ public class OrderService {
         return unitPrice - value;
     }
 
+    private void restoreStockToOriginalBatch(OrderItem orderItem, Long branchId) {
+        Item item = itemRepository.findById(orderItem.getItemId())
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+
+        if (item.getItemType() == ItemType.SERVICE) {
+            return;
+        }
+
+        if (orderItem.getBatchId() == null) {
+            throw new BadRequestException("Original batch reference is missing for item: " + orderItem.getItemName());
+        }
+
+        StockBatch batch = stockBatchRepository.findById(orderItem.getBatchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Original batch not found for item: " + orderItem.getItemName()));
+
+        if (!batch.getBranch().getId().equals(branchId)) {
+            throw new BadRequestException("Original batch belongs to a different branch for item: " + orderItem.getItemName());
+        }
+        if (!batch.getItem().getId().equals(orderItem.getItemId())) {
+            throw new BadRequestException("Original batch does not match item: " + orderItem.getItemName());
+        }
+
+        batch.setQuantity(batch.getQuantity() + orderItem.getQty());
+        stockBatchRepository.save(batch);
+    }
+
     private void addCashSaleToOpenShift(Order order) {
         if (order.getOrderType() != OrderType.CASH || order.getStatus() != OrderStatus.COMPLETED) {
             return;
@@ -436,20 +488,20 @@ public class OrderService {
 
         List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
                 : items.stream()
-                .map(orderItem -> OrderItemResponse.builder()
-                        .itemId(orderItem.getItemId())
-                        .barcode(orderItem.getBarcode())
-                        .itemName(orderItem.getItemName())
-                        .batchId(orderItem.getBatchId())
-                        .qty(orderItem.getDisplayQty())
-                        .qtyUnit(orderItem.getQtyUnit())
-                        .unitPrice(orderItem.getUnitPrice())
-                        .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
-                        .discountValue(orderItem.getDiscountValue())
-                        .finalUnitPrice(orderItem.getFinalUnitPrice())
-                        .lineTotal(orderItem.getLineTotal())
-                        .build())
-                .collect(Collectors.toList());
+                  .map(orderItem -> OrderItemResponse.builder()
+                                    .itemId(orderItem.getItemId())
+                                    .barcode(orderItem.getBarcode())
+                                    .itemName(orderItem.getItemName())
+                                    .batchId(orderItem.getBatchId())
+                                    .qty(orderItem.getDisplayQty())
+                                    .qtyUnit(orderItem.getQtyUnit())
+                                    .unitPrice(orderItem.getUnitPrice())
+                                    .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
+                                    .discountValue(orderItem.getDiscountValue())
+                                    .finalUnitPrice(orderItem.getFinalUnitPrice())
+                                    .lineTotal(orderItem.getLineTotal())
+                                    .build())
+                  .collect(Collectors.toList());
 
         String branchName = order.getReceiptBranchName();
         String branchAddress = order.getReceiptBranchAddress();

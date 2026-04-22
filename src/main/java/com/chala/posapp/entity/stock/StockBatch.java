@@ -19,7 +19,8 @@ import java.time.LocalDateTime;
         },
         indexes = {
                 @Index(name = "idx_tenant_batch_item_branch", columnList = "tenant_id, item_id, branch_id"),
-                @Index(name = "idx_tenant_batch_expiry", columnList = "tenant_id, expire_date")
+                @Index(name = "idx_tenant_batch_expiry", columnList = "tenant_id, expire_date"),
+                @Index(name = "idx_tenant_batch_origin_branch", columnList = "tenant_id, origin_batch_id, branch_id")
         }
 )
 @Getter @Setter
@@ -46,6 +47,9 @@ public class StockBatch extends TenantEntity {
 
     @Column(name = "batch_code")
     private String batchCode;
+
+    @Column(name = "origin_batch_id")
+    private Long originBatchId;
 
     @Column(name = "cost_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal costPrice;

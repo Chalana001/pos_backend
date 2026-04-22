@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
@@ -28,6 +29,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     @Query("SELECT sb.item.id AS itemId, sb.item.name AS itemName, SUM(sb.quantity) AS totalQty, sb.item.reorderLevel AS reorderLevel " +
             "FROM StockBatch sb " +
             "WHERE sb.branch.id = :branchId " +
+            "AND sb.item.itemType != com.chala.posapp.entity.ItemType.SERVICE " +
             "GROUP BY sb.item.id, sb.item.name, sb.item.reorderLevel " +
             "HAVING SUM(sb.quantity) <= sb.item.reorderLevel")
     List<LowStockResponse> findLowStockItems(@Param("branchId") Long branchId);
@@ -39,12 +41,12 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "sb.item.costPrice, " +
             "sb.item.sellingPrice, " +
             "SUM(sb.quantity), " +
-            "sb.item.weightItem, " +
+            "sb.item.itemType, " +
             "sb.item.defaultUnit) " +
             "FROM StockBatch sb " +
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
             "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
-            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.weightItem, sb.item.defaultUnit",
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.itemType, sb.item.defaultUnit", // 🔴 මෙතනත් වෙනස් කළා
 
             countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
                     "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
@@ -59,4 +61,6 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     List<StockBatch> findByItemId(Long id);
 
     List<StockBatch> findByBranchIdAndBatchCodeStartingWith(Long branchId, String batchCodePrefix);
+
+    Optional<StockBatch> findByBranchIdAndItemIdAndOriginBatchId(Long branchId, Long itemId, Long originBatchId);
 }

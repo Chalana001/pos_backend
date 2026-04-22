@@ -1,10 +1,12 @@
 package com.chala.posapp.dto.item;
 
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 public class ItemCreateRequest {
@@ -26,9 +28,10 @@ public class ItemCreateRequest {
     @PositiveOrZero
     private BigDecimal reorderLevel;
 
-    private Boolean weightItem;
+    private ItemType itemType;
 
     private MeasurementUnit defaultUnit;
+    private List<Long> branchIds;
 
     private String imageUrl;
     private Boolean active;

@@ -46,9 +46,10 @@ public class Item extends TenantEntity {
     @Column(nullable = false)
     private int reorderLevel;
 
-    @Column(name = "weight_item", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_type", nullable = false, length = 20)
     @Builder.Default
-    private boolean weightItem = false;
+    private ItemType itemType = ItemType.NORMAL;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "default_unit", nullable = false, length = 10)

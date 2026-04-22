@@ -1,5 +1,4 @@
 package com.chala.posapp.dto.grn;
-
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDate;

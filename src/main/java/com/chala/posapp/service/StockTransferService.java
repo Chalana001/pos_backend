@@ -7,6 +7,7 @@ import com.chala.posapp.dto.stock.StockTransferItemResponse;
 import com.chala.posapp.dto.stock.StockTransferResponse;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
@@ -128,6 +129,11 @@ public class StockTransferService {
             Item item = itemRepository.findById(reqItem.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + reqItem.getItemId()));
 
+            // ✅ SERVICE අයිටම් එකක් නම් ට්‍රාන්ස්ෆර් කරන්න බැරි වෙන්න Block කරනවා
+            if (item.getItemType() == ItemType.SERVICE) {
+                throw new BadRequestException("SERVICE items cannot be transferred. Item: " + item.getName());
+            }
+
             if (reqItem.getBatchId() == null) {
                 throw new BadRequestException("Batch ID is required for item: " + item.getName());
             }
@@ -159,7 +165,7 @@ public class StockTransferService {
                     .itemName(item.getName())
                     .qty(normalizedQty)
                     .displayQty(reqItem.getQty().stripTrailingZeros())
-                    .qtyUnit(item.isWeightItem()
+                    .qtyUnit(item.getItemType() == ItemType.WEIGHT
                             ? (reqItem.getQtyUnit() == null ? item.getDefaultUnit() : reqItem.getQtyUnit())
                             : item.getDefaultUnit())
                     .build());
@@ -208,21 +214,9 @@ public class StockTransferService {
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
         for (StockTransferItem transferItem : items) {
-            Item item = itemRepository.findById(transferItem.getItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-
-            StockBatch newBatch = StockBatch.builder()
-                    .branch(toBranch)
-                    .item(item)
-                    .quantity(transferItem.getQty())
-                    .originalQuantity(transferItem.getQty())
-                    .costPrice(item.getCostPrice())
-                    .sellingPrice(item.getSellingPrice())
-                    .batchCode("TRN-" + transfer.getTransferNo())
-                    .receivedAt(LocalDateTime.now())
-                    .build();
-
-            stockBatchRepository.save(newBatch);
+            StockBatch sourceBatch = stockBatchRepository.findById(transferItem.getBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Source batch not found"));
+            receiveIntoDestinationBatch(transfer, toBranch, sourceBatch, transferItem);
         }
 
         transfer.setStatus(StockTransferStatus.COMPLETED);
@@ -254,26 +248,9 @@ public class StockTransferService {
             ensureTransferAccess(user, transfer);
         }
 
-        Branch fromBranch = branchRepository.findById(transfer.getFromBranchId())
-                .orElseThrow(() -> new ResourceNotFoundException("Sender branch not found"));
-
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
         for (StockTransferItem transferItem : items) {
-            Item item = itemRepository.findById(transferItem.getItemId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-
-            StockBatch cancelBatch = StockBatch.builder()
-                    .branch(fromBranch)
-                    .item(item)
-                    .quantity(transferItem.getQty())
-                    .originalQuantity(transferItem.getQty())
-                    .costPrice(item.getCostPrice())
-                    .sellingPrice(item.getSellingPrice())
-                    .batchCode("CNL-" + transfer.getTransferNo())
-                    .receivedAt(LocalDateTime.now())
-                    .build();
-
-            stockBatchRepository.save(cancelBatch);
+            restoreToSourceBatch(transferItem, transfer.getFromBranchId());
         }
 
         transfer.setStatus(StockTransferStatus.CANCELED);
@@ -328,6 +305,56 @@ public class StockTransferService {
         return transferRepository.findByToBranchIdOrderByRequestedAtDesc(toBranchId).stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
+    }
+
+    private void receiveIntoDestinationBatch(StockTransfer transfer, Branch toBranch, StockBatch sourceBatch, StockTransferItem transferItem) {
+        StockBatch existingBatch = stockBatchRepository.findByBranchIdAndItemIdAndOriginBatchId(
+                        toBranch.getId(),
+                        transferItem.getItemId(),
+                        sourceBatch.getId()
+                )
+                .orElse(null);
+
+        if (existingBatch != null) {
+            existingBatch.setQuantity(existingBatch.getQuantity() + transferItem.getQty());
+            stockBatchRepository.save(existingBatch);
+            return;
+        }
+
+        StockBatch newBatch = StockBatch.builder()
+                .branch(toBranch)
+                .item(sourceBatch.getItem())
+                .supplier(sourceBatch.getSupplier())
+                .batchCode(buildTransferredBatchCode(transfer, sourceBatch, toBranch.getId()))
+                .originBatchId(sourceBatch.getId())
+                .quantity(transferItem.getQty())
+                .originalQuantity(transferItem.getQty())
+                .costPrice(sourceBatch.getCostPrice())
+                .sellingPrice(sourceBatch.getSellingPrice())
+                .receivedAt(LocalDateTime.now())
+                .expireDate(sourceBatch.getExpireDate())
+                .build();
+
+        stockBatchRepository.save(newBatch);
+    }
+
+    private void restoreToSourceBatch(StockTransferItem transferItem, Long fromBranchId) {
+        StockBatch sourceBatch = stockBatchRepository.findById(transferItem.getBatchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Source batch not found"));
+
+        if (!sourceBatch.getBranch().getId().equals(fromBranchId)) {
+            throw new BadRequestException("Source batch does not belong to the transfer origin branch");
+        }
+        if (!sourceBatch.getItem().getId().equals(transferItem.getItemId())) {
+            throw new BadRequestException("Source batch does not match the transferred item");
+        }
+
+        sourceBatch.setQuantity(sourceBatch.getQuantity() + transferItem.getQty());
+        stockBatchRepository.save(sourceBatch);
+    }
+
+    private String buildTransferredBatchCode(StockTransfer transfer, StockBatch sourceBatch, Long toBranchId) {
+        return "TRN-" + transfer.getTransferNo() + "-SRC-" + sourceBatch.getId() + "-BR-" + toBranchId;
     }
 
     private StockTransferResponse buildResponse(StockTransfer transfer, List<StockTransferItem> items) {

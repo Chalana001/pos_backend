@@ -4,13 +4,19 @@ import com.chala.posapp.dto.item.ItemCreateRequest;
 import com.chala.posapp.dto.item.ItemResponse;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
 import com.chala.posapp.dto.stock.StockBatchResponse;
+import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.BranchServiceItem;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
@@ -25,8 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,6 +45,8 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final BranchRepository branchRepository;
+    private final BranchServiceItemRepository branchServiceItemRepository;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
@@ -51,8 +61,8 @@ public class ItemService {
         SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                 .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found with ID: " + request.getSubCategoryId()));
 
-        boolean weightItem = Boolean.TRUE.equals(request.getWeightItem());
-        MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(weightItem, request.getDefaultUnit());
+        ItemType itemType = request.getItemType() != null ? request.getItemType() : ItemType.NORMAL;
+        MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit());
 
         Item item = Item.builder()
                 .barcode(barcode)
@@ -60,14 +70,16 @@ public class ItemService {
                 .subCategory(subCategory)
                 .costPrice(request.getCostPrice())
                 .sellingPrice(request.getSellingPrice())
-                .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, request.getReorderLevel()))
-                .weightItem(weightItem)
+                .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, request.getReorderLevel()))
+                .itemType(itemType)
                 .defaultUnit(defaultUnit)
                 .imageUrl(request.getImageUrl())
                 .active(request.getActive() == null || request.getActive())
                 .build();
 
-        return mapToResponse(itemRepository.save(item), null, List.of());
+        Item savedItem = itemRepository.save(item);
+        syncServiceBranches(savedItem, request.getBranchIds());
+        return mapToResponse(savedItem, null, List.of());
     }
 
     @Transactional
@@ -84,6 +96,8 @@ public class ItemService {
                 .map(ItemCreateRequest::getBarcode)
                 .toList();
 
+        validateNoDuplicateIncomingBarcodes(incomingBarcodes);
+
         if (!itemRepository.findAllByBarcodeIn(incomingBarcodes).isEmpty()) {
             throw new AlreadyExistsException("Duplicate barcodes found in the system. Bulk upload aborted.");
         }
@@ -93,26 +107,34 @@ public class ItemService {
                     SubCategory subCategory = subCategoryRepository.findById(req.getSubCategoryId())
                             .orElseThrow(() -> new ResourceNotFoundException("SubCategory ID " + req.getSubCategoryId() + " not found"));
 
-                    boolean weightItem = Boolean.TRUE.equals(req.getWeightItem());
-                    MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(weightItem, req.getDefaultUnit());
+                    ItemType itemType = req.getItemType() != null ? req.getItemType() : ItemType.NORMAL;
+                    MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, req.getDefaultUnit());
 
-                    return Item.builder()
+                    Item item = Item.builder()
                             .name(req.getName().trim())
                             .barcode(req.getBarcode())
                             .subCategory(subCategory)
                             .costPrice(req.getCostPrice())
                             .sellingPrice(req.getSellingPrice())
-                            .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, req.getReorderLevel()))
-                            .weightItem(weightItem)
+                            .reorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, req.getReorderLevel()))
+                            .itemType(itemType)
                             .defaultUnit(defaultUnit)
                             .imageUrl(req.getImageUrl())
                             .active(req.getActive() == null || req.getActive())
                             .build();
+                    return item;
                 })
                 .toList();
 
         return itemRepository.saveAll(newItemList).stream()
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> {
+                    ItemCreateRequest sourceRequest = requestList.stream()
+                            .filter(req -> item.getBarcode().equals(req.getBarcode()))
+                            .findFirst()
+                            .orElse(null);
+                    syncServiceBranches(item, sourceRequest != null ? sourceRequest.getBranchIds() : null);
+                    return mapToResponse(item, null, List.of());
+                })
                 .toList();
     }
 
@@ -134,6 +156,11 @@ public class ItemService {
     public ItemResponse getByBarcode(String barcode, Long branchId) {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+
+        if (item.getItemType() == ItemType.SERVICE && branchId != null && branchId != 0L
+                && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
+            throw new ResourceNotFoundException("Service item not available in this branch");
+        }
 
         if (branchId == null) {
             return mapToResponse(item, null, List.of());
@@ -173,6 +200,15 @@ public class ItemService {
 
         return items.stream()
                 .map(item -> {
+                    if (!item.isActive()) {
+                        return null;
+                    }
+
+                    if (item.getItemType() == ItemType.SERVICE && branchId != null && branchId != 0L
+                            && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
+                        return null;
+                    }
+
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
 
@@ -182,7 +218,10 @@ public class ItemService {
                                 : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
                         totalQty = totalQuantity(batches);
                     }
-                    if (batches == null || batches.isEmpty()) {
+
+                    // ✅ Service එකක් නෙවෙයි නම් විතරක් batches නැති ඒවා අයින් කරනවා.
+                    // ඒ කියන්නේ SERVICE අයිටම් එකක් නම්, Batch 0 වුණත් POS එකේ පෙන්නනවා!
+                    if (item.getItemType() != ItemType.SERVICE && (batches == null || batches.isEmpty())) {
                         return null;
                     }
 
@@ -190,6 +229,15 @@ public class ItemService {
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
+    }
+
+    private void validateNoDuplicateIncomingBarcodes(List<String> incomingBarcodes) {
+        Set<String> uniqueBarcodes = new HashSet<>();
+        for (String barcode : incomingBarcodes) {
+            if (!uniqueBarcodes.add(barcode)) {
+                throw new AlreadyExistsException("Duplicate barcodes found in the request. Bulk upload aborted.");
+            }
+        }
     }
 
     public List<ItemResponse> searchForBarcodePrint(String query) {
@@ -212,6 +260,7 @@ public class ItemService {
     public ItemResponse updateItem(Long id, ItemUpdateRequest request) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        ItemType previousItemType = item.getItemType();
 
         if (request.getName() != null && !request.getName().isBlank()) {
             item.setName(request.getName().trim());
@@ -223,23 +272,27 @@ public class ItemService {
             item.setSubCategory(subCategory);
         }
 
-        boolean weightItem = request.getWeightItem() != null ? request.getWeightItem() : item.isWeightItem();
+        ItemType itemType = request.getItemType() != null ? request.getItemType() : item.getItemType();
         MeasurementUnit defaultUnit = request.getDefaultUnit() != null
-                ? QuantityConversionUtil.normalizeItemUnit(weightItem, request.getDefaultUnit())
-                : QuantityConversionUtil.normalizeItemUnit(weightItem, item.getDefaultUnit());
+                ? QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit())
+                : QuantityConversionUtil.normalizeItemUnit(itemType, item.getDefaultUnit());
 
-        item.setWeightItem(weightItem);
+        item.setItemType(itemType);
         item.setDefaultUnit(defaultUnit);
 
         if (request.getCostPrice() != null) item.setCostPrice(request.getCostPrice());
         if (request.getSellingPrice() != null) item.setSellingPrice(request.getSellingPrice());
         if (request.getReorderLevel() != null) {
-            item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(weightItem, defaultUnit, request.getReorderLevel()));
+            item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, request.getReorderLevel()));
         }
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
         if (request.getActive() != null) item.setActive(request.getActive());
 
-        return mapToResponse(itemRepository.save(item), null, List.of());
+        Item savedItem = itemRepository.save(item);
+        if (request.getBranchIds() != null || previousItemType != itemType) {
+            syncServiceBranches(savedItem, request.getBranchIds());
+        }
+        return mapToResponse(savedItem, null, List.of());
     }
 
     private List<StockBatchResponse> activeBatchesToResponse(Item item, List<StockBatch> batches) {
@@ -273,6 +326,14 @@ public class ItemService {
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches) {
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
+        List<Long> branchIds = item.getItemType() == ItemType.SERVICE
+                ? branchServiceItemRepository.findByItemId(item.getId()).stream()
+                .filter(BranchServiceItem::isActive)
+                .map(branchServiceItem -> branchServiceItem.getBranch().getId())
+                .distinct()
+                .sorted()
+                .toList()
+                : List.of();
 
         BigDecimal availableQty = availableBaseQty == null
                 ? null
@@ -290,15 +351,43 @@ public class ItemService {
                 .sellingPrice(item.getSellingPrice())
                 .availableQty(availableQty)
                 .availableBaseQty(availableBaseQty)
-                .reorderLevel(QuantityConversionUtil.toDisplayQuantity(item.isWeightItem(), item.getDefaultUnit(), item.getReorderLevel()))
+                .reorderLevel(QuantityConversionUtil.toDisplayQuantity(item.getItemType(), item.getDefaultUnit(), item.getReorderLevel()))
                 .reorderLevelBaseQty(item.getReorderLevel())
-                .weightItem(item.isWeightItem())
+                .itemType(item.getItemType()) // අලුත් Enum එක
                 .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
                 .active(item.isActive())
                 .createdAt(item.getCreatedAt())
+                .branchIds(branchIds)
                 .batches(batches)
                 .build();
+    }
+
+    private void syncServiceBranches(Item item, List<Long> branchIds) {
+        if (item.getItemType() != ItemType.SERVICE) {
+            branchServiceItemRepository.deleteByItemId(item.getId());
+            return;
+        }
+
+        if (branchIds == null || branchIds.isEmpty()) {
+            throw new BadRequestException("Service items must be assigned to at least one branch");
+        }
+
+        List<Long> distinctBranchIds = branchIds.stream().distinct().toList();
+        List<Branch> branches = branchRepository.findAllById(distinctBranchIds);
+        if (branches.size() != distinctBranchIds.size()) {
+            throw new ResourceNotFoundException("One or more branches not found");
+        }
+
+        branchServiceItemRepository.deleteByItemId(item.getId());
+        List<BranchServiceItem> assignments = branches.stream()
+                .map(branch -> BranchServiceItem.builder()
+                        .branch(branch)
+                        .item(item)
+                        .active(true)
+                        .build())
+                .toList();
+        branchServiceItemRepository.saveAll(assignments);
     }
 
     @Transactional
