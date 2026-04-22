@@ -15,6 +15,7 @@ public class ShiftResponse {
     private String branchName;
     private String branchAddress;
     private String branchPhone;
+    private String branchLogo;
     private Long cashierUserId;
     private String cashierName;
 

@@ -39,6 +39,7 @@ public class BranchService {
                 .name(request.getName().trim())
                 .address(request.getAddress())
                 .phone(request.getPhone())
+                .logo(request.getLogo())
                 .active(true)
                 .build();
 
@@ -91,6 +92,7 @@ public class BranchService {
         if (request.getName() != null) branch.setName(request.getName().trim());
         if (request.getAddress() != null) branch.setAddress(request.getAddress());
         if (request.getPhone() != null) branch.setPhone(request.getPhone());
+        branch.setLogo(request.getLogo());
         if (request.getActive() != null) branch.setActive(request.getActive());
 
         return mapToResponse(branch);
@@ -111,6 +113,7 @@ public class BranchService {
                 .name(branch.getName())
                 .address(branch.getAddress())
                 .phone(branch.getPhone())
+                .logo(branch.getLogo())
                 .active(branch.isActive())
                 .createdAt(branch.getCreatedAt())
                 .build();

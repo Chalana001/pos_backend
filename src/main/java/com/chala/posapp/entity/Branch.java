@@ -36,6 +36,10 @@ public class Branch extends TenantEntity {
     @Column(length = 30)
     private String phone;
 
+    @Lob
+    @Column(columnDefinition = "LONGTEXT")
+    private String logo;
+
     @Column(nullable = false)
     private boolean active;
 

@@ -14,6 +14,7 @@ public class BranchResponse {
     private String name;
     private String address;
     private String phone;
+    private String logo;
     private boolean active;
     private LocalDateTime createdAt;
 }

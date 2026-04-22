@@ -20,4 +20,6 @@ public class BranchCreateRequest {
 
     @Size(max = 30)
     private String phone;
+
+    private String logo;
 }

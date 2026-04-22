@@ -39,6 +39,10 @@ public class Order extends TenantEntity {
     @Column(name = "receipt_branch_phone", length = 30)
     private String receiptBranchPhone;
 
+    @Lob
+    @Column(name = "receipt_branch_logo", columnDefinition = "LONGTEXT")
+    private String receiptBranchLogo;
+
     @Column(name = "cashier_user_id", nullable = false)
     private Long cashierUserId;
 

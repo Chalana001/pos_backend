@@ -229,6 +229,7 @@ public class OrderService {
                 .receiptBranchName(branch.getName())
                 .receiptBranchAddress(branch.getAddress())
                 .receiptBranchPhone(branch.getPhone())
+                .receiptBranchLogo(branch.getLogo())
                 .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
                 .orderType(request.getOrderType())
@@ -506,13 +507,15 @@ public class OrderService {
         String branchName = order.getReceiptBranchName();
         String branchAddress = order.getReceiptBranchAddress();
         String branchPhone = order.getReceiptBranchPhone();
+        String branchLogo = order.getReceiptBranchLogo();
 
-        if (order.getBranchId() != null && branchName == null && branchAddress == null && branchPhone == null) {
+        if (order.getBranchId() != null && (branchName == null || branchAddress == null || branchPhone == null || branchLogo == null)) {
             Branch branch = branchRepository.findById(order.getBranchId()).orElse(null);
             if (branch != null) {
-                branchName = branch.getName();
-                branchAddress = branch.getAddress();
-                branchPhone = branch.getPhone();
+                if (branchName == null) branchName = branch.getName();
+                if (branchAddress == null) branchAddress = branch.getAddress();
+                if (branchPhone == null) branchPhone = branch.getPhone();
+                if (branchLogo == null) branchLogo = branch.getLogo();
             }
         }
 
@@ -523,6 +526,7 @@ public class OrderService {
                 .branchName(branchName)
                 .branchAddress(branchAddress)
                 .branchPhone(branchPhone)
+                .branchLogo(branchLogo)
                 .cashierUserId(order.getCashierUserId())
                 .customerId(order.getCustomerId())
                 .customerName(customerName)

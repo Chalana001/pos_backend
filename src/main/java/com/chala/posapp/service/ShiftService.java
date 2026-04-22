@@ -573,6 +573,7 @@ public class ShiftService {
                         response.setBranchName(branch.getName());
                         response.setBranchAddress(branch.getAddress());
                         response.setBranchPhone(branch.getPhone());
+                        response.setBranchLogo(branch.getLogo());
                     });
         }
 

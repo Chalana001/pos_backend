@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Flow Map</title>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+    :root { --bg:#07111d; --panel:rgba(10,20,35,.86); --panel2:rgba(7,15,26,.96); --text:#ecf4ff; --muted:#98abc9; --blue:#58a6ff; --cyan:#52f0ff; --mint:#7ef6be; --amber:#ffc56a; --shadow:0 28px 80px rgba(0,0,0,.45); }
+    * { box-sizing:border-box; }
+    html,body { margin:0; min-height:100%; color:var(--text); font-family:"Space Grotesk",sans-serif; background:radial-gradient(circle at 15% 10%, rgba(82,240,255,.13), transparent 22%), radial-gradient(circle at 85% 15%, rgba(255,197,106,.10), transparent 18%), radial-gradient(circle at 50% 100%, rgba(126,246,190,.10), transparent 24%), linear-gradient(180deg, #07111d 0%, #06101a 55%, #030913 100%); }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background-image:linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px); background-size:52px 52px; mask-image:radial-gradient(circle at center, black 45%, transparent 88%); }
+    .app { width:min(1500px, calc(100% - 28px)); margin:16px auto; padding:18px; border-radius:26px; background:linear-gradient(180deg, rgba(8,18,31,.84), rgba(5,12,21,.96)); border:1px solid rgba(133,169,255,.14); box-shadow:var(--shadow); }
+    .hero,.workspace,.metrics { display:grid; gap:16px; }
+    .hero { grid-template-columns:1.3fr .9fr; margin-bottom:18px; }
+    .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .card,.side,.flow,.detail,.metric,.panel,.module,.step { background:var(--panel); border:1px solid rgba(133,169,255,.14); border-radius:22px; }
+    .card,.side,.flow,.detail { box-shadow:0 0 0 1px rgba(88,166,255,.08), 0 0 24px rgba(88,166,255,.10); }
+    .card,.metric,.side,.flow,.detail { padding:18px; }
+    .eyebrow,.tag,.step-trigger,.badge,.pill { display:inline-flex; align-items:center; border-radius:999px; font-size:11px; text-transform:uppercase; letter-spacing:.12em; }
+    .eyebrow { padding:8px 12px; color:var(--cyan); background:rgba(82,240,255,.08); border:1px solid rgba(82,240,255,.18); }
+    h1 { margin:14px 0 10px; font-size:clamp(34px,4.8vw,58px); line-height:.94; letter-spacing:-.05em; }
+    h2,h3,h4,p { margin:0; }
+    p,.sub,.copy,.step-copy,.body-copy { color:var(--muted); line-height:1.6; }
+    .legend,.badges,.files { display:flex; flex-wrap:wrap; gap:8px; }
+    .legend { margin-top:18px; }
+    .legend span,.badge,.pill { padding:8px 10px; background:rgba(255,255,255,.04); border:1px solid rgba(133,169,255,.12); }
+    .metric small { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.14em; margin-bottom:12px; }
+    .metric strong { display:block; font-size:34px; margin-bottom:8px; }
+    .workspace { grid-template-columns:290px minmax(0,1fr) 410px; min-height:760px; }
+    .title { font-size:13px; text-transform:uppercase; letter-spacing:.18em; color:var(--muted); }
+    .module-list,.panels,.rail { display:grid; gap:10px; }
+    .module-list { margin-top:14px; }
+    .module,.step,.panel { border-radius:18px; background:rgba(255,255,255,.03); }
+    .module { padding:14px; cursor:pointer; transition:.18s ease; }
+    .module:hover,.step:hover { transform:translateY(-2px); border-color:rgba(88,166,255,.3); }
+    .module.active,.step.active { background:linear-gradient(180deg, rgba(82,240,255,.09), rgba(88,166,255,.06)); border-color:rgba(82,240,255,.34); }
+    .route,.code,.fields li { font-family:"IBM Plex Mono",monospace; }
+    .route { color:#8fb0da; font-size:12px; margin:8px 0; }
+    .tag,.step-trigger { padding:7px 10px; }
+    .tag { color:var(--cyan); background:rgba(82,240,255,.08); border:1px solid rgba(82,240,255,.15); }
+    .step-trigger { color:var(--amber); background:rgba(255,197,106,.10); border:1px solid rgba(255,197,106,.18); margin-top:10px; }
+    .flow-head,.detail-head,.panel-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .flow-head { margin-bottom:18px; }
+    .rail { position:relative; padding-left:40px; }
+    .rail::before { content:""; position:absolute; left:15px; top:14px; bottom:14px; width:2px; background:linear-gradient(180deg, rgba(82,240,255,.36), rgba(88,166,255,.10)); }
+    .step { position:relative; padding:16px; cursor:pointer; transition:.18s ease; }
+    .step::before { content:attr(data-index); position:absolute; left:-40px; top:16px; width:28px; height:28px; display:grid; place-items:center; border-radius:50%; background:#09121e; border:1px solid rgba(126,246,190,.22); color:var(--mint); font-size:12px; }
+    .detail { background:var(--panel2); gap:14px; display:flex; flex-direction:column; min-height:0; }
+    .detail h2 { font-size:28px; line-height:1; letter-spacing:-.04em; margin-bottom:8px; }
+    .path { padding:12px 14px; border-radius:16px; border:1px solid rgba(88,166,255,.12); background:rgba(255,255,255,.03); font-family:"IBM Plex Mono",monospace; font-size:12px; color:#d8e4f8; }
+    .panels { overflow:auto; padding-right:4px; }
+    .panel-head { padding:13px 15px; border-bottom:1px solid rgba(133,169,255,.08); }
+    .panel-head h4 { font-size:13px; text-transform:uppercase; letter-spacing:.12em; color:#d7e1f2; }
+    .code { color:var(--cyan); font-size:11px; }
+    .panel-body { padding:14px 15px; }
+    .kv,.fields { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+    .kv li,.fields li { padding:10px 12px; border-radius:14px; background:rgba(255,255,255,.03); border:1px solid rgba(133,169,255,.08); }
+    .kv small { display:block; color:var(--muted); text-transform:uppercase; letter-spacing:.12em; margin-bottom:5px; }
+    .fields li { display:flex; justify-content:space-between; gap:10px; font-size:12px; }
+    @media (max-width:1280px) { .workspace { grid-template-columns:290px minmax(0,1fr); } .detail { grid-column:1 / -1; } }
+    @media (max-width:980px) { .hero,.workspace { grid-template-columns:1fr; } .app { width:min(100% - 14px, 1500px); margin:8px auto; padding:12px; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <div class="card">
+        <div class="eyebrow">POS Full Flow Interactive Map</div>
+        <h1>Click a module.<br />Click a step.<br />See the real flow.</h1>
+        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. Left side picks the module. Middle side shows the step chain. Right side shows trigger, navigation, endpoint, request DTO, and response DTO.</p>
+        <div class="legend">
+          <span>Frontend trigger and navigation</span>
+          <span>Request DTO and payload shape</span>
+          <span>Response DTO and outcome</span>
+        </div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><small>Modules</small><strong id="mCount">0</strong><div class="sub">Core POS, stock, purchase, report, and admin areas.</div></div>
+        <div class="metric"><small>Steps</small><strong id="sCount">0</strong><div class="sub">Selected module flow count.</div></div>
+        <div class="metric"><small>Source</small><strong>FE + BE</strong><div class="sub">Frontend behavior first, backend mapping next.</div></div>
+        <div class="metric"><small>Focus</small><strong id="focus">POS</strong><div class="sub">Main retail flow and related operational screens.</div></div>
+      </div>
+    </section>
+    <section class="workspace">
+      <aside class="side">
+        <h2 class="title">Module Rail</h2>
+        <p class="sub">Choose a system area. The flow lane and detail panel switch instantly.</p>
+        <div class="module-list" id="moduleList"></div>
+      </aside>
+      <main class="flow">
+        <div class="flow-head">
+          <div>
+            <h2 class="title" id="laneTitle">Flow Lane</h2>
+            <h3 id="flowTitle"></h3>
+            <div class="route" id="flowRoute"></div>
+          </div>
+          <div class="badges" id="flowBadges"></div>
+        </div>
+        <div class="rail" id="stepRail"></div>
+      </main>
+      <section class="detail">
+        <div class="detail-head">
+          <div>
+            <div class="title" id="detailModule">Module</div>
+            <h2 id="detailTitle"></h2>
+            <p class="body-copy" id="detailCopy"></p>
+          </div>
+          <div class="badges" id="detailBadges"></div>
+        </div>
+        <div class="path" id="detailPath"></div>
+        <div class="panels">
+          <div class="panel"><div class="panel-head"><h4>Trigger and Result</h4><div class="code">UI -> FE -> BE</div></div><div class="panel-body"><ul class="kv" id="kvOne"></ul></div></div>
+          <div class="panel"><div class="panel-head"><h4>Frontend and Backend</h4><div class="code">Routes + endpoints</div></div><div class="panel-body"><ul class="kv" id="kvTwo"></ul></div></div>
+          <div class="panel"><div class="panel-head"><h4>Request DTO</h4><div class="code" id="reqCode">-</div></div><div class="panel-body"><ul class="fields" id="reqFields"></ul></div></div>
+          <div class="panel"><div class="panel-head"><h4>Response DTO</h4><div class="code" id="resCode">-</div></div><div class="panel-body"><ul class="fields" id="resFields"></ul></div></div>
+          <div class="panel"><div class="panel-head"><h4>Files</h4><div class="code">Current code</div></div><div class="panel-body"><div class="files" id="fileList"></div></div></div>
+        </div>
+      </section>
+    </section>
+  </div>
+  <script>
+    const modules = [
+      {
+        id: "auth",
+        lane: "Entry",
+        title: "Authentication",
+        route: "/login",
+        tag: "Token Gate",
+        meta: ["Login", "Redirect"],
+        copy: "Credentials in, token and role out, then route redirect by role.",
+        steps: [
+          {
+            title: "Sign In",
+            trigger: "Click Sign In on login page",
+            summary: "Login page validates input and calls auth API.",
+            route: "/login",
+            nav: "CASHIER -> /pos, others -> /dashboard",
+            outcome: "Auth state stores token, role, username, branchId, and shopName.",
+            fe: "POST /auth/login",
+            be: "AuthController.login",
+            files: ["src/pages/Login.jsx", "src/api/auth.api.js", "src/context/AuthContext.jsx"],
+            req: { dto: "LoginRequest", fields: [["username", "required"], ["password", "required"]] },
+            res: { dto: "AuthResponse", fields: [["token", "session token"], ["username", "logged user"], ["role", "user role"], ["branchId", "default branch"], ["shopName", "branding"]] }
+          }
+        ]
+      },
+      {
+        id: "dashboard",
+        lane: "Overview",
+        title: "Dashboard",
+        route: "/dashboard",
+        tag: "Live KPIs",
+        meta: ["KPIs", "Quick actions"],
+        copy: "Branch-aware landing page for KPI cards, charts, and quick jumps.",
+        steps: [
+          {
+            title: "Load KPIs",
+            trigger: "Open dashboard or change branch",
+            summary: "Frontend requests branch KPIs and chart data.",
+            route: "/dashboard",
+            nav: "Stay on dashboard",
+            outcome: "Cards and charts refresh for selected branch.",
+            fe: "GET /dashboard/kpis + GET /dashboard/charts/daily",
+            be: "DashboardController.todayKpis + dailySales",
+            files: ["src/pages/Dashboard.jsx", "src/api/dashboard.api.js"],
+            req: { dto: "Query Params", fields: [["branchId", "optional"], ["from", "date start"], ["to", "date end"]] },
+            res: { dto: "DashboardKpiResponse + DailySalesResponse[]", fields: [["todaySales", "sales KPI"], ["todayOrders", "order count"], ["lowStockCount", "stock KPI"], ["date", "chart point"], ["sales", "chart value"]] }
+          },
+          {
+            title: "Quick Action Jump",
+            trigger: "Click dashboard action card",
+            summary: "Dashboard sends user to operational pages.",
+            route: "/dashboard",
+            nav: "/pos, /stock, /reports, /customers?add=1",
+            outcome: "Pure route navigation, no direct backend call.",
+            fe: "No API call",
+            be: "None",
+            files: ["src/pages/Dashboard.jsx"],
+            req: { dto: "Navigation only", fields: [] },
+            res: { dto: "Route change", fields: [] }
+          }
+        ]
+      },
+      {
+        id: "pos",
+        lane: "Core Sale",
+        title: "POS Sales Flow",
+        route: "/pos",
+        tag: "Main Flow",
+        meta: ["Shift", "Cart", "Order"],
+        copy: "Main cashier flow with shift check, item load, cart logic, checkout, order create, and receipt print.",
+        steps: [
+          {
+            title: "Check Shift and Load Items",
+            trigger: "Open POS page",
+            summary: "Frontend checks active shift first, then loads POS items for the branch.",
+            route: "/pos",
+            nav: "If no shift, items stay locked",
+            outcome: "Cashier sees item grid only after shift validation.",
+            fe: "GET current shift + GET /items/searchForPos",
+            be: "ShiftController + ItemController.searchForPos",
+            files: ["src/pages/POS.jsx", "src/api/shifts.api.js", "src/api/items.api.js"],
+            req: { dto: "Query Params", fields: [["branchId", "selected branch"], ["q", "search text"]] },
+            res: { dto: "ShiftResponse + ItemResponse[]", fields: [["status", "OPEN required"], ["branchId", "current branch"], ["itemType", "NORMAL/WEIGHT/SERVICE"], ["batches", "stock batches"], ["availableQty", "stock summary"]] }
+          },
+          {
+            title: "Add Item to Cart",
+            trigger: "Click item tile or press Enter after search",
+            summary: "Item goes straight to cart or opens batch modal if multiple batches exist.",
+            route: "/pos",
+            nav: "BatchSelectModal may open",
+            outcome: "Cart stores itemId, batchId, qty, qtyUnit, price, and discounts.",
+            fe: "Client state update only",
+            be: "None",
+            files: ["src/pages/POS.jsx", "src/components/pos/BatchSelectModal.jsx", "src/components/pos/Cart.jsx"],
+            req: { dto: "Client cart state", fields: [["itemId", "selected item"], ["batchId", "batch or null"], ["qty", "line qty"], ["qtyUnit", "PCS/G/KG/SERVICE"], ["unitPrice", "line price"]] },
+            res: { dto: "Client state only", fields: [["cartItems[]", "updated state"], ["stockBaseQty", "validation source"]] }
+          },
+          {
+            title: "Place Order",
+            trigger: "Checkout -> payment type -> Place Order",
+            summary: "Frontend converts cart into CreateOrderRequest and posts it.",
+            route: "/pos -> payment overlay",
+            nav: "On success cart clears and receipt prints",
+            outcome: "Backend creates invoice and returns OrderResponse.",
+            fe: "POST /orders",
+            be: "OrderController.create",
+            files: ["src/pages/POS.jsx", "src/api/orders.api.js", "src/components/pos/CheckoutOverlay.jsx", "src/components/pos/ReceiptPrinter.jsx"],
+            req: { dto: "CreateOrderRequest", fields: [["branchId", "selling branch"], ["orderType", "CASH or CREDIT"], ["customerId", "for credit"], ["billDiscount", "order discount"], ["paidAmount", "cash paid"], ["items[]", "OrderItemRequest[]"]] },
+            res: { dto: "OrderResponse", fields: [["invoiceNo", "created invoice"], ["grandTotal", "net total"], ["paidAmount", "saved paid"], ["dueAmount", "credit due"], ["items[]", "saved lines"]] }
+          }
+        ]
+      },
+      {
+        id: "sales",
+        lane: "History",
+        title: "Sales History",
+        route: "/sales",
+        tag: "Invoice Trail",
+        meta: ["List", "Detail", "Cancel"],
+        copy: "Invoice list, invoice detail, reprint, and cancel flow.",
+        steps: [
+          {
+            title: "Load Sales List",
+            trigger: "Open sales page or change search/page",
+            summary: "Frontend loads paged orders with optional search and branch filter.",
+            route: "/sales",
+            nav: "Row click -> /sales/{invoiceNo}",
+            outcome: "Invoice rows show totals, status, and payment type.",
+            fe: "GET /orders",
+            be: "OrderController.list",
+            files: ["src/pages/SalesListPage.jsx", "src/api/sales.api.js"],
+            req: { dto: "Query Params", fields: [["search", "invoice/customer"], ["page", "page no"], ["size", "page size"], ["branchId", "selected branch"]] },
+            res: { dto: "Page<OrderResponse>", fields: [["content[]", "invoice rows"], ["totalPages", "pagination"], ["grandTotal", "invoice total"], ["status", "COMPLETED/CANCELED"]] }
+          },
+          {
+            title: "Cancel Order",
+            trigger: "Click Cancel Order and confirm reason",
+            summary: "Frontend posts cancel reason and backend reverses stock.",
+            route: "/sales/:invoiceNo",
+            nav: "Stay on detail page and reload",
+            outcome: "Invoice status becomes canceled.",
+            fe: "POST /orders/{invoiceNo}/cancel",
+            be: "OrderController.cancel",
+            files: ["src/pages/SalesDetailsPage.jsx", "src/api/sales.api.js"],
+            req: { dto: "CancelOrderRequest", fields: [["reason", "required"]] },
+            res: { dto: "OrderResponse", fields: [["status", "CANCELED"], ["invoiceNo", "same invoice"], ["items[]", "original lines"]] }
+          }
+        ]
+      },
+      {
+        id: "items",
+        lane: "Catalog",
+        title: "Items and Services",
+        route: "/items",
+        tag: "Catalog",
+        meta: ["Create", "Edit", "Service branch"],
+        copy: "Item list, item form, bulk add, barcode print, and service branch assignment.",
+        steps: [
+          {
+            title: "Load Item List",
+            trigger: "Open items page or change search/page",
+            summary: "Frontend requests paged items and shows add/edit actions.",
+            route: "/items",
+            nav: "Add -> /items/new, Edit -> /items/:id/edit",
+            outcome: "Catalog table loads with pricing and stock summary.",
+            fe: "GET /items",
+            be: "ItemController.getAll",
+            files: ["src/pages/ItemsPage.jsx", "src/api/items.api.js"],
+            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<ItemResponse>", fields: [["content[]", "item rows"], ["defaultUnit", "PCS/KG/G/SERVICE"], ["itemType", "NORMAL/WEIGHT/SERVICE"]] }
+          },
+          {
+            title: "Create or Update Item",
+            trigger: "Click Save on item form",
+            summary: "Frontend builds item payload. Service items include branchIds.",
+            route: "/items/new or /items/:id/edit",
+            nav: "On success -> /items",
+            outcome: "Backend returns ItemResponse after save.",
+            fe: "POST /items or PUT /items/{id}",
+            be: "ItemController.create / update",
+            files: ["src/pages/ItemFormPage.jsx", "src/api/items.api.js"],
+            req: { dto: "ItemCreateRequest / ItemUpdateRequest", fields: [["barcode", "optional"], ["name", "required"], ["subCategoryId", "required on create"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["reorderLevel", "threshold"], ["itemType", "NORMAL/WEIGHT/SERVICE"], ["defaultUnit", "PCS/KG/G/SERVICE"], ["branchIds", "service assignments"]] },
+            res: { dto: "ItemResponse", fields: [["id", "item id"], ["branchIds", "service branch list"], ["batches", "stock batches"], ["active", "status"]] }
+          }
+        ]
+      },
+      {
+        id: "customers",
+        lane: "Customer",
+        title: "Customers and Credit",
+        route: "/customers",
+        tag: "Credit",
+        meta: ["Profile", "Pay due"],
+        copy: "Customer register, profile view, notes, orders, and due payment flow.",
+        steps: [
+          {
+            title: "Create or Edit Customer",
+            trigger: "Save customer form",
+            summary: "Frontend sends create or update payload, then returns to list.",
+            route: "/customers/new or /customers/:id/edit",
+            nav: "On success -> /customers",
+            outcome: "Customer record is saved and ready for credit use.",
+            fe: "POST /customers or PUT /customers/{id}",
+            be: "CustomerController.create / update",
+            files: ["src/pages/CustomerFormPage.jsx", "src/api/customers.api.js"],
+            req: { dto: "CustomerCreateRequest / CustomerUpdateRequest", fields: [["name", "customer name"], ["phone", "phone"], ["address", "optional"], ["creditLimit", "optional"], ["active", "update only"]] },
+            res: { dto: "CustomerResponse", fields: [["id", "customer id"], ["dueAmount", "current due"], ["creditLimit", "limit"], ["active", "status"]] }
+          },
+          {
+            title: "Record Due Payment",
+            trigger: "Click Pay Now and confirm amount",
+            summary: "Payment modal sends amount and method to reduce due.",
+            route: "/customers/:id",
+            nav: "Stay on profile and refresh",
+            outcome: "Customer dueAmount updates after payment.",
+            fe: "POST /customers/{id}/payments",
+            be: "CustomerController.recordPayment",
+            files: ["src/pages/CustomerViewPage.jsx", "src/api/customers.api.js"],
+            req: { dto: "CustomerPaymentRequest", fields: [["amount", "required"], ["paymentMethod", "CASH/CARD/BANK_TRANSFER"], ["note", "optional"]] },
+            res: { dto: "CustomerResponse", fields: [["id", "same customer"], ["dueAmount", "reduced due"], ["creditLimit", "same limit"]] }
+          }
+        ]
+      },
+      {
+        id: "shifts",
+        lane: "Cash Control",
+        title: "Shift Management",
+        route: "/shifts",
+        tag: "Open / Close",
+        meta: ["Drawer", "POS required"],
+        copy: "Shift system controls opening cash, closing cash, and whether POS is allowed to sell.",
+        steps: [
+          {
+            title: "Open Shift",
+            trigger: "Click Open New Shift",
+            summary: "Open shift modal sends opening cash and optional note.",
+            route: "/shifts",
+            nav: "Stay on shifts; POS unlocks",
+            outcome: "Backend returns OPEN ShiftResponse.",
+            fe: "POST /shifts/open or POST /shifts/branch/{branchId}/open",
+            be: "ShiftController.openMine / openByBranch",
+            files: ["src/pages/Shifts.jsx", "src/api/shifts.api.js", "src/context/ShiftContext.jsx"],
+            req: { dto: "OpenShiftRequest", fields: [["openingCash", "required"], ["assignedCashierId", "optional"], ["note", "optional"]] },
+            res: { dto: "ShiftResponse", fields: [["id", "shift id"], ["branchId", "branch"], ["cashierUserId", "cashier"], ["status", "OPEN"], ["openingCash", "saved"]] }
+          },
+          {
+            title: "Close Shift",
+            trigger: "Click Close Shift and confirm counted cash",
+            summary: "Close modal sends counted cash and note.",
+            route: "/shifts",
+            nav: "Stay on shifts; POS locks until next shift",
+            outcome: "ShiftResponse returns counted cash, expected cash, and difference.",
+            fe: "POST /shifts/close or POST /shifts/{id}/close",
+            be: "ShiftController.closeMine / closeById",
+            files: ["src/pages/Shifts.jsx", "src/api/shifts.api.js"],
+            req: { dto: "CloseShiftRequest", fields: [["countedCash", "required"], ["note", "optional"]] },
+            res: { dto: "ShiftResponse", fields: [["status", "CLOSED"], ["countedCash", "submitted"], ["expectedCash", "system"], ["cashDifference", "variance"], ["closedAt", "time"]] }
+          }
+        ]
+      },
+      {
+        id: "stock",
+        lane: "Inventory",
+        title: "Stock, Adjustments, Transfers",
+        route: "/stock",
+        tag: "Batch Aware",
+        meta: ["Stock", "Adjust", "Transfer"],
+        copy: "Stock page loads branch inventory, then launches batch-based adjustment and transfer flows.",
+        steps: [
+          {
+            title: "Load Branch Stock",
+            trigger: "Open stock page or change search/page",
+            summary: "Frontend loads branch stock rows with quantity and action buttons.",
+            route: "/stock",
+            nav: "Adjust and Transfer modals launch from row actions",
+            outcome: "Inventory table renders with stock value and status.",
+            fe: "GET /stock/branch/{branchId}",
+            be: "StockController.branchStock",
+            files: ["src/pages/Stock.jsx", "src/api/stock.api.js"],
+            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<StockResponseWithItems>", fields: [["itemId", "item id"], ["totalQuantity", "base qty"], ["displayQuantity", "display qty"], ["itemType", "NORMAL/WEIGHT"], ["defaultUnit", "unit"]] }
+          },
+          {
+            title: "Create Stock Adjustment",
+            trigger: "Adjust -> select batch -> enter qty -> confirm",
+            summary: "Adjustment request is batch-specific and unit-aware for weight items.",
+            route: "/stock -> adjust modal",
+            nav: "Stay on /stock and refresh list",
+            outcome: "StockAdjustmentResponse is returned and history can show same record.",
+            fe: "POST /stock-adjustments",
+            be: "StockAdjustmentController.create",
+            files: ["src/pages/Stock.jsx", "src/pages/StockAdjustments.jsx"],
+            req: { dto: "CreateStockAdjustmentRequest", fields: [["branchId", "branch"], ["itemId", "item"], ["batchId", "required"], ["type", "adjustment type"], ["qty", "positive"], ["qtyUnit", "weight unit"], ["reason", "required"]] },
+            res: { dto: "StockAdjustmentResponse", fields: [["qtyChange", "base change"], ["displayQtyChange", "display change"], ["qtyUnit", "display unit"], ["itemName", "affected item"]] }
+          },
+          {
+            title: "Create or Complete Transfer",
+            trigger: "Transfer from stock page, or Receive / Cancel from history",
+            summary: "Transfer create needs source batch and destination branch. Receive and cancel change status.",
+            route: "/stock and /stock/transfers",
+            nav: "Create from stock, complete from transfer history",
+            outcome: "Backend returns StockTransferResponse with status and item lines.",
+            fe: "POST /stock-transfers + receive/cancel endpoints",
+            be: "StockTransferController.*",
+            files: ["src/pages/Stock.jsx", "src/pages/StockTransfers.jsx"],
+            req: { dto: "CreateStockTransferRequest / CancelTransferRequest", fields: [["fromBranchId", "source"], ["toBranchId", "destination"], ["items[]", "transfer items"], ["note", "optional"], ["reason", "cancel only"]] },
+            res: { dto: "StockTransferResponse", fields: [["transferNo", "transfer no"], ["status", "PENDING/RECEIVED/CANCELED"], ["fromBranchName", "source branch"], ["toBranchName", "destination branch"], ["items[]", "moved items"]] }
+          }
+        ]
+      },
+      {
+        id: "ops",
+        lane: "Operations",
+        title: "Expenses and Cash Drops",
+        route: "/expenses and /cash-drops",
+        tag: "Drawer Ops",
+        meta: ["Expense", "Cash drop"],
+        copy: "Daily drawer-side operations. Expenses remove money and cash drops move money out during an open shift.",
+        steps: [
+          {
+            title: "Record Expense",
+            trigger: "Click Record Expense and submit modal",
+            summary: "Expense page sends category, amount, branch, drawer flag, and description.",
+            route: "/expenses",
+            nav: "Stay on expenses page and refresh list",
+            outcome: "ExpenseResponse is returned and shift totals can refresh.",
+            fe: "POST /expenses",
+            be: "ExpenseController.addExpense",
+            files: ["src/pages/Expenses.jsx", "src/api/expenses.api.js"],
+            req: { dto: "CreateExpenseRequest", fields: [["category", "expense enum"], ["amount", "required"], ["branchId", "branch"], ["fromDrawer", "drawer flag"], ["description", "required"]] },
+            res: { dto: "ExpenseResponse", fields: [["id", "expense id"], ["amount", "saved amount"], ["branchName", "branch"], ["shiftId", "linked shift"], ["cashierName", "recorded by"]] }
+          },
+          {
+            title: "Record Cash Drop",
+            trigger: "Click Record Drop and confirm amount and reason",
+            summary: "Cash drop goes through shift endpoints, not a separate create controller.",
+            route: "/cash-drops",
+            nav: "Stay on cash-drops page and refresh list",
+            outcome: "CashDropResponse is recorded for the active shift.",
+            fe: "POST /shifts/cashdrop or POST /shifts/{shiftId}/cashdrop",
+            be: "ShiftController.cashdropMine / cashdropById",
+            files: ["src/pages/CashDrops.jsx", "src/api/cashDrops.api.js", "src/api/shifts.api.js"],
+            req: { dto: "CreateCashDropRequest", fields: [["amount", "required"], ["reason", "required"]] },
+            res: { dto: "CashDropResponse", fields: [["id", "drop id"], ["shiftId", "shift"], ["branchId", "branch"], ["cashierName", "recorded by"], ["createdAt", "time"]] }
+          }
+        ]
+      },
+      {
+        id: "purchases",
+        lane: "Inbound",
+        title: "Purchases and GRNs",
+        route: "/purchases",
+        tag: "Supplier Intake",
+        meta: ["Purchase", "GRN", "Cancel"],
+        copy: "Supplier purchase flow groups branch rows and creates purchase plus branch GRNs.",
+        steps: [
+          {
+            title: "Build Purchase Cart",
+            trigger: "Search item, fill branch rows, click Add to List",
+            summary: "Purchase form stores rows locally before final submit.",
+            route: "/purchases/new",
+            nav: "Stay on form until finalize",
+            outcome: "Cart rows hold branchId, qty, cost, sell, unit, and expiry.",
+            fe: "Item search and supplier/branch fetch only",
+            be: "No purchase create yet",
+            files: ["src/pages/PurchaseFormPage.jsx", "src/api/items.api.js", "src/api/suppliers.api.js", "src/api/branches.api.js"],
+            req: { dto: "Client purchase row state", fields: [["itemId", "item"], ["branchId", "target branch"], ["qty", "branch qty"], ["qtyUnit", "weight unit"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["expiryDate", "optional"]] },
+            res: { dto: "Client state only", fields: [["cartItems[]", "purchase rows"], ["grandTotal", "form total"]] }
+          },
+          {
+            title: "Finalize Purchase",
+            trigger: "Click Finalize Purchase",
+            summary: "Frontend groups rows by branch into CreatePurchaseRequest and posts it.",
+            route: "/purchases/new",
+            nav: "On success -> /purchases",
+            outcome: "Backend returns PurchaseResponse with generated GRNs.",
+            fe: "POST /purchases",
+            be: "PurchaseController.create",
+            files: ["src/pages/PurchaseFormPage.jsx", "src/api/purchases.api.js"],
+            req: { dto: "CreatePurchaseRequest", fields: [["supplierId", "supplier"], ["invoiceNo", "optional"], ["branches[]", "BranchPurchaseRequest[]"], ["branches[].items[]", "GrnItemRequest[]"]] },
+            res: { dto: "PurchaseResponse", fields: [["purchaseId", "purchase id"], ["supplierName", "supplier"], ["grandTotal", "total"], ["status", "COMPLETED/CANCELED"], ["grnList[]", "branch GRNs"]] }
+          },
+          {
+            title: "Cancel Purchase",
+            trigger: "Open purchase detail and click Cancel Purchase",
+            summary: "Detail page sends cancel reason and backend reverses stock.",
+            route: "/purchases/:id",
+            nav: "Stay on detail and reload state",
+            outcome: "PurchaseResponse returns canceled status and cancelReason.",
+            fe: "POST /purchases/{id}/cancel",
+            be: "PurchaseController.cancel",
+            files: ["src/pages/PurchaseDetailsPage.jsx", "src/api/purchases.api.js"],
+            req: { dto: "CancelPurchaseRequest", fields: [["reason", "required"]] },
+            res: { dto: "PurchaseResponse", fields: [["status", "CANCELED"], ["cancelReason", "reason"], ["canceledAt", "time"], ["grnList[]", "existing GRNs"]] }
+          }
+        ]
+      },
+      {
+        id: "reports",
+        lane: "Analytics",
+        title: "Reports and Analytics",
+        route: "/reports",
+        tag: "Read Model",
+        meta: ["Sales", "Profit", "Top lists"],
+        copy: "Reports page is tab-driven. Each tab hits a specific reporting endpoint.",
+        steps: [
+          {
+            title: "Run Report Tab",
+            trigger: "Choose tab and click Run Report",
+            summary: "Frontend sends branch and date filters to the active report endpoint.",
+            route: "/reports",
+            nav: "Stay on reports page",
+            outcome: "Charts and tables refresh with analytics data.",
+            fe: "GET report endpoints from reportsAPI",
+            be: "ReportController.*",
+            files: ["src/pages/Reports.jsx", "src/api/reports.api.js"],
+            req: { dto: "Query Params", fields: [["branchId", "optional"], ["from", "date start"], ["to", "date end"], ["limit", "top list limit"], ["type", "trend type"]] },
+            res: { dto: "Report-specific responses", fields: [["totalSales", "sales summary"], ["grossProfit", "profit summary"], ["itemName", "top product"], ["customerName", "top customer"], ["dueAmount", "credit due"]] }
+          }
+        ]
+      },
+      {
+        id: "admin",
+        lane: "Admin",
+        title: "Branches and Users",
+        route: "/branches and /users",
+        tag: "Setup",
+        meta: ["Branch", "User", "Admin"],
+        copy: "Administrative setup for branch master data and user accounts.",
+        steps: [
+          {
+            title: "Create or Update Branch",
+            trigger: "Create Branch or Save in Edit modal",
+            summary: "Branch page posts create/update payload with logo support and refreshes BranchContext list.",
+            route: "/branches",
+            nav: "Stay on branch page",
+            outcome: "BranchResponse returns and branch dropdown can refresh.",
+            fe: "POST /branches or PUT /branches/{id}",
+            be: "BranchController.create / update",
+            files: ["src/pages/Branches.jsx", "src/api/branches.api.js", "src/context/BranchContext.jsx"],
+            req: { dto: "BranchCreateRequest / BranchUpdateRequest", fields: [["code", "create only"], ["name", "name"], ["address", "address"], ["phone", "phone"], ["logo", "base64 branch logo"], ["active", "update only"]] },
+            res: { dto: "BranchResponse", fields: [["id", "branch id"], ["code", "code"], ["name", "name"], ["logo", "branch logo"], ["active", "status"], ["createdAt", "time"]] }
+          },
+          {
+            title: "Edit Receipt Design",
+            trigger: "Open Receipt Design and save thermal layout",
+            summary: "Editor uses global header branch selector. All Branches hides the form. A real branch loads and saves branch-wise receipt settings.",
+            route: "/receipt-settings",
+            nav: "Stay on receipt design page",
+            outcome: "Thermal receipt layout, logo size, and visible sections are saved per branch. Credits stay locked.",
+            fe: "GET /branches/{branchId}/receipt-settings + PUT /branches/{branchId}/receipt-settings",
+            be: "ReceiptSettingsController.getSettings / updateSettings",
+            files: ["src/pages/ReceiptSettingsPage.jsx", "src/api/receiptSettings.api.js", "src/components/pos/ReceiptPrinter.jsx"],
+            req: { dto: "ReceiptSettingsRequest", fields: [["showLogo", "logo visible"], ["showStoreName", "store name visible"], ["showBranchName", "branch visible"], ["showAddress", "address visible"], ["showPhone", "phone visible"], ["showInvoiceNumber", "invoice visible"], ["showDateTime", "date/time visible"], ["showCashier", "cashier visible"], ["showCustomer", "customer visible"], ["showItemTable", "items visible"], ["showSubtotal", "subtotal visible"], ["showDiscount", "discount visible"], ["showNetTotal", "net total visible"], ["showPaid", "paid visible"], ["showBalance", "balance visible"], ["showThanksMessage", "thanks visible"], ["showCredits", "forced true"], ["logoWidthPercent", "logo print size"], ["paperWidthMm", "thermal width"], ["thanksMessage", "editable"], ["creditsLine1", "ignored by backend"], ["creditsLine2", "ignored by backend"]] },
+            res: { dto: "ReceiptSettingsResponse", fields: [["branchId", "selected branch"], ["templateType", "THERMAL/A4"], ["logoWidthPercent", "saved logo size"], ["paperWidthMm", "saved width"], ["showCredits", "always true"], ["creditsLine1", "fixed credit line"], ["creditsLine2", "fixed credit line"]] }
+          },
+          {
+            title: "Create User or Manage User",
+            trigger: "Add User, Assign Branch, Disable or Reset Password",
+            summary: "User page manages account creation and operational admin actions.",
+            route: "/users",
+            nav: "Stay on user page",
+            outcome: "UserResponse or success message comes back based on action.",
+            fe: "POST /users and related PUT endpoints",
+            be: "UserManagementController.*",
+            files: ["src/pages/Users.jsx", "src/api/users.api.js"],
+            req: { dto: "CreateUserRequest / AssignBranchRequest / UpdateUserStatusRequest / ResetPasswordRequest", fields: [["username", "create only"], ["password", "create only"], ["role", "user role"], ["branchId", "assignment"], ["enabled", "status update"], ["newPassword", "reset value"]] },
+            res: { dto: "UserResponse", fields: [["id", "user id"], ["username", "login"], ["role", "role"], ["enabled", "status"], ["branchId", "branch"]] }
+          }
+        ]
+      }
+    ];
+    let moduleIndex = 2;
+    let stepIndex = 0;
+    const q = (id) => document.getElementById(id);
+    const refs = {
+      moduleList: q("moduleList"),
+      stepRail: q("stepRail"),
+      laneTitle: q("laneTitle"),
+      flowTitle: q("flowTitle"),
+      flowRoute: q("flowRoute"),
+      flowBadges: q("flowBadges"),
+      mCount: q("mCount"),
+      sCount: q("sCount"),
+      focus: q("focus"),
+      detailModule: q("detailModule"),
+      detailTitle: q("detailTitle"),
+      detailCopy: q("detailCopy"),
+      detailBadges: q("detailBadges"),
+      detailPath: q("detailPath"),
+      kvOne: q("kvOne"),
+      kvTwo: q("kvTwo"),
+      reqCode: q("reqCode"),
+      reqFields: q("reqFields"),
+      resCode: q("resCode"),
+      resFields: q("resFields"),
+      fileList: q("fileList")
+    };
+
+    function renderKV(target, rows) {
+      target.innerHTML = rows.map(([k, v]) => `<li><small>${k}</small><div>${v || "-"}</div></li>`).join("");
+    }
+
+    function renderFields(target, rows) {
+      const safeRows = rows && rows.length ? rows : [["No structured payload", "UI or navigation only"]];
+      target.innerHTML = safeRows.map(([name, desc]) => `<li><span>${name}</span><span>${desc || ""}</span></li>`).join("");
+    }
+
+    function renderModules() {
+      refs.mCount.textContent = modules.length;
+      refs.moduleList.innerHTML = modules.map((m, i) => `
+        <article class="module ${i === moduleIndex ? "active" : ""}" data-i="${i}">
+          <h3>${m.title}</h3>
+          <div class="route">${m.route}</div>
+          <p class="copy">${m.copy}</p>
+          <span class="tag">${m.tag}</span>
+        </article>
+      `).join("");
+
+      refs.moduleList.querySelectorAll(".module").forEach((el) => {
+        el.onclick = () => {
+          moduleIndex = Number(el.dataset.i);
+          stepIndex = 0;
+          render();
+        };
+      });
+    }
+
+    function renderSteps() {
+      const module = modules[moduleIndex];
+      refs.sCount.textContent = module.steps.length;
+      refs.focus.textContent = module.title;
+      refs.laneTitle.textContent = `${module.lane} Flow Lane`;
+      refs.flowTitle.textContent = module.title;
+      refs.flowRoute.textContent = module.route;
+      refs.flowBadges.innerHTML = module.meta.map((item) => `<span class="badge">${item}</span>`).join("");
+      refs.stepRail.innerHTML = module.steps.map((step, i) => `
+        <article class="step ${i === stepIndex ? "active" : ""}" data-i="${i}" data-index="${String(i + 1).padStart(2, "0")}">
+          <h3>${step.title}</h3>
+          <p class="step-copy">${step.summary}</p>
+          <span class="step-trigger">${step.trigger}</span>
+        </article>
+      `).join("");
+
+      refs.stepRail.querySelectorAll(".step").forEach((el) => {
+        el.onclick = () => {
+          stepIndex = Number(el.dataset.i);
+          renderSteps();
+          renderDetail();
+        };
+      });
+    }
+
+    function renderDetail() {
+      const module = modules[moduleIndex];
+      const step = module.steps[stepIndex];
+      refs.detailModule.textContent = `${module.title} / Step ${stepIndex + 1}`;
+      refs.detailTitle.textContent = step.title;
+      refs.detailCopy.textContent = step.summary;
+      refs.detailBadges.innerHTML = `<span class="badge">${module.tag}</span><span class="badge">${module.lane}</span><span class="badge">${step.route}</span>`;
+      refs.detailPath.textContent = `${step.route} -> ${step.trigger} -> ${step.fe}`;
+      renderKV(refs.kvOne, [["Trigger", step.trigger], ["Navigation", step.nav], ["Outcome", step.outcome]]);
+      renderKV(refs.kvTwo, [["Frontend API", step.fe], ["Backend Endpoint", step.be], ["Route", step.route]]);
+      refs.reqCode.textContent = step.req.dto || "-";
+      refs.resCode.textContent = step.res.dto || "-";
+      renderFields(refs.reqFields, step.req.fields);
+      renderFields(refs.resFields, step.res.fields);
+      refs.fileList.innerHTML = step.files.map((file) => `<span class="pill">${file}</span>`).join("");
+    }
+
+    function render() {
+      renderModules();
+      renderSteps();
+      renderDetail();
+    }
+
+    render();
+  </script>
+</body>
+</html>
