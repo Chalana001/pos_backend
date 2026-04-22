@@ -6,7 +6,7 @@
 
     <groupId>com.chala.posapp</groupId>
     <artifactId>POS.System</artifactId>
-    <version>1.2.1</version>
+    <version>1.2.0</version>
 
 
     <parent>
