@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        @page {
+            size: A4;
+            margin: 8mm;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10.5px;
+            color: #0f172a;
+            margin: 0;
+            padding: 0;
+            line-height: 1.28;
+        }
+
+        .page {
+            width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .header-left {
+            width: 62%;
+            vertical-align: top;
+            padding-right: 6mm;
+        }
+
+        .header-right {
+            width: 38%;
+            vertical-align: top;
+        }
+
+        .logo {
+            max-width: 64mm;
+            max-height: 18mm;
+            display: block;
+            margin-bottom: 2mm;
+        }
+
+        .store-name {
+            font-size: 22px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin: 0 0 1mm 0;
+            line-height: 1.05;
+        }
+
+        .branch-name {
+            font-size: 12px;
+            font-weight: 700;
+            margin: 0 0 1.5mm 0;
+            color: #334155;
+        }
+
+        .muted {
+            color: #475569;
+        }
+
+        .invoice-box {
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            padding: 3mm 3.5mm;
+        }
+
+        .invoice-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin: 0;
+            line-height: 1.05;
+        }
+
+        .invoice-subtitle {
+            font-size: 9px;
+            color: #64748b;
+            text-transform: uppercase;
+            margin: 1mm 0 2mm 0;
+        }
+
+        .label {
+            font-size: 8.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #64748b;
+            margin-bottom: 0.5mm;
+        }
+
+        .value {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #111827;
+        }
+
+        .compact-block {
+            margin-bottom: 2mm;
+        }
+
+        .section-gap {
+            height: 4mm;
+        }
+
+        .simple-card {
+            border: 1px solid #e2e8f0;
+            padding: 3mm 3.5mm;
+            vertical-align: top;
+        }
+
+        .items-table {
+            margin-top: 4mm;
+            table-layout: fixed;
+        }
+
+        .items-table th {
+            background: #f8fafc;
+            border-top: 1px solid #cbd5e1;
+            border-bottom: 1px solid #cbd5e1;
+            padding: 1.8mm 1.6mm;
+            font-size: 8.5px;
+            text-transform: uppercase;
+            color: #475569;
+            text-align: left;
+        }
+
+        .items-table td {
+            border-bottom: 1px solid #e2e8f0;
+            padding: 1.7mm 1.6mm;
+            vertical-align: top;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .item-name {
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .item-meta {
+            font-size: 8.8px;
+            color: #64748b;
+            margin-top: 0.5mm;
+        }
+
+        .summary-wrap {
+            margin-top: 4mm;
+        }
+
+        .notes-box {
+            width: 56%;
+            border: 1px solid #e2e8f0;
+            padding: 3mm 3.5mm;
+            vertical-align: top;
+        }
+
+        .totals-box {
+            width: 44%;
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            padding: 3mm 3.5mm;
+            vertical-align: top;
+        }
+
+        .summary-table td {
+            padding: 1mm 0;
+        }
+
+        .summary-divider {
+            border-top: 1px solid #cbd5e1;
+            height: 0;
+            margin: 1.5mm 0;
+        }
+
+        .grand-row td {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 1.5mm 0;
+        }
+
+        .footer-table {
+            margin-top: 5mm;
+            border-top: 1px solid #dbe3ec;
+        }
+
+        .footer-left,
+        .footer-right {
+            vertical-align: bottom;
+            padding-top: 2.5mm;
+        }
+
+        .footer-left {
+            width: 52%;
+        }
+
+        .footer-right {
+            width: 48%;
+            text-align: right;
+        }
+
+        .thanks {
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .credits-line-1 {
+            font-weight: 700;
+        }
+
+        .credits-line-2 {
+            margin-top: 0.8mm;
+            color: #475569;
+            font-size: 9px;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <table>
+        <tr>
+            <td class="header-left">
+                <img th:if="${settings.showLogo and order.branchLogo != null and !#strings.isEmpty(order.branchLogo)}"
+                     th:src="${order.branchLogo}"
+                     alt="Logo"
+                     class="logo"/>
+
+                <div th:if="${settings.showStoreName}" class="store-name" th:text="${storeName}">Store Name</div>
+                <div th:if="${settings.showBranchName}" class="branch-name" th:text="${order.branchName}">Main Branch</div>
+                <div th:if="${settings.showAddress and order.branchAddress != null and !#strings.isEmpty(order.branchAddress)}"
+                     class="muted" th:text="${order.branchAddress}">Address</div>
+                <div th:if="${settings.showPhone and order.branchPhone != null and !#strings.isEmpty(order.branchPhone)}"
+                     class="muted" style="margin-top: 0.5mm;" th:text="${order.branchPhone}">Phone</div>
+            </td>
+            <td class="header-right">
+                <div class="invoice-box">
+                    <div class="invoice-title">Sales Invoice</div>
+                    <div class="invoice-subtitle">Compact A4 customer invoice</div>
+
+                    <div th:if="${settings.showInvoiceNumber}" class="compact-block">
+                        <div class="label">Invoice No</div>
+                        <div class="value" th:text="${order.invoiceNo}">INV-001</div>
+                    </div>
+
+                    <div th:if="${settings.showDateTime}" class="compact-block">
+                        <div class="label">Issued At</div>
+                        <div class="value" th:text="${issuedAt}">2026-04-30 09:00 AM</div>
+                    </div>
+
+                    <div class="compact-block">
+                        <div class="label">Payment</div>
+                        <div class="value" th:text="${paymentLabel}">CASH</div>
+                    </div>
+
+                    <div th:if="${saleModeLabel != null and !#strings.isEmpty(saleModeLabel)}" class="compact-block">
+                        <div class="label">Sale Mode</div>
+                        <div class="value" th:text="${saleModeLabel}">TAKEAWAY</div>
+                    </div>
+
+                    <div th:if="${order.tableName != null and !#strings.isEmpty(order.tableName)}" class="compact-block">
+                        <div class="label">Table</div>
+                        <div class="value" th:text="${order.tableName}">Table 01</div>
+                    </div>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="section-gap"></div>
+
+    <table>
+        <tr>
+            <td class="simple-card" style="width: 50%;">
+                <div class="label">Bill To</div>
+                <div th:if="${settings.showCustomer}">
+                    <div class="value" th:text="${customerName}">Walk-in Customer</div>
+                    <div th:if="${customerPhone != null and !#strings.isEmpty(customerPhone)}"
+                         class="muted" style="margin-top: 0.6mm;" th:text="${customerPhone}">0771234567</div>
+                </div>
+                <div th:unless="${settings.showCustomer}" class="muted">Customer details hidden in settings.</div>
+            </td>
+            <td style="width: 3mm;"></td>
+            <td class="simple-card" style="width: 50%;">
+                <div class="label">Sale Details</div>
+                <div th:if="${settings.showCashier}" class="compact-block">
+                    <div class="label">Cashier</div>
+                    <div class="value" th:text="${cashierName}">Cashier</div>
+                </div>
+                <div class="compact-block">
+                    <div class="label">Status</div>
+                    <div class="value" th:text="${statusLabel}">Paid</div>
+                </div>
+            </td>
+        </tr>
+    </table>
+
+    <table th:if="${settings.showItemTable}" class="items-table">
+        <thead>
+        <tr>
+            <th style="width: 6%;">#</th>
+            <th style="width: 46%;">Description</th>
+            <th style="width: 16%;" class="text-center">Qty</th>
+            <th style="width: 15%;" class="text-right">Unit Price</th>
+            <th style="width: 17%;" class="text-right">Amount</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item, iter : ${items}">
+            <td th:text="${iter.count}">1</td>
+            <td>
+                <div class="item-name" th:text="${item.itemName}">Item Name</div>
+                <div th:if="${item.barcode != null and !#strings.isEmpty(item.barcode)}"
+                     class="item-meta"
+                     th:text="${'Barcode: ' + item.barcode}">Barcode: 123</div>
+            </td>
+            <td class="text-center" th:text="${item.quantity}">1 PCS</td>
+            <td class="text-right" th:text="${item.unitPrice}">Rs 100</td>
+            <td class="text-right"><strong th:text="${item.lineTotal}">Rs 100</strong></td>
+        </tr>
+        </tbody>
+    </table>
+
+    <div class="summary-wrap">
+        <table>
+            <tr>
+                <td class="notes-box" th:if="${hasNotes}">
+                    <div class="label">Notes</div>
+                    <div class="muted" th:text="${notesText}">Notes</div>
+                </td>
+                <td th:if="${hasNotes}" style="width: 4mm;"></td>
+                <td th:class="${hasNotes ? 'totals-box' : 'totals-box'}" th:style="${hasNotes ? '' : 'width:100%;'}">
+                    <table class="summary-table">
+                        <tr th:if="${settings.showSubtotal}">
+                            <td>Sub Total</td>
+                            <td class="text-right" th:text="${subTotalFormatted}">Rs 0</td>
+                        </tr>
+                        <tr th:if="${settings.showDiscount}">
+                            <td>Discount</td>
+                            <td class="text-right" th:text="${'-' + discountFormatted}">-Rs 0</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><div class="summary-divider"></div></td>
+                        </tr>
+                        <tr th:if="${settings.showNetTotal}" class="grand-row">
+                            <td>Net Total</td>
+                            <td class="text-right" th:text="${grandTotalFormatted}">Rs 0</td>
+                        </tr>
+                        <tr th:if="${settings.showPaid}">
+                            <td>Paid</td>
+                            <td class="text-right" th:text="${paidAmountFormatted}">Rs 0</td>
+                        </tr>
+                        <tr th:if="${settings.showBalance and paymentLabel == 'CASH'}">
+                            <td><strong>Balance</strong></td>
+                            <td class="text-right"><strong th:text="${balanceFormatted}">Rs 0</strong></td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <table class="footer-table">
+        <tr>
+            <td class="footer-left">
+                <p th:if="${settings.showThanksMessage}" class="thanks" th:text="${settings.thanksMessage}">Thank you</p>
+            </td>
+            <td class="footer-right" th:if="${settings.showCredits}">
+                <div class="credits-line-1" th:text="${settings.creditsLine1}">SOFTWARE BY CHALA</div>
+                <div class="credits-line-2" th:text="${settings.creditsLine2}">Credits</div>
+            </td>
+        </tr>
+    </table>
+</div>
+</body>
+</html>
