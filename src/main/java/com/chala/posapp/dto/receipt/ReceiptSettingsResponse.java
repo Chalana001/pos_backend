@@ -18,7 +18,9 @@ public class ReceiptSettingsResponse {
     private boolean showStoreName;
     private boolean showBranchName;
     private boolean showAddress;
+    private boolean showAddressLabel;
     private boolean showPhone;
+    private boolean showPhoneLabel;
     private boolean showInvoiceNumber;
     private boolean showDateTime;
     private boolean showCashier;
@@ -32,6 +34,7 @@ public class ReceiptSettingsResponse {
     private boolean showThanksMessage;
     private boolean showCredits;
     private int logoWidthPercent;
+    private int invoiceLogoWidthPercent;
     private int paperWidthMm;
     private String thanksMessage;
     private String creditsLine1;

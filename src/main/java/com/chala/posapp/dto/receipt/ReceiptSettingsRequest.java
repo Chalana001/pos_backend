@@ -12,7 +12,9 @@ public class ReceiptSettingsRequest {
     private boolean showStoreName;
     private boolean showBranchName;
     private boolean showAddress;
+    private boolean showAddressLabel;
     private boolean showPhone;
+    private boolean showPhoneLabel;
     private boolean showInvoiceNumber;
     private boolean showDateTime;
     private boolean showCashier;
@@ -27,8 +29,12 @@ public class ReceiptSettingsRequest {
     private boolean showCredits;
 
     @Min(20)
-    @Max(100)
+    @Max(200)
     private int logoWidthPercent;
+
+    @Min(20)
+    @Max(200)
+    private int invoiceLogoWidthPercent;
 
     @Min(48)
     @Max(210)

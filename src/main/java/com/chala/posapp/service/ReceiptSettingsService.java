@@ -49,7 +49,9 @@ public class ReceiptSettingsService {
         settings.setShowStoreName(request.isShowStoreName());
         settings.setShowBranchName(request.isShowBranchName());
         settings.setShowAddress(request.isShowAddress());
+        settings.setShowAddressLabel(request.isShowAddressLabel());
         settings.setShowPhone(request.isShowPhone());
+        settings.setShowPhoneLabel(request.isShowPhoneLabel());
         settings.setShowInvoiceNumber(request.isShowInvoiceNumber());
         settings.setShowDateTime(request.isShowDateTime());
         settings.setShowCashier(request.isShowCashier());
@@ -63,6 +65,7 @@ public class ReceiptSettingsService {
         settings.setShowThanksMessage(request.isShowThanksMessage());
         settings.setShowCredits(true);
         settings.setLogoWidthPercent(request.getLogoWidthPercent());
+        settings.setInvoiceLogoWidthPercent(request.getInvoiceLogoWidthPercent());
         settings.setPaperWidthMm(request.getPaperWidthMm());
         settings.setThanksMessage(normalizeMessage(request.getThanksMessage(), DEFAULT_THANKS_MESSAGE));
         settings.setCreditsLine1(DEFAULT_CREDITS_LINE_1);
@@ -85,7 +88,9 @@ public class ReceiptSettingsService {
                 .showStoreName(true)
                 .showBranchName(true)
                 .showAddress(true)
+                .showAddressLabel(true)
                 .showPhone(true)
+                .showPhoneLabel(true)
                 .showInvoiceNumber(true)
                 .showDateTime(true)
                 .showCashier(true)
@@ -99,6 +104,7 @@ public class ReceiptSettingsService {
                 .showThanksMessage(true)
                 .showCredits(true)
                 .logoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
+                .invoiceLogoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
                 .paperWidthMm(defaultPaperWidth(templateType))
                 .thanksMessage(DEFAULT_THANKS_MESSAGE)
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)
@@ -126,7 +132,9 @@ public class ReceiptSettingsService {
                 .showStoreName(settings.isShowStoreName())
                 .showBranchName(settings.isShowBranchName())
                 .showAddress(settings.isShowAddress())
+                .showAddressLabel(settings.isShowAddressLabel())
                 .showPhone(settings.isShowPhone())
+                .showPhoneLabel(settings.isShowPhoneLabel())
                 .showInvoiceNumber(settings.isShowInvoiceNumber())
                 .showDateTime(settings.isShowDateTime())
                 .showCashier(settings.isShowCashier())
@@ -140,6 +148,7 @@ public class ReceiptSettingsService {
                 .showThanksMessage(settings.isShowThanksMessage())
                 .showCredits(true)
                 .logoWidthPercent(settings.getLogoWidthPercent())
+                .invoiceLogoWidthPercent(settings.getInvoiceLogoWidthPercent())
                 .paperWidthMm(settings.getPaperWidthMm())
                 .thanksMessage(settings.getThanksMessage())
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)

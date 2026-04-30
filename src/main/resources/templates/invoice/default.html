@@ -38,9 +38,16 @@
         }
 
         .logo {
-            max-width: 64mm;
-            max-height: 18mm;
+            max-width: 100%;
             display: block;
+        }
+
+        .logo-wrap {
+            width: 78mm;
+            min-height: 14mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             margin-bottom: 2mm;
         }
 
@@ -228,17 +235,23 @@
     <table>
         <tr>
             <td class="header-left">
-                <img th:if="${settings.showLogo and order.branchLogo != null and !#strings.isEmpty(order.branchLogo)}"
-                     th:src="${order.branchLogo}"
-                     alt="Logo"
-                     class="logo"/>
+                <div th:if="${settings.showLogo and order.branchLogo != null and !#strings.isEmpty(order.branchLogo)}"
+                     class="logo-wrap"
+                     th:style="${'width:' + logoBoxWidthMm + 'mm;'}">
+                    <img th:src="${order.branchLogo}"
+                         th:style="${'width:' + logoWidthMm + 'mm; max-height:' + logoMaxHeightMm + 'mm;'}"
+                         alt="Logo"
+                         class="logo"/>
+                </div>
 
                 <div th:if="${settings.showStoreName}" class="store-name" th:text="${storeName}">Store Name</div>
                 <div th:if="${settings.showBranchName}" class="branch-name" th:text="${order.branchName}">Main Branch</div>
                 <div th:if="${settings.showAddress and order.branchAddress != null and !#strings.isEmpty(order.branchAddress)}"
-                     class="muted" th:text="${order.branchAddress}">Address</div>
+                     class="muted"
+                     th:text="${(settings.showAddressLabel ? 'Address: ' : '') + order.branchAddress}">Address</div>
                 <div th:if="${settings.showPhone and order.branchPhone != null and !#strings.isEmpty(order.branchPhone)}"
-                     class="muted" style="margin-top: 0.5mm;" th:text="${order.branchPhone}">Phone</div>
+                     class="muted" style="margin-top: 0.5mm;"
+                     th:text="${(settings.showPhoneLabel ? 'Phone: ' : '') + order.branchPhone}">Phone</div>
             </td>
             <td class="header-right">
                 <div class="invoice-box">

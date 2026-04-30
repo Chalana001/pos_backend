@@ -45,8 +45,14 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(nullable = false)
     private boolean showAddress;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean showAddressLabel;
+
     @Column(nullable = false)
     private boolean showPhone;
+
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean showPhoneLabel;
 
     @Column(nullable = false)
     private boolean showInvoiceNumber;
@@ -86,6 +92,9 @@ public class ReceiptTemplateSettings extends TenantEntity {
 
     @Column(nullable = false)
     private int logoWidthPercent;
+
+    @Column(nullable = false, columnDefinition = "int default 78")
+    private int invoiceLogoWidthPercent;
 
     @Column(nullable = false)
     private int paperWidthMm;

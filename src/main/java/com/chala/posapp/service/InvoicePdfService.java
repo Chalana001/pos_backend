@@ -83,6 +83,9 @@ public class InvoicePdfService {
                 ? order.getNote()
                 : "Thank you for your purchase. Please keep this invoice for your records.");
         context.setVariable("items", mapItems(order.getItems()));
+        context.setVariable("logoBoxWidthMm", 78);
+        context.setVariable("logoWidthMm", resolveInvoiceLogoWidthMm(settings.getInvoiceLogoWidthPercent()));
+        context.setVariable("logoMaxHeightMm", resolveInvoiceLogoMaxHeightMm(settings.getInvoiceLogoWidthPercent()));
         context.setVariable("order", order);
 
         String html = templateEngine.process("invoice/default", context);
@@ -138,6 +141,16 @@ public class InvoicePdfService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private int resolveInvoiceLogoWidthMm(int logoWidthPercent) {
+        int normalizedPercent = Math.max(35, Math.min(200, logoWidthPercent));
+        return Math.max(26, Math.round((78f * normalizedPercent) / 100f));
+    }
+
+    private int resolveInvoiceLogoMaxHeightMm(int logoWidthPercent) {
+        int normalizedPercent = Math.max(35, Math.min(200, logoWidthPercent));
+        return Math.max(12, Math.round(10f + (normalizedPercent - 35) * 0.1f));
     }
 
     public record InvoiceLineView(
