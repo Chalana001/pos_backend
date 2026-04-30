@@ -195,8 +195,8 @@ public class PurchaseService {
                         .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
                 // ✅ සර්විස් අයිටම් එකක් GRN එකට දාන්න හැදුවොත් Block කරනවා
-                if (item.getItemType() == ItemType.SERVICE) {
-                    throw new BadRequestException("SERVICE items cannot be purchased or added to GRN. Item: " + item.getName());
+                if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+                    throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
                 }
 
                 item.setCostPrice(itemReq.getCostPrice());

@@ -130,8 +130,8 @@ public class StockTransferService {
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + reqItem.getItemId()));
 
             // ✅ SERVICE අයිටම් එකක් නම් ට්‍රාන්ස්ෆර් කරන්න බැරි වෙන්න Block කරනවා
-            if (item.getItemType() == ItemType.SERVICE) {
-                throw new BadRequestException("SERVICE items cannot be transferred. Item: " + item.getName());
+            if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+                throw new BadRequestException("Only stock-tracked grocery items can be transferred. Item: " + item.getName());
             }
 
             if (reqItem.getBatchId() == null) {

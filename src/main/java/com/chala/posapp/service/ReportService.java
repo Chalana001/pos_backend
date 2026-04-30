@@ -11,6 +11,7 @@ import com.chala.posapp.dto.report.TopCustomerResponse;
 import com.chala.posapp.dto.report.TopSellingItemResponse;
 import com.chala.posapp.dto.report.TopSupplierResponse;
 import com.chala.posapp.dto.stock.LowStockResponse;
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
@@ -85,12 +86,22 @@ public class ReportService {
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        return reportRepository.topSellingRaw(tenantId, branchId, range.from(), range.to(), limit).stream()
+        return topSelling(requestedBranchId, from, to, limit, null);
+    }
+
+    public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType) {
+        String tenantId = TenantContext.getTenant();
+        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        String normalizedItemType = normalizeItemType(itemType);
+
+        return reportRepository.topSellingRaw(tenantId, branchId, normalizedItemType, range.from(), range.to(), limit).stream()
                 .map(r -> TopSellingItemResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
-                        .qtySold(((Number) r[2]).doubleValue())
-                        .revenue(((Number) r[3]).doubleValue())
+                        .itemType(parseItemType(r[2]))
+                        .qtySold(((Number) r[3]).doubleValue())
+                        .revenue(((Number) r[4]).doubleValue())
                         .build())
                 .toList();
     }
@@ -100,14 +111,24 @@ public class ReportService {
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        return reportRepository.profitReportRaw(tenantId, branchId, range.from(), range.to(), limit).stream()
+        return profitReport(requestedBranchId, from, to, limit, null);
+    }
+
+    public List<ProfitReportResponse> profitReport(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType) {
+        String tenantId = TenantContext.getTenant();
+        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        String normalizedItemType = normalizeItemType(itemType);
+
+        return reportRepository.profitReportRaw(tenantId, branchId, normalizedItemType, range.from(), range.to(), limit).stream()
                 .map(r -> ProfitReportResponse.builder()
                         .itemId(((Number) r[0]).longValue())
                         .itemName((String) r[1])
-                        .qtySold(((Number) r[2]).doubleValue())
-                        .revenue(((Number) r[3]).doubleValue())
-                        .cost(((Number) r[4]).doubleValue())
-                        .profit(((Number) r[5]).doubleValue())
+                        .itemType(parseItemType(r[2]))
+                        .qtySold(((Number) r[3]).doubleValue())
+                        .revenue(((Number) r[4]).doubleValue())
+                        .cost(((Number) r[5]).doubleValue())
+                        .profit(((Number) r[6]).doubleValue())
                         .build())
                 .toList();
     }
@@ -148,11 +169,16 @@ public class ReportService {
     }
 
     public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to) {
+        return salesByCategory(requestedBranchId, from, to, null);
+    }
+
+    public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to, String itemType) {
         String tenantId = TenantContext.getTenant();
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        String normalizedItemType = normalizeItemType(itemType);
 
-        List<Object[]> rows = reportRepository.salesByCategoryRaw(tenantId, branchId, range.from(), range.to());
+        List<Object[]> rows = reportRepository.salesByCategoryRaw(tenantId, branchId, normalizedItemType, range.from(), range.to());
 
         return rows.stream().map(r -> new CategorySalesResponse(
                 (String) r[0],
@@ -223,7 +249,7 @@ public class ReportService {
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        List<Object[]> rawData = reportRepository.profitReportRaw(tenantId, branchId, range.from(), range.to(), 1000000);
+        List<Object[]> rawData = reportRepository.profitReportRaw(tenantId, branchId, null, range.from(), range.to(), 1000000);
 
         double totalRevenue = 0;
         double totalCost = 0;
@@ -255,5 +281,23 @@ public class ReportService {
             return timestamp.toLocalDateTime();
         }
         return LocalDateTime.parse(value.toString().replace(' ', 'T'));
+    }
+
+    private String normalizeItemType(String itemType) {
+        if (itemType == null || itemType.isBlank() || "ALL".equalsIgnoreCase(itemType)) {
+            return null;
+        }
+        try {
+            return ItemType.valueOf(itemType.trim().toUpperCase()).name();
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("Invalid itemType: " + itemType);
+        }
+    }
+
+    private ItemType parseItemType(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return ItemType.valueOf(value.toString());
     }
 }

@@ -16,7 +16,7 @@ public final class QuantityConversionUtil {
     }
 
     public static MeasurementUnit normalizeItemUnit(ItemType itemType, MeasurementUnit unit) {
-        if (itemType == ItemType.NORMAL) {
+        if (itemType == ItemType.NORMAL || itemType == ItemType.RECIPE) {
             return MeasurementUnit.PCS;
         }
 
@@ -47,15 +47,19 @@ public final class QuantityConversionUtil {
             throw new BadRequestException("Quantity must be greater than zero");
         }
 
-        if (itemType == ItemType.NORMAL) {
+        if (itemType == ItemType.NORMAL || itemType == ItemType.RECIPE) {
             MeasurementUnit resolvedUnit = requestedUnit == null ? MeasurementUnit.PCS : requestedUnit;
             if (resolvedUnit != MeasurementUnit.PCS) {
-                throw new BadRequestException("Normal items only support PCS quantity");
+                throw new BadRequestException(itemType == ItemType.RECIPE
+                        ? "Recipe items only support PCS quantity"
+                        : "Normal items only support PCS quantity");
             }
 
             BigDecimal normalized = quantity.stripTrailingZeros();
             if (normalized.scale() > 0) {
-                throw new BadRequestException("Normal item quantity must be a whole number");
+                throw new BadRequestException(itemType == ItemType.RECIPE
+                        ? "Recipe item quantity must be a whole number"
+                        : "Normal item quantity must be a whole number");
             }
 
             return normalized.intValueExact();

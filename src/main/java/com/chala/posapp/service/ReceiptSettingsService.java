@@ -33,7 +33,7 @@ public class ReceiptSettingsService {
                 .findByBranchIdAndTemplateType(branchId, templateType)
                 .orElseGet(() -> buildDefaultSettings(branch, templateType));
 
-        return mapToResponse(settings);
+        return mapToResponse(settings, branch);
     }
 
     @Transactional
@@ -43,7 +43,7 @@ public class ReceiptSettingsService {
                 .findByBranchIdAndTemplateType(branchId, templateType)
                 .orElseGet(() -> buildDefaultSettings(branch, templateType));
 
-        settings.setBranch(branch);
+        settings.setBranchId(branch.getId());
         settings.setTemplateType(templateType);
         settings.setShowLogo(request.isShowLogo());
         settings.setShowStoreName(request.isShowStoreName());
@@ -69,7 +69,7 @@ public class ReceiptSettingsService {
         settings.setCreditsLine2(DEFAULT_CREDITS_LINE_2);
 
         ReceiptTemplateSettings saved = receiptTemplateSettingsRepository.save(settings);
-        return mapToResponse(saved);
+        return mapToResponse(saved, branch);
     }
 
     private Branch getBranch(Long branchId) {
@@ -79,7 +79,7 @@ public class ReceiptSettingsService {
 
     private ReceiptTemplateSettings buildDefaultSettings(Branch branch, PrintTemplateType templateType) {
         return ReceiptTemplateSettings.builder()
-                .branch(branch)
+                .branchId(branch.getId())
                 .templateType(templateType)
                 .showLogo(true)
                 .showStoreName(true)
@@ -117,10 +117,10 @@ public class ReceiptSettingsService {
         return value.trim();
     }
 
-    private ReceiptSettingsResponse mapToResponse(ReceiptTemplateSettings settings) {
+    private ReceiptSettingsResponse mapToResponse(ReceiptTemplateSettings settings, Branch branch) {
         return ReceiptSettingsResponse.builder()
-                .branchId(settings.getBranch().getId())
-                .branchName(settings.getBranch().getName())
+                .branchId(settings.getBranchId())
+                .branchName(branch.getName())
                 .templateType(settings.getTemplateType())
                 .showLogo(settings.isShowLogo())
                 .showStoreName(settings.isShowStoreName())

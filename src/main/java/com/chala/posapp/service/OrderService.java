@@ -6,32 +6,13 @@ import com.chala.posapp.dto.order.CreateOrderRequest;
 import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.order.OrderItemResponse;
 import com.chala.posapp.dto.order.OrderResponse;
-import com.chala.posapp.entity.Branch;
-import com.chala.posapp.entity.Customer;
-import com.chala.posapp.entity.DiscountType;
-import com.chala.posapp.entity.Item;
-import com.chala.posapp.entity.ItemType;
-import com.chala.posapp.entity.Order;
-import com.chala.posapp.entity.OrderItem;
-import com.chala.posapp.entity.OrderStatus;
-import com.chala.posapp.entity.OrderType;
-import com.chala.posapp.entity.Role;
-import com.chala.posapp.entity.ShiftStatus;
-import com.chala.posapp.entity.User;
+import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
-import com.chala.posapp.repository.BranchRepository;
-import com.chala.posapp.repository.BranchServiceItemRepository;
-import com.chala.posapp.repository.CashShiftRepository;
-import com.chala.posapp.repository.CustomerRepository;
-import com.chala.posapp.repository.ItemRepository;
-import com.chala.posapp.repository.OrderItemRepository;
-import com.chala.posapp.repository.OrderRepository;
-import com.chala.posapp.repository.StockBatchRepository;
-import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.repository.*;
 import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -43,10 +24,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -56,6 +36,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final OrderItemStockUsageRepository orderItemStockUsageRepository;
     private final ItemRepository itemRepository;
     private final UserRepository userRepository;
     private final InvoiceService invoiceService;
@@ -64,6 +45,10 @@ public class OrderService {
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
+    private final RecipeIngredientRepository recipeIngredientRepository;
+    private final DiningTableRepository diningTableRepository;
+    private final PendingOrderRepository pendingOrderRepository;
+    private final PendingOrderItemRepository pendingOrderItemRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -116,14 +101,17 @@ public class OrderService {
             throw new BadRequestException("Customer required for CREDIT order");
         }
 
+        SaleMode saleMode = request.getSaleMode() == null ? SaleMode.TAKEAWAY : request.getSaleMode();
+        DiningTable diningTable = resolveDiningTable(user, branchId, saleMode, request.getTableId());
+
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
         String invoiceNo = invoiceService.generateInvoiceNo(branchId);
 
         double subTotal = 0;
-        List<OrderItem> orderItemsToSave = new ArrayList<>();
-        List<StockBatch> batchesToUpdate = new ArrayList<>();
+        List<PreparedOrderItem> preparedItems = new ArrayList<>();
+        Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
 
         for (OrderItemRequest itemReq : request.getItems()) {
             Item item = itemRepository.findById(itemReq.getItemId())
@@ -133,74 +121,34 @@ public class OrderService {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
 
-            Long batchId = null;
-            double costPrice = 0.0;
             int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
+            StockConsumptionResult consumption = consumeStockForSale(branchId, item, itemReq, normalizedQty, batchesToUpdate);
 
-            // ✅ SERVICE item එකක් නම් Batch ගැන හොයන්නේ නෑ, Stock අඩු කරන්නේ නෑ
-            if (item.getItemType() == ItemType.SERVICE) {
-                if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
-                    throw new BadRequestException("Service item is not assigned to this branch: " + item.getName());
-                }
-                costPrice = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
-            } else {
-                // NORMAL හෝ WEIGHT අයිටම් එකක් නම් අනිවාර්යයෙන් Batch එකක් තියෙන්නම ඕනේ
-                if (itemReq.getBatchId() == null) {
-                    throw new BadRequestException("Batch ID is missing for item: " + item.getName());
-                }
-
-                StockBatch batch = stockBatchRepository.findById(itemReq.getBatchId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + itemReq.getBatchId()));
-
-                if (!batch.getItem().getId().equals(item.getId())) {
-                    throw new BadRequestException("Batch ID does not match Item ID");
-                }
-                if (!batch.getBranch().getId().equals(branchId)) {
-                    throw new BadRequestException("Batch does not belong to this branch");
-                }
-
-                if (batch.getQuantity() < normalizedQty) {
-                    throw new BadRequestException("Insufficient stock for " + item.getName()
-                            + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
-                }
-
-                batch.setQuantity(batch.getQuantity() - normalizedQty);
-                batchesToUpdate.add(batch);
-
-                batchId = batch.getId();
-                costPrice = batch.getCostPrice().doubleValue();
-            }
-
-            // Frontend එකෙන් එවන (edit කරපු) unit price එක පාවිච්චි කරනවා
             double unitPrice = itemReq.getUnitPrice();
-
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
-
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
             double lineTotal = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(finalUnitPrice), normalizedQty).doubleValue();
-            double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(costPrice), normalizedQty).doubleValue();
 
             OrderItem orderItem = OrderItem.builder()
                     .itemId(item.getId())
-                    .batchId(batchId) // Service එකට මේක null
+                    .batchId(consumption.primaryBatchId)
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
+                    .itemType(item.getItemType())
                     .qty(normalizedQty)
                     .displayQty(itemReq.getQty().stripTrailingZeros())
-                    .qtyUnit(item.getItemType() == ItemType.WEIGHT
-                            ? (itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit())
-                            : item.getDefaultUnit())
+                    .qtyUnit(resolveQtyUnit(item, itemReq))
                     .unitPrice(unitPrice)
-                    .costPrice(costPrice)
+                    .costPrice(consumption.unitCost)
                     .discountType(discountType)
                     .discountValue(discountValue)
                     .finalUnitPrice(finalUnitPrice)
-                    .lineCost(lineCost)
+                    .lineCost(consumption.lineCost)
                     .lineTotal(lineTotal)
                     .build();
 
-            orderItemsToSave.add(orderItem);
+            preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages));
             subTotal += lineTotal;
         }
 
@@ -213,9 +161,16 @@ public class OrderService {
         if (paidAmount < 0) paidAmount = 0;
 
         double dueAmount;
+        Customer customer = null;
         if (request.getOrderType() == OrderType.CREDIT) {
             paidAmount = 0;
             dueAmount = grandTotal;
+            customer = customerRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0
+                    && customer.getDueAmount() + dueAmount > customer.getCreditLimit()) {
+                throw new BadRequestException("Customer credit limit exceeded");
+            }
         } else {
             if (paidAmount < grandTotal) {
                 throw new BadRequestException("Paid amount cannot be less than grand total for CASH sale");
@@ -233,6 +188,9 @@ public class OrderService {
                 .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
                 .orderType(request.getOrderType())
+                .saleMode(saleMode)
+                .tableId(diningTable != null ? diningTable.getId() : null)
+                .tableName(diningTable != null ? diningTable.getTableName() : null)
                 .status(OrderStatus.COMPLETED)
                 .subTotal(subTotal)
                 .billDiscount(billDiscount)
@@ -245,31 +203,43 @@ public class OrderService {
 
         Order savedOrder = orderRepository.save(order);
 
-        for (OrderItem orderItem : orderItemsToSave) {
-            orderItem.setOrderId(savedOrder.getId());
-        }
-        orderItemRepository.saveAll(orderItemsToSave);
+        List<OrderItem> orderItemsToSave = preparedItems.stream()
+                .map(PreparedOrderItem::orderItem)
+                .toList();
+        orderItemsToSave.forEach(orderItem -> orderItem.setOrderId(savedOrder.getId()));
+        List<OrderItem> savedOrderItems = orderItemRepository.saveAll(orderItemsToSave);
 
-        // Stock අඩු කරපු ඒවා විතරක් Save කරනවා
-        if (!batchesToUpdate.isEmpty()) {
-            stockBatchRepository.saveAll(batchesToUpdate);
-        }
-
-        if (savedOrder.getOrderType() == OrderType.CREDIT) {
-            Customer customer = customerRepository.findById(savedOrder.getCustomerId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
-
-            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0
-                    && customer.getDueAmount() + savedOrder.getDueAmount() > customer.getCreditLimit()) {
-                throw new BadRequestException("Customer credit limit exceeded");
+        List<OrderItemStockUsage> usagesToSave = new ArrayList<>();
+        for (int i = 0; i < savedOrderItems.size(); i++) {
+            OrderItem savedOrderItem = savedOrderItems.get(i);
+            for (StockUsageDraft usage : preparedItems.get(i).usages) {
+                usagesToSave.add(OrderItemStockUsage.builder()
+                        .orderItemId(savedOrderItem.getId())
+                        .itemId(usage.itemId)
+                        .batchId(usage.batchId)
+                        .quantity(usage.quantity)
+                        .build());
             }
+        }
+        if (!usagesToSave.isEmpty()) {
+            orderItemStockUsageRepository.saveAll(usagesToSave);
+        }
 
+        if (!batchesToUpdate.isEmpty()) {
+            stockBatchRepository.saveAll(batchesToUpdate.values());
+        }
+
+        if (customer != null) {
             customer.setDueAmount(customer.getDueAmount() + savedOrder.getDueAmount());
             customerRepository.save(customer);
         }
 
         addCashSaleToOpenShift(savedOrder);
-        return buildOrderResponse(savedOrder, orderItemsToSave);
+        if (saleMode == SaleMode.DINE_IN && diningTable != null) {
+            finalizeDineInSession(diningTable);
+        }
+
+        return buildOrderResponse(savedOrder, savedOrderItems);
     }
 
     @Transactional
@@ -302,32 +272,16 @@ public class OrderService {
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         for (OrderItem orderItem : items) {
-            restoreStockToOriginalBatch(orderItem, order.getBranchId());
-        }
-/*
-
-            // ✅ SERVICE එකක් නම් return batch එකක් හදන්නේ නෑ (තොගයක් තිබ්බේ නෑනේ)
-            if (item.getItemType() != ItemType.SERVICE) {
-                StockBatch returnBatch = StockBatch.builder()
-                        .branch(branch)
-                        .item(item)
-                        .quantity(orderItem.getQty())
-                        .originalQuantity(orderItem.getQty())
-                        .costPrice(BigDecimal.valueOf(orderItem.getCostPrice()))
-                        .sellingPrice(item.getSellingPrice())
-                        .batchCode("RTN-" + order.getInvoiceNo())
-                        .receivedAt(LocalDateTime.now())
-                        .build();
-
-                stockBatchRepository.save(returnBatch);
+            List<OrderItemStockUsage> usages = orderItemStockUsageRepository.findByOrderItemId(orderItem.getId());
+            if (!usages.isEmpty()) {
+                restoreStockUsages(usages, order.getBranchId());
+            } else {
+                restoreStockToOriginalBatch(orderItem, order.getBranchId());
             }
         }
 
-*/
         return buildOrderResponse(saved, items);
     }
-
-    // ... (අනිත් methods වල කිසිම වෙනසක් කරලා නැහැ, ඒවා කලින් විදිහටම තියෙනවා)
 
     public OrderResponse getOrder(String invoiceNo) {
         User user = getLoggedUser();
@@ -399,6 +353,199 @@ public class OrderService {
         return page.map(this::map);
     }
 
+    private DiningTable resolveDiningTable(User user, Long branchId, SaleMode saleMode, Long tableId) {
+        if (saleMode == SaleMode.DINE_IN) {
+            if (tableId == null) {
+                throw new BadRequestException("Table ID is required for dine-in orders");
+            }
+
+            DiningTable table = diningTableRepository.findById(tableId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+            ensureBranchAccess(user, branchId);
+            if (!table.getBranchId().equals(branchId)) {
+                throw new BadRequestException("Dining table does not belong to this branch");
+            }
+            return table;
+        }
+
+        if (tableId != null) {
+            throw new BadRequestException("Table ID is only allowed for dine-in orders");
+        }
+        return null;
+    }
+
+    private StockConsumptionResult consumeStockForSale(
+            Long branchId,
+            Item item,
+            OrderItemRequest itemReq,
+            int normalizedQty,
+            Map<Long, StockBatch> batchesToUpdate
+    ) {
+        if (item.getItemType() == ItemType.SERVICE) {
+            if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
+                throw new BadRequestException("Service item is not assigned to this branch: " + item.getName());
+            }
+            double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
+            double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
+            return new StockConsumptionResult(null, unitCost, lineCost, List.of());
+        }
+
+        if (item.getItemType() == ItemType.RECIPE) {
+            List<RecipeIngredient> recipeIngredients = recipeIngredientRepository.findByParentItemId(item.getId());
+            if (recipeIngredients.isEmpty()) {
+                throw new BadRequestException("Recipe item has no ingredients: " + item.getName());
+            }
+
+            Map<Long, Item> ingredientMap = itemRepository.findAllById(
+                            recipeIngredients.stream()
+                                    .map(RecipeIngredient::getIngredientId)
+                                    .distinct()
+                                    .toList()
+                    ).stream()
+                    .collect(Collectors.toMap(Item::getId, ingredient -> ingredient));
+
+            List<StockUsageDraft> usages = new ArrayList<>();
+            double lineCost = 0.0;
+
+            for (RecipeIngredient recipeIngredient : recipeIngredients) {
+                Item ingredientItem = ingredientMap.get(recipeIngredient.getIngredientId());
+                if (ingredientItem == null) {
+                    throw new ResourceNotFoundException("Ingredient item not found: " + recipeIngredient.getIngredientId());
+                }
+
+                long requiredQty = (long) recipeIngredient.getQuantity() * normalizedQty;
+                if (requiredQty > Integer.MAX_VALUE) {
+                    throw new BadRequestException("Recipe quantity is too large for item: " + item.getName());
+                }
+
+                InventoryConsumptionResult ingredientConsumption = consumeInventoryItem(
+                        branchId,
+                        ingredientItem,
+                        null,
+                        (int) requiredQty,
+                        batchesToUpdate
+                );
+                usages.addAll(ingredientConsumption.usages);
+                lineCost += ingredientConsumption.lineCost;
+            }
+
+            double unitCost = normalizedQty == 0
+                    ? 0.0
+                    : BigDecimal.valueOf(lineCost)
+                    .divide(BigDecimal.valueOf(normalizedQty), 6, RoundingMode.HALF_UP)
+                    .doubleValue();
+
+            return new StockConsumptionResult(null, unitCost, lineCost, usages);
+        }
+
+        if (itemReq.getBatchId() == null) {
+            throw new BadRequestException("Batch ID is missing for item: " + item.getName());
+        }
+
+        InventoryConsumptionResult inventoryConsumption = consumeInventoryItem(
+                branchId,
+                item,
+                itemReq.getBatchId(),
+                normalizedQty,
+                batchesToUpdate
+        );
+
+        return new StockConsumptionResult(
+                inventoryConsumption.primaryBatchId,
+                inventoryConsumption.unitCost,
+                inventoryConsumption.lineCost,
+                inventoryConsumption.usages
+        );
+    }
+
+    private InventoryConsumptionResult consumeInventoryItem(
+            Long branchId,
+            Item item,
+            Long explicitBatchId,
+            int normalizedQty,
+            Map<Long, StockBatch> batchesToUpdate
+    ) {
+        if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+            throw new BadRequestException("Stock-tracked grocery item required for stock deduction");
+        }
+
+        if (explicitBatchId != null) {
+            StockBatch batch = stockBatchRepository.findById(explicitBatchId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + explicitBatchId));
+
+            if (!batch.getItem().getId().equals(item.getId())) {
+                throw new BadRequestException("Batch ID does not match Item ID");
+            }
+            if (!batch.getBranch().getId().equals(branchId)) {
+                throw new BadRequestException("Batch does not belong to this branch");
+            }
+
+            decrementBatch(batch, normalizedQty);
+            batchesToUpdate.put(batch.getId(), batch);
+
+            double lineCost = QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), normalizedQty).doubleValue();
+            return new InventoryConsumptionResult(
+                    batch.getId(),
+                    batch.getCostPrice().doubleValue(),
+                    lineCost,
+                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty))
+            );
+        }
+
+        List<StockBatch> availableBatches = stockBatchRepository.findAvailableBatches(branchId, item.getId());
+        if (availableBatches.isEmpty()) {
+            throw new BadRequestException("Insufficient stock for " + item.getName());
+        }
+
+        int remainingQty = normalizedQty;
+        List<StockUsageDraft> usages = new ArrayList<>();
+        double lineCost = 0.0;
+
+        for (StockBatch batch : availableBatches) {
+            if (remainingQty <= 0) {
+                break;
+            }
+
+            int availableQty = batch.getQuantity() == null ? 0 : batch.getQuantity();
+            if (availableQty <= 0) {
+                continue;
+            }
+
+            int usedQty = Math.min(availableQty, remainingQty);
+            decrementBatch(batch, usedQty);
+            batchesToUpdate.put(batch.getId(), batch);
+
+            usages.add(new StockUsageDraft(item.getId(), batch.getId(), usedQty));
+            lineCost += QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), usedQty).doubleValue();
+            remainingQty -= usedQty;
+        }
+
+        if (remainingQty > 0) {
+            throw new BadRequestException("Insufficient stock for " + item.getName());
+        }
+
+        double unitCost = normalizedQty == 0
+                ? 0.0
+                : BigDecimal.valueOf(lineCost)
+                .divide(BigDecimal.valueOf(normalizedQty), 6, RoundingMode.HALF_UP)
+                .doubleValue();
+
+        return new InventoryConsumptionResult(
+                usages.isEmpty() ? null : usages.get(0).batchId,
+                unitCost,
+                lineCost,
+                usages
+        );
+    }
+
+    private void decrementBatch(StockBatch batch, int normalizedQty) {
+        if (batch.getQuantity() < normalizedQty) {
+            throw new BadRequestException("Insufficient stock for " + batch.getItem().getName()
+                    + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+        }
+        batch.setQuantity(batch.getQuantity() - normalizedQty);
+    }
+
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {
         if (type == null || type == DiscountType.NONE) return unitPrice;
 
@@ -413,11 +560,41 @@ public class OrderService {
         return unitPrice - value;
     }
 
+    private MeasurementUnit resolveQtyUnit(Item item, OrderItemRequest itemReq) {
+        if (item.getItemType() == ItemType.WEIGHT) {
+            return itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit();
+        }
+        return item.getDefaultUnit();
+    }
+
+    private void restoreStockUsages(List<OrderItemStockUsage> usages, Long branchId) {
+        Map<Long, StockBatch> batchesToSave = new LinkedHashMap<>();
+
+        for (OrderItemStockUsage usage : usages) {
+            StockBatch batch = stockBatchRepository.findById(usage.getBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Original batch not found for stock restoration"));
+
+            if (!batch.getBranch().getId().equals(branchId)) {
+                throw new BadRequestException("Original batch belongs to a different branch");
+            }
+            if (!batch.getItem().getId().equals(usage.getItemId())) {
+                throw new BadRequestException("Original batch does not match the stock usage item");
+            }
+
+            batch.setQuantity(batch.getQuantity() + usage.getQuantity());
+            batchesToSave.put(batch.getId(), batch);
+        }
+
+        if (!batchesToSave.isEmpty()) {
+            stockBatchRepository.saveAll(batchesToSave.values());
+        }
+    }
+
     private void restoreStockToOriginalBatch(OrderItem orderItem, Long branchId) {
         Item item = itemRepository.findById(orderItem.getItemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
-        if (item.getItemType() == ItemType.SERVICE) {
+        if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
             return;
         }
 
@@ -437,6 +614,16 @@ public class OrderService {
 
         batch.setQuantity(batch.getQuantity() + orderItem.getQty());
         stockBatchRepository.save(batch);
+    }
+
+    private void finalizeDineInSession(DiningTable diningTable) {
+        pendingOrderRepository.findByTableId(diningTable.getId()).ifPresent(pendingOrder -> {
+            pendingOrderItemRepository.deleteByPendingOrderId(pendingOrder.getId());
+            pendingOrderRepository.delete(pendingOrder);
+        });
+
+        diningTable.setStatus(DiningTableStatus.AVAILABLE);
+        diningTableRepository.save(diningTable);
     }
 
     private void addCashSaleToOpenShift(Order order) {
@@ -489,20 +676,20 @@ public class OrderService {
 
         List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
                 : items.stream()
-                  .map(orderItem -> OrderItemResponse.builder()
-                                    .itemId(orderItem.getItemId())
-                                    .barcode(orderItem.getBarcode())
-                                    .itemName(orderItem.getItemName())
-                                    .batchId(orderItem.getBatchId())
-                                    .qty(orderItem.getDisplayQty())
-                                    .qtyUnit(orderItem.getQtyUnit())
-                                    .unitPrice(orderItem.getUnitPrice())
-                                    .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
-                                    .discountValue(orderItem.getDiscountValue())
-                                    .finalUnitPrice(orderItem.getFinalUnitPrice())
-                                    .lineTotal(orderItem.getLineTotal())
-                                    .build())
-                  .collect(Collectors.toList());
+                .map(orderItem -> OrderItemResponse.builder()
+                        .itemId(orderItem.getItemId())
+                        .barcode(orderItem.getBarcode())
+                        .itemName(orderItem.getItemName())
+                        .batchId(orderItem.getBatchId())
+                        .qty(orderItem.getDisplayQty())
+                        .qtyUnit(orderItem.getQtyUnit())
+                        .unitPrice(orderItem.getUnitPrice())
+                        .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
+                        .discountValue(orderItem.getDiscountValue())
+                        .finalUnitPrice(orderItem.getFinalUnitPrice())
+                        .lineTotal(orderItem.getLineTotal())
+                        .build())
+                .collect(Collectors.toList());
 
         String branchName = order.getReceiptBranchName();
         String branchAddress = order.getReceiptBranchAddress();
@@ -531,6 +718,9 @@ public class OrderService {
                 .customerId(order.getCustomerId())
                 .customerName(customerName)
                 .orderType(order.getOrderType())
+                .saleMode(order.getSaleMode())
+                .tableId(order.getTableId())
+                .tableName(order.getTableName())
                 .status(order.getStatus())
                 .subTotal(order.getSubTotal())
                 .billDiscount(order.getBillDiscount())
@@ -555,5 +745,59 @@ public class OrderService {
                 .dueAmount(order.getDueAmount())
                 .createdAt(order.getCreatedAt())
                 .build();
+    }
+
+    private static final class PreparedOrderItem {
+        private final OrderItem orderItem;
+        private final List<StockUsageDraft> usages;
+
+        private PreparedOrderItem(OrderItem orderItem, List<StockUsageDraft> usages) {
+            this.orderItem = orderItem;
+            this.usages = usages;
+        }
+
+        private OrderItem orderItem() {
+            return orderItem;
+        }
+    }
+
+    private static final class StockConsumptionResult {
+        private final Long primaryBatchId;
+        private final double unitCost;
+        private final double lineCost;
+        private final List<StockUsageDraft> usages;
+
+        private StockConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+            this.primaryBatchId = primaryBatchId;
+            this.unitCost = unitCost;
+            this.lineCost = lineCost;
+            this.usages = usages;
+        }
+    }
+
+    private static final class InventoryConsumptionResult {
+        private final Long primaryBatchId;
+        private final double unitCost;
+        private final double lineCost;
+        private final List<StockUsageDraft> usages;
+
+        private InventoryConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+            this.primaryBatchId = primaryBatchId;
+            this.unitCost = unitCost;
+            this.lineCost = lineCost;
+            this.usages = usages;
+        }
+    }
+
+    private static final class StockUsageDraft {
+        private final Long itemId;
+        private final Long batchId;
+        private final int quantity;
+
+        private StockUsageDraft(Long itemId, Long batchId, int quantity) {
+            this.itemId = itemId;
+            this.batchId = batchId;
+            this.quantity = quantity;
+        }
     }
 }

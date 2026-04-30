@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.item;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.dto.stock.StockBatchResponse;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
@@ -32,8 +33,13 @@ public class ItemResponse {
     private ItemType itemType;
     private MeasurementUnit defaultUnit;
     private String imageUrl;
+
+    @JsonProperty("isKotEnabled")
+    private boolean kotEnabled;
+
     private boolean active;
     private LocalDateTime createdAt;
     private List<Long> branchIds;
+    private List<ItemIngredientResponse> ingredients;
     private List<StockBatchResponse> batches;
 }

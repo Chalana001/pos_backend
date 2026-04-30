@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.order;
 
 import com.chala.posapp.entity.OrderType;
+import com.chala.posapp.entity.SaleMode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -15,6 +16,10 @@ public class CreateOrderRequest {
 
     @NotNull
     private OrderType orderType; // CASH or CREDIT
+
+    private SaleMode saleMode;
+
+    private Long tableId;
 
     // required if CREDIT
     private Long customerId;

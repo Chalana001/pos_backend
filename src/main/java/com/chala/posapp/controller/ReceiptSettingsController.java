@@ -26,7 +26,7 @@ public class ReceiptSettingsController {
         return ResponseEntity.ok(receiptSettingsService.getSettings(branchId, templateType));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PutMapping
     public ResponseEntity<ReceiptSettingsResponse> updateSettings(
             @PathVariable Long branchId,

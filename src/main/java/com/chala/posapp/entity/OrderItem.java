@@ -36,6 +36,10 @@ public class OrderItem extends TenantEntity {
     @Column(nullable = false, length = 160)
     private String itemName;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_type", length = 20)
+    private ItemType itemType;
+
     @Column(nullable = false)
     private int qty;
 

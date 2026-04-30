@@ -1,5 +1,6 @@
 package com.chala.posapp.repository;
 
+import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Order;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -58,22 +59,25 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT 
-            oi.item_id, oi.item_name,
+            oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type) AS item_type,
             COALESCE(SUM(oi.display_qty),0) AS qty_sold,
             COALESCE(SUM(oi.line_total),0) AS revenue
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN items i ON i.id = oi.item_id
         WHERE o.tenant_id = :tenantId 
           AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND (:itemType IS NULL OR COALESCE(oi.item_type, i.item_type) = :itemType)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY oi.item_id, oi.item_name
+        GROUP BY oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type)
         ORDER BY qty_sold DESC
         LIMIT :limitValue
     """, nativeQuery = true)
     List<Object[]> topSellingRaw(
             @Param("tenantId") String tenantId,
             @Param("branchId") Long branchId,
+            @Param("itemType") String itemType,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("limitValue") int limitValue
@@ -81,24 +85,27 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT
-            oi.item_id, oi.item_name,
+            oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type) AS item_type,
             COALESCE(SUM(oi.display_qty),0) AS qty_sold,
             COALESCE(SUM(oi.line_total),0) AS revenue,
             COALESCE(SUM(oi.line_cost),0) AS cost,
             COALESCE(SUM(oi.line_total - oi.line_cost),0) AS profit
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN items i ON i.id = oi.item_id
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND (:itemType IS NULL OR COALESCE(oi.item_type, i.item_type) = :itemType)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY oi.item_id, oi.item_name
+        GROUP BY oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type)
         ORDER BY profit DESC
         LIMIT :limitValue
     """, nativeQuery = true)
     List<Object[]> profitReportRaw(
             @Param("tenantId") String tenantId,
             @Param("branchId") Long branchId,
+            @Param("itemType") String itemType,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("limitValue") int limitValue
@@ -130,6 +137,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         JOIN categories c ON c.id = sc.category_id
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND (:itemType IS NULL OR COALESCE(oi.item_type, i.item_type) = :itemType)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
         GROUP BY c.name
@@ -137,6 +145,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     List<Object[]> salesByCategoryRaw(
             @Param("tenantId") String tenantId,
             @Param("branchId") Long branchId,
+            @Param("itemType") String itemType,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate
     );

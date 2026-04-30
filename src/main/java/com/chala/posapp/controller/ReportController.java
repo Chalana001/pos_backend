@@ -55,8 +55,9 @@ public class ReportController {
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "itemType", required = false) String itemType,
             @RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit));
+        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit, itemType));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -65,8 +66,9 @@ public class ReportController {
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "itemType", required = false) String itemType,
             @RequestParam(name = "limit", defaultValue = "50") int limit) {
-        return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit));
+        return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit, itemType));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
@@ -84,8 +86,9 @@ public class ReportController {
     public ResponseEntity<List<CategorySalesResponse>> salesByCategory(
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to));
+            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "itemType", required = false) String itemType) {
+        return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to, itemType));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

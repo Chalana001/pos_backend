@@ -26,9 +26,8 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "branch_id", nullable = false)
-    private Branch branch;
+    @Column(name = "branch_id", nullable = false)
+    private Long branchId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "template_type", nullable = false, length = 20)

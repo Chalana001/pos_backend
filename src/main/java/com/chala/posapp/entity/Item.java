@@ -59,6 +59,10 @@ public class Item extends TenantEntity {
     @Column(length = 500)
     private String imageUrl;
 
+    @Column(name = "is_kot_enabled", nullable = false)
+    @Builder.Default
+    private boolean kotEnabled = false;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean active = true;

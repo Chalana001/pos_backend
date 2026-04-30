@@ -1,6 +1,8 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.item.ItemCreateRequest;
+import com.chala.posapp.dto.item.ItemIngredientRequest;
+import com.chala.posapp.dto.item.ItemIngredientResponse;
 import com.chala.posapp.dto.item.ItemResponse;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
 import com.chala.posapp.dto.stock.StockBatchResponse;
@@ -10,6 +12,7 @@ import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.RecipeIngredient;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
@@ -18,6 +21,7 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
+import com.chala.posapp.repository.RecipeIngredientRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
@@ -33,6 +37,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -47,6 +52,7 @@ public class ItemService {
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
+    private final RecipeIngredientRepository recipeIngredientRepository;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
@@ -74,11 +80,13 @@ public class ItemService {
                 .itemType(itemType)
                 .defaultUnit(defaultUnit)
                 .imageUrl(request.getImageUrl())
+                .kotEnabled(Boolean.TRUE.equals(request.getIsKotEnabled()))
                 .active(request.getActive() == null || request.getActive())
                 .build();
 
         Item savedItem = itemRepository.save(item);
         syncServiceBranches(savedItem, request.getBranchIds());
+        syncRecipeIngredients(savedItem, request.getIngredients());
         return mapToResponse(savedItem, null, List.of());
     }
 
@@ -110,7 +118,7 @@ public class ItemService {
                     ItemType itemType = req.getItemType() != null ? req.getItemType() : ItemType.NORMAL;
                     MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, req.getDefaultUnit());
 
-                    Item item = Item.builder()
+                    return Item.builder()
                             .name(req.getName().trim())
                             .barcode(req.getBarcode())
                             .subCategory(subCategory)
@@ -120,9 +128,9 @@ public class ItemService {
                             .itemType(itemType)
                             .defaultUnit(defaultUnit)
                             .imageUrl(req.getImageUrl())
+                            .kotEnabled(Boolean.TRUE.equals(req.getIsKotEnabled()))
                             .active(req.getActive() == null || req.getActive())
                             .build();
-                    return item;
                 })
                 .toList();
 
@@ -133,6 +141,7 @@ public class ItemService {
                             .findFirst()
                             .orElse(null);
                     syncServiceBranches(item, sourceRequest != null ? sourceRequest.getBranchIds() : null);
+                    syncRecipeIngredients(item, sourceRequest != null ? sourceRequest.getIngredients() : null);
                     return mapToResponse(item, null, List.of());
                 })
                 .toList();
@@ -162,7 +171,7 @@ public class ItemService {
             throw new ResourceNotFoundException("Service item not available in this branch");
         }
 
-        if (branchId == null) {
+        if (branchId == null || item.getItemType() == ItemType.RECIPE || item.getItemType() == ItemType.SERVICE) {
             return mapToResponse(item, null, List.of());
         }
 
@@ -182,7 +191,7 @@ public class ItemService {
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
 
-                    if (branchId != null) {
+                    if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
                                 ? stockBatchRepository.findByItemId(item.getId())
                                 : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
@@ -212,16 +221,16 @@ public class ItemService {
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
 
-                    if (branchId != null) {
+                    if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
                                 ? stockBatchRepository.findByItemId(item.getId())
                                 : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
                         totalQty = totalQuantity(batches);
                     }
 
-                    // ✅ Service එකක් නෙවෙයි නම් විතරක් batches නැති ඒවා අයින් කරනවා.
-                    // ඒ කියන්නේ SERVICE අයිටම් එකක් නම්, Batch 0 වුණත් POS එකේ පෙන්නනවා!
-                    if (item.getItemType() != ItemType.SERVICE && (batches == null || batches.isEmpty())) {
+                    if (item.getItemType() != ItemType.SERVICE
+                            && item.getItemType() != ItemType.RECIPE
+                            && (batches == null || batches.isEmpty())) {
                         return null;
                     }
 
@@ -286,11 +295,15 @@ public class ItemService {
             item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, request.getReorderLevel()));
         }
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
+        if (request.getIsKotEnabled() != null) item.setKotEnabled(request.getIsKotEnabled());
         if (request.getActive() != null) item.setActive(request.getActive());
 
         Item savedItem = itemRepository.save(item);
         if (request.getBranchIds() != null || previousItemType != itemType) {
             syncServiceBranches(savedItem, request.getBranchIds());
+        }
+        if (request.getIngredients() != null || previousItemType != itemType) {
+            syncRecipeIngredients(savedItem, request.getIngredients());
         }
         return mapToResponse(savedItem, null, List.of());
     }
@@ -329,10 +342,13 @@ public class ItemService {
         List<Long> branchIds = item.getItemType() == ItemType.SERVICE
                 ? branchServiceItemRepository.findByItemId(item.getId()).stream()
                 .filter(BranchServiceItem::isActive)
-                .map(branchServiceItem -> branchServiceItem.getBranch().getId())
+                .map(BranchServiceItem::getBranchId)
                 .distinct()
                 .sorted()
                 .toList()
+                : List.of();
+        List<ItemIngredientResponse> ingredients = item.getItemType() == ItemType.RECIPE
+                ? mapRecipeIngredientResponses(recipeIngredientRepository.findByParentItemId(item.getId()))
                 : List.of();
 
         BigDecimal availableQty = availableBaseQty == null
@@ -353,12 +369,14 @@ public class ItemService {
                 .availableBaseQty(availableBaseQty)
                 .reorderLevel(QuantityConversionUtil.toDisplayQuantity(item.getItemType(), item.getDefaultUnit(), item.getReorderLevel()))
                 .reorderLevelBaseQty(item.getReorderLevel())
-                .itemType(item.getItemType()) // අලුත් Enum එක
+                .itemType(item.getItemType())
                 .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
+                .kotEnabled(item.isKotEnabled())
                 .active(item.isActive())
                 .createdAt(item.getCreatedAt())
                 .branchIds(branchIds)
+                .ingredients(ingredients)
                 .batches(batches)
                 .build();
     }
@@ -366,6 +384,7 @@ public class ItemService {
     private void syncServiceBranches(Item item, List<Long> branchIds) {
         if (item.getItemType() != ItemType.SERVICE) {
             branchServiceItemRepository.deleteByItemId(item.getId());
+            branchServiceItemRepository.flush();
             return;
         }
 
@@ -380,14 +399,102 @@ public class ItemService {
         }
 
         branchServiceItemRepository.deleteByItemId(item.getId());
+        branchServiceItemRepository.flush();
         List<BranchServiceItem> assignments = branches.stream()
                 .map(branch -> BranchServiceItem.builder()
-                        .branch(branch)
-                        .item(item)
+                        .branchId(branch.getId())
+                        .itemId(item.getId())
                         .active(true)
                         .build())
                 .toList();
         branchServiceItemRepository.saveAll(assignments);
+    }
+
+    private void syncRecipeIngredients(Item item, List<ItemIngredientRequest> ingredientRequests) {
+        if (item.getItemType() != ItemType.RECIPE) {
+            recipeIngredientRepository.deleteByParentItemId(item.getId());
+            recipeIngredientRepository.flush();
+            return;
+        }
+
+        if (ingredientRequests == null) {
+            return;
+        }
+
+        recipeIngredientRepository.deleteByParentItemId(item.getId());
+        recipeIngredientRepository.flush();
+        if (ingredientRequests.isEmpty()) {
+            return;
+        }
+
+        Set<Long> distinctIngredientIds = new HashSet<>();
+        List<RecipeIngredient> ingredients = new ArrayList<>();
+
+        for (ItemIngredientRequest ingredientRequest : ingredientRequests) {
+            if (!distinctIngredientIds.add(ingredientRequest.getIngredientItemId())) {
+                throw new BadRequestException("Duplicate ingredient item found in recipe");
+            }
+
+            Item ingredientItem = itemRepository.findById(ingredientRequest.getIngredientItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Ingredient item not found: " + ingredientRequest.getIngredientItemId()));
+
+            if (!ingredientItem.isActive()) {
+                throw new BadRequestException("Ingredient item is inactive: " + ingredientItem.getName());
+            }
+            if (ingredientItem.getId().equals(item.getId())) {
+                throw new BadRequestException("Recipe item cannot include itself as an ingredient");
+            }
+            if (ingredientItem.getItemType() == ItemType.SERVICE || ingredientItem.getItemType() == ItemType.RECIPE) {
+                throw new BadRequestException("Recipe ingredients must be stock-tracked grocery items");
+            }
+
+            int normalizedQuantity = QuantityConversionUtil.normalizeQuantity(
+                    ingredientItem,
+                    ingredientRequest.getQuantity(),
+                    ingredientRequest.getQtyUnit()
+            );
+
+            ingredients.add(RecipeIngredient.builder()
+                    .parentItemId(item.getId())
+                    .ingredientId(ingredientItem.getId())
+                    .quantity(normalizedQuantity)
+                    .build());
+        }
+
+        recipeIngredientRepository.saveAll(ingredients);
+    }
+
+    private List<ItemIngredientResponse> mapRecipeIngredientResponses(List<RecipeIngredient> recipeIngredients) {
+        if (recipeIngredients == null || recipeIngredients.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Item> ingredientMap = itemRepository.findAllById(
+                        recipeIngredients.stream()
+                                .map(RecipeIngredient::getIngredientId)
+                                .distinct()
+                                .toList()
+                ).stream()
+                .collect(Collectors.toMap(Item::getId, ingredient -> ingredient));
+
+        return recipeIngredients.stream()
+                .map(recipeIngredient -> mapIngredientResponse(recipeIngredient, ingredientMap.get(recipeIngredient.getIngredientId())))
+                .toList();
+    }
+
+    private ItemIngredientResponse mapIngredientResponse(RecipeIngredient recipeIngredient, Item ingredient) {
+        if (ingredient == null) {
+            throw new ResourceNotFoundException("Ingredient item not found: " + recipeIngredient.getIngredientId());
+        }
+
+        return ItemIngredientResponse.builder()
+                .ingredientItemId(ingredient.getId())
+                .ingredientBarcode(ingredient.getBarcode())
+                .ingredientName(ingredient.getName())
+                .quantity(QuantityConversionUtil.toDisplayQuantity(ingredient, recipeIngredient.getQuantity()))
+                .baseQuantity(recipeIngredient.getQuantity())
+                .qtyUnit(ingredient.getDefaultUnit())
+                .build();
     }
 
     @Transactional

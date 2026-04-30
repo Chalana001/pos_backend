@@ -81,8 +81,8 @@ public class StockAdjustmentService {
         }
 
         // ✅ අලුතින් දැමූ කොටස: SERVICE අයිටම් වලට Stock අදාළ නොවන නිසා එය Block කිරීම
-        if (item.getItemType() == ItemType.SERVICE) {
-            throw new BadRequestException("Stock adjustments are not applicable for SERVICE items");
+        if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+            throw new BadRequestException("Stock adjustments are only applicable for stock-tracked grocery items");
         }
 
         Branch branch = branchRepository.findById(request.getBranchId())

@@ -2,5 +2,6 @@ package com.chala.posapp.entity;
 
 public enum PrintTemplateType {
     THERMAL,
-    A4
+    A4,
+    KOT
 }

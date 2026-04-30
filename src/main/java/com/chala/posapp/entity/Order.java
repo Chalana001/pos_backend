@@ -54,6 +54,17 @@ public class Order extends TenantEntity {
     private OrderType orderType;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "sale_mode", nullable = false, length = 20)
+    @Builder.Default
+    private SaleMode saleMode = SaleMode.TAKEAWAY;
+
+    @Column(name = "table_id")
+    private Long tableId;
+
+    @Column(name = "table_name", length = 120)
+    private String tableName;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private OrderStatus status;
 

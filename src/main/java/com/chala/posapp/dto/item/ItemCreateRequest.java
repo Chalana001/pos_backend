@@ -1,7 +1,9 @@
 package com.chala.posapp.dto.item;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import lombok.Data;
 
@@ -34,5 +36,12 @@ public class ItemCreateRequest {
     private List<Long> branchIds;
 
     private String imageUrl;
+
+    @JsonProperty("isKotEnabled")
+    private Boolean isKotEnabled;
+
+    @Valid
+    private List<ItemIngredientRequest> ingredients;
+
     private Boolean active;
 }

@@ -3,36 +3,47 @@ package com.chala.posapp.controller;
 import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
 import com.chala.posapp.dto.order.OrderResponse;
+import com.chala.posapp.service.InvoicePdfService;
 import com.chala.posapp.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page; // 🔴 Page import එක
+import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/orders") // 🔴 මේක /orders නිසා Frontend API එකත් අපි වෙනස් කරමු
+@RequestMapping("/orders")
 @RequiredArgsConstructor
 public class OrderController {
 
     private final OrderService orderService;
+    private final InvoicePdfService invoicePdfService;
 
-    // Cashier create orders (POS එකෙන් බිල් ගහද්දි)
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
         return ResponseEntity.ok(orderService.createOrder(request));
     }
 
-    // Get order by Invoice No (බිල් එකක් වෙනම බලන්න)
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{invoiceNo}")
     public ResponseEntity<OrderResponse> get(@PathVariable("invoiceNo") String invoiceNo) {
         return ResponseEntity.ok(orderService.getOrder(invoiceNo));
     }
 
-    // Cancel order
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping(value = "/{invoiceNo}/invoice.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> downloadInvoicePdf(@PathVariable("invoiceNo") String invoiceNo) {
+        byte[] pdfBytes = invoicePdfService.generateInvoicePdf(invoiceNo);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + invoiceNo + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfBytes);
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/{invoiceNo}/cancel")
     public ResponseEntity<OrderResponse> cancel(

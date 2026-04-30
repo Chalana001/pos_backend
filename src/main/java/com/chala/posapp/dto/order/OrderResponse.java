@@ -2,6 +2,7 @@ package com.chala.posapp.dto.order;
 
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
+import com.chala.posapp.entity.SaleMode;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -23,6 +24,9 @@ public class OrderResponse {
     private Long customerId;
     private String customerName;
     private OrderType orderType;
+    private SaleMode saleMode;
+    private Long tableId;
+    private String tableName;
     private OrderStatus status;
 
     private double subTotal;

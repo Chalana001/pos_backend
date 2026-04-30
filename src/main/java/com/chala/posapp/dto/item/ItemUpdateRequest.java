@@ -1,10 +1,11 @@
 package com.chala.posapp.dto.item;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,6 +34,12 @@ public class ItemUpdateRequest {
 
     @Size(max = 500)
     private String imageUrl;
+
+    @JsonProperty("isKotEnabled")
+    private Boolean isKotEnabled;
+
+    @Valid
+    private List<ItemIngredientRequest> ingredients;
 
     private Boolean active;
 }
