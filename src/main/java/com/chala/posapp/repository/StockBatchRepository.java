@@ -46,8 +46,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "FROM StockBatch sb " +
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
             "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
-            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.itemType, sb.item.defaultUnit", // 🔴 මෙතනත් වෙනස් කළා
-
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.itemType, sb.item.defaultUnit",
             countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
                     "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
                     "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')))")
