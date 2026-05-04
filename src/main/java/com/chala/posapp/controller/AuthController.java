@@ -1,7 +1,10 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.user.AuthResponse;
+import com.chala.posapp.dto.user.CurrentUserResponse;
 import com.chala.posapp.dto.user.LoginRequest;
+import com.chala.posapp.dto.user.OfflinePinRequest;
+import com.chala.posapp.dto.user.OfflinePinStatusResponse;
 import com.chala.posapp.dto.user.RegisterRequest;
 import com.chala.posapp.service.AuthService;
 import jakarta.validation.Valid;
@@ -27,6 +30,21 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request){
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<CurrentUserResponse> currentUser() {
+        return ResponseEntity.ok(authService.getCurrentUser());
+    }
+
+    @GetMapping("/offline-pin/status")
+    public ResponseEntity<OfflinePinStatusResponse> offlinePinStatus() {
+        return ResponseEntity.ok(authService.getOfflinePinStatus());
+    }
+
+    @PutMapping("/offline-pin")
+    public ResponseEntity<OfflinePinStatusResponse> saveOfflinePin(@Valid @RequestBody OfflinePinRequest request) {
+        return ResponseEntity.ok(authService.saveOfflinePin(request));
     }
 }
 

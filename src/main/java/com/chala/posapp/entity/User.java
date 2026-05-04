@@ -34,7 +34,12 @@ public class User extends TenantEntity {
 
     private Long branchId;
 
+    @Column(name = "offline_pin_hash", length = 255)
+    private String offlinePinHash;
+
     private LocalDateTime createdAt;
+
+    private LocalDateTime offlinePinUpdatedAt;
 
     @PrePersist
     void onCreate(){

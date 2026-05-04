@@ -3,6 +3,8 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.customer.CustomerOrderListResponse;
 import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.dto.order.OfflineSaleImportRequest;
+import com.chala.posapp.dto.order.OfflineSaleImportResponse;
 import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.order.OrderItemResponse;
 import com.chala.posapp.dto.order.OrderResponse;
@@ -80,6 +82,77 @@ public class OrderService {
 
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
+        return createOrderInternal(request, null);
+    }
+
+    @Transactional
+    public OfflineSaleImportResponse importOfflineSale(OfflineSaleImportRequest request) {
+        User user = getLoggedUser();
+        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER && user.getRole() != Role.CASHIER) {
+            throw new BadRequestException("Not allowed");
+        }
+        if (request.getOrderType() != OrderType.CASH) {
+            throw new BadRequestException("Offline import supports CASH sales only");
+        }
+        SaleMode saleMode = request.getSaleMode() == null ? SaleMode.TAKEAWAY : request.getSaleMode();
+        if (saleMode != SaleMode.TAKEAWAY) {
+            throw new BadRequestException("Offline import supports TAKEAWAY sales only");
+        }
+
+        Order existingOrder = orderRepository.findByClientSaleId(request.getClientSaleId()).orElse(null);
+        if (existingOrder != null) {
+            return OfflineSaleImportResponse.builder()
+                    .clientSaleId(request.getClientSaleId())
+                    .success(true)
+                    .orderId(existingOrder.getId())
+                    .invoiceNo(existingOrder.getInvoiceNo())
+                    .message("Already imported")
+                    .build();
+        }
+
+        CreateOrderRequest createOrderRequest = new CreateOrderRequest();
+        createOrderRequest.setBranchId(request.getBranchId());
+        createOrderRequest.setOrderType(request.getOrderType());
+        createOrderRequest.setSaleMode(saleMode);
+        createOrderRequest.setTableId(request.getTableId());
+        createOrderRequest.setCustomerId(request.getCustomerId());
+        createOrderRequest.setItems(request.getItems());
+        createOrderRequest.setBillDiscount(request.getBillDiscount());
+        createOrderRequest.setPaidAmount(request.getPaidAmount());
+        createOrderRequest.setNote(request.getNote());
+
+        OrderResponse response = createOrderInternal(
+                createOrderRequest,
+                new OfflineOrderMetadata(request.getClientSaleId(), request.getOfflineSoldAt())
+        );
+
+        return OfflineSaleImportResponse.builder()
+                .clientSaleId(request.getClientSaleId())
+                .success(true)
+                .orderId(response.getId())
+                .invoiceNo(response.getInvoiceNo())
+                .message("Imported")
+                .build();
+    }
+
+    @Transactional
+    public List<OfflineSaleImportResponse> importOfflineSales(List<OfflineSaleImportRequest> requests) {
+        List<OfflineSaleImportResponse> results = new ArrayList<>();
+        for (OfflineSaleImportRequest request : requests) {
+            try {
+                results.add(importOfflineSale(request));
+            } catch (Exception exception) {
+                results.add(OfflineSaleImportResponse.builder()
+                        .clientSaleId(request.getClientSaleId())
+                        .success(false)
+                        .message(exception.getMessage())
+                        .build());
+            }
+        }
+        return results;
+    }
+
+    private OrderResponse createOrderInternal(CreateOrderRequest request, OfflineOrderMetadata offlineOrderMetadata) {
         User user = getLoggedUser();
 
         Long branchId;
@@ -122,7 +195,14 @@ public class OrderService {
             }
 
             int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
-            StockConsumptionResult consumption = consumeStockForSale(branchId, item, itemReq, normalizedQty, batchesToUpdate);
+            StockConsumptionResult consumption = consumeStockForSale(
+                    branchId,
+                    item,
+                    itemReq,
+                    normalizedQty,
+                    batchesToUpdate,
+                    offlineOrderMetadata != null
+            );
 
             double unitPrice = itemReq.getUnitPrice();
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
@@ -180,6 +260,7 @@ public class OrderService {
 
         Order order = Order.builder()
                 .invoiceNo(invoiceNo)
+                .clientSaleId(offlineOrderMetadata != null ? offlineOrderMetadata.clientSaleId : null)
                 .branchId(branchId)
                 .receiptBranchName(branch.getName())
                 .receiptBranchAddress(branch.getAddress())
@@ -199,6 +280,9 @@ public class OrderService {
                 .dueAmount(dueAmount)
                 .note(request.getNote())
                 .createdAt(LocalDateTime.now())
+                .offlineSoldAt(offlineOrderMetadata != null ? offlineOrderMetadata.offlineSoldAt : null)
+                .importedAt(offlineOrderMetadata != null ? LocalDateTime.now() : null)
+                .offlineImported(offlineOrderMetadata != null)
                 .build();
 
         Order savedOrder = orderRepository.save(order);
@@ -379,7 +463,8 @@ public class OrderService {
             Item item,
             OrderItemRequest itemReq,
             int normalizedQty,
-            Map<Long, StockBatch> batchesToUpdate
+            Map<Long, StockBatch> batchesToUpdate,
+            boolean allowAutomaticBatchSelection
     ) {
         if (item.getItemType() == ItemType.SERVICE) {
             if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
@@ -438,7 +523,7 @@ public class OrderService {
             return new StockConsumptionResult(null, unitCost, lineCost, usages);
         }
 
-        if (itemReq.getBatchId() == null) {
+        if (itemReq.getBatchId() == null && !allowAutomaticBatchSelection) {
             throw new BadRequestException("Batch ID is missing for item: " + item.getName());
         }
 
@@ -758,6 +843,16 @@ public class OrderService {
 
         private OrderItem orderItem() {
             return orderItem;
+        }
+    }
+
+    private static final class OfflineOrderMetadata {
+        private final String clientSaleId;
+        private final LocalDateTime offlineSoldAt;
+
+        private OfflineOrderMetadata(String clientSaleId, LocalDateTime offlineSoldAt) {
+            this.clientSaleId = clientSaleId;
+            this.offlineSoldAt = offlineSoldAt;
         }
     }
 

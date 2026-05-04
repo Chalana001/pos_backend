@@ -1,7 +1,10 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.user.AuthResponse;
+import com.chala.posapp.dto.user.CurrentUserResponse;
 import com.chala.posapp.dto.user.LoginRequest;
+import com.chala.posapp.dto.user.OfflinePinRequest;
+import com.chala.posapp.dto.user.OfflinePinStatusResponse;
 import com.chala.posapp.dto.user.RegisterRequest;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
@@ -18,6 +21,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
@@ -66,7 +71,15 @@ public class AuthService {
                 .map(subscription -> subscription.getShopName())
                 .orElse(null);
 
-        return new AuthResponse(token, user.getUsername(), user.getRole().name(), user.getBranchId(), shopName);
+        return new AuthResponse(
+                user.getId(),
+                token,
+                user.getUsername(),
+                user.getRole().name(),
+                user.getBranchId(),
+                shopName,
+                hasOfflinePin(user)
+        );
     }
 
     public User getLoggedUser() {
@@ -75,5 +88,48 @@ public class AuthService {
 
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + username));
+    }
+
+    public CurrentUserResponse getCurrentUser() {
+        User user = getLoggedUser();
+        String shopName = tenantSubscriptionRepository.findByTenantId(user.getTenantId())
+                .map(subscription -> subscription.getShopName())
+                .orElse(null);
+
+        return CurrentUserResponse.builder()
+                .userId(user.getId())
+                .username(user.getUsername())
+                .role(user.getRole().name())
+                .branchId(user.getBranchId())
+                .shopName(shopName)
+                .hasOfflinePin(hasOfflinePin(user))
+                .build();
+    }
+
+    public OfflinePinStatusResponse getOfflinePinStatus() {
+        return new OfflinePinStatusResponse(hasOfflinePin(getLoggedUser()));
+    }
+
+    @Transactional
+    public OfflinePinStatusResponse saveOfflinePin(OfflinePinRequest request) {
+        User user = getLoggedUser();
+
+        if (hasOfflinePin(user)) {
+            if (request.getCurrentPin() == null || request.getCurrentPin().isBlank()) {
+                throw new BadRequestException("Current PIN is required");
+            }
+            if (!passwordEncoder.matches(request.getCurrentPin(), user.getOfflinePinHash())) {
+                throw new BadRequestException("Current PIN is incorrect");
+            }
+        }
+
+        user.setOfflinePinHash(passwordEncoder.encode(request.getNewPin()));
+        user.setOfflinePinUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+        return new OfflinePinStatusResponse(true);
+    }
+
+    private boolean hasOfflinePin(User user) {
+        return user.getOfflinePinHash() != null && !user.getOfflinePinHash().isBlank();
     }
 }

@@ -9,11 +9,13 @@ import java.time.LocalDateTime;
 @Table(
         name = "orders",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "invoice_no"})
+                @UniqueConstraint(columnNames = {"tenant_id", "invoice_no"}),
+                @UniqueConstraint(columnNames = {"tenant_id", "client_sale_id"})
         },
         indexes = {
                 @Index(name = "idx_tenant_invoice", columnList = "tenant_id, invoice_no"),
-                @Index(name = "idx_tenant_branch_order", columnList = "tenant_id, branch_id")
+                @Index(name = "idx_tenant_branch_order", columnList = "tenant_id, branch_id"),
+                @Index(name = "idx_tenant_client_sale", columnList = "tenant_id, client_sale_id")
         }
 )
 @Getter @Setter
@@ -26,6 +28,9 @@ public class Order extends TenantEntity {
 
     @Column(name = "invoice_no", nullable = false, length = 40)
     private String invoiceNo;
+
+    @Column(name = "client_sale_id", length = 100)
+    private String clientSaleId;
 
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
@@ -90,6 +95,16 @@ public class Order extends TenantEntity {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "offline_sold_at")
+    private LocalDateTime offlineSoldAt;
+
+    @Column(name = "imported_at")
+    private LocalDateTime importedAt;
+
+    @Column(name = "offline_imported", nullable = false)
+    @Builder.Default
+    private boolean offlineImported = false;
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;

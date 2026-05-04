@@ -2,10 +2,13 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.dto.order.OfflineSaleImportRequest;
+import com.chala.posapp.dto.order.OfflineSaleImportResponse;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.service.InvoicePdfService;
 import com.chala.posapp.service.OrderService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +16,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/orders")
@@ -26,6 +31,23 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
         return ResponseEntity.ok(orderService.createOrder(request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @PostMapping("/offline-import")
+    public ResponseEntity<OfflineSaleImportResponse> importOfflineSale(
+            @Valid @RequestBody OfflineSaleImportRequest request
+    ) {
+        return ResponseEntity.ok(orderService.importOfflineSale(request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @PostMapping("/offline-import/bulk")
+    public ResponseEntity<List<OfflineSaleImportResponse>> importOfflineSales(
+            @RequestBody @NotEmpty(message = "List cannot be empty")
+            List<@Valid OfflineSaleImportRequest> requests
+    ) {
+        return ResponseEntity.ok(orderService.importOfflineSales(requests));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
