@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>POS Flow Map</title>
+  <title>ZenSys POS Flow Map v1.4.0</title>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
     :root { --bg:#07111d; --panel:rgba(10,20,35,.86); --panel2:rgba(7,15,26,.96); --text:#ecf4ff; --muted:#98abc9; --blue:#58a6ff; --cyan:#52f0ff; --mint:#7ef6be; --amber:#ffc56a; --shadow:0 28px 80px rgba(0,0,0,.45); }
@@ -66,9 +66,9 @@
   <div class="app">
     <section class="hero">
       <div class="card">
-        <div class="eyebrow">POS Full Flow Interactive Map</div>
+        <div class="eyebrow">ZenSys POS v1.4.0 Full Flow Interactive Map</div>
         <h1>Click a module.<br />Click a step.<br />See the real flow.</h1>
-        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. Left side picks the module. Middle side shows the step chain. Right side shows trigger, navigation, endpoint, request DTO, and response DTO.</p>
+        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. It now includes offline sales queue import, POS cart/finalize bill fixes, financial filters, stock item detail, shift detail, branding, notifications, and version history.</p>
         <div class="legend">
           <span>Frontend trigger and navigation</span>
           <span>Request DTO and payload shape</span>
@@ -76,7 +76,7 @@
         </div>
       </div>
       <div class="metrics">
-        <div class="metric"><small>Modules</small><strong id="mCount">0</strong><div class="sub">Core POS, stock, purchase, report, and admin areas.</div></div>
+        <div class="metric"><small>Modules</small><strong id="mCount">0</strong><div class="sub">Core POS, offline, stock, financials, release, and admin areas.</div></div>
         <div class="metric"><small>Steps</small><strong id="sCount">0</strong><div class="sub">Selected module flow count.</div></div>
         <div class="metric"><small>Source</small><strong>FE + BE</strong><div class="sub">Frontend behavior first, backend mapping next.</div></div>
         <div class="metric"><small>Focus</small><strong id="focus">POS</strong><div class="sub">Main retail flow and related operational screens.</div></div>
@@ -188,8 +188,8 @@
         title: "POS Sales Flow",
         route: "/pos",
         tag: "Main Flow",
-        meta: ["Shift", "Cart", "Order"],
-        copy: "Main cashier flow with shift check, item load, cart logic, checkout, order create, and receipt print.",
+        meta: ["Shift", "Cart", "Order", "Offline"],
+        copy: "Main cashier flow with shift check, item load, cart totals, checkout, online order create, offline save, and receipt print.",
         steps: [
           {
             title: "Check Shift and Load Items",
@@ -218,6 +218,19 @@
             res: { dto: "Client state only", fields: [["cartItems[]", "updated state"], ["stockBaseQty", "validation source"]] }
           },
           {
+            title: "Calculate Cart and Finalize Bill",
+            trigger: "Change qty/discount or click Checkout",
+            summary: "Cart calculates item count, subtotal, total, and checkout amount from current cartItems instead of stale props.",
+            route: "/pos -> cart -> finalize bill",
+            nav: "Finalize bill overlay opens with current total",
+            outcome: "Item count, subtotal, total, paid amount, and balance stay synced.",
+            fe: "Client calculation only",
+            be: "None",
+            files: ["src/components/pos/Cart.jsx", "src/components/pos/CheckoutOverlay.jsx", "src/pages/POS.jsx", "src/context/LanguageContext.jsx"],
+            req: { dto: "Client cart totals", fields: [["cartItems[]", "source of truth"], ["qty", "line qty"], ["unitPrice", "line price"], ["lineDiscount", "line discount"], ["billDiscount", "bill discount"], ["paidAmount", "cash paid"]] },
+            res: { dto: "Client totals", fields: [["itemCount", "sum of cart qty"], ["subtotal", "line total before bill discount"], ["total", "final payable"], ["change", "paid minus total"]] }
+          },
+          {
             title: "Place Order",
             trigger: "Checkout -> payment type -> Place Order",
             summary: "Frontend converts cart into CreateOrderRequest and posts it.",
@@ -229,6 +242,82 @@
             files: ["src/pages/POS.jsx", "src/api/orders.api.js", "src/components/pos/CheckoutOverlay.jsx", "src/components/pos/ReceiptPrinter.jsx"],
             req: { dto: "CreateOrderRequest", fields: [["branchId", "selling branch"], ["orderType", "CASH or CREDIT"], ["customerId", "for credit"], ["billDiscount", "order discount"], ["paidAmount", "cash paid"], ["items[]", "OrderItemRequest[]"]] },
             res: { dto: "OrderResponse", fields: [["invoiceNo", "created invoice"], ["grandTotal", "net total"], ["paidAmount", "saved paid"], ["dueAmount", "credit due"], ["items[]", "saved lines"]] }
+          },
+          {
+            title: "Save Offline Sale",
+            trigger: "Place Order while offline or API is unavailable",
+            summary: "POS builds an offline invoice payload, saves it to IndexedDB, caches receipt settings, and prints an offline receipt.",
+            route: "/pos -> payment overlay",
+            nav: "Cart clears after local save; queued sale appears in Offline Queue",
+            outcome: "Sale is stored locally with OFF invoice number until it can be imported.",
+            fe: "IndexedDB offline sales store",
+            be: "None until import",
+            files: ["src/pages/POS.jsx", "src/offline/db.js", "src/components/pos/ReceiptPrinter.jsx"],
+            req: { dto: "Offline sale payload", fields: [["offlineInvoiceNo", "OFF generated no"], ["branchId", "selling branch"], ["orderType", "CASH/CREDIT"], ["items[]", "cart lines"], ["totals", "subtotal/total/paid"], ["receiptSettings", "cached layout"]] },
+            res: { dto: "Queued offline sale", fields: [["id", "local row id"], ["offlineInvoiceNo", "printable invoice"], ["createdAt", "local time"], ["lastError", "import error if any"]] }
+          }
+        ]
+      },
+      {
+        id: "offline",
+        lane: "Offline",
+        title: "Offline Sales Queue",
+        route: "/offline-sales",
+        tag: "Sync Queue",
+        meta: ["Queue", "Import", "Retry", "Print"],
+        copy: "Offline sales page manages locally saved sales, validates stock after reconnection, imports one or many rows, retries failed imports, and reprints queued receipts.",
+        steps: [
+          {
+            title: "Load Offline Queue",
+            trigger: "Open Offline Queue page",
+            summary: "Frontend reads queued offline sales from IndexedDB and displays pending, failed, and conflict rows.",
+            route: "/offline-sales",
+            nav: "Stay on offline queue",
+            outcome: "Queue table shows local invoice, total, status, lastError, and available actions.",
+            fe: "IndexedDB getOfflineSales",
+            be: "None",
+            files: ["src/pages/OfflineSalesPage.jsx", "src/offline/db.js"],
+            req: { dto: "Local DB query", fields: [["offlineSales", "Dexie table"], ["lastError", "optional failed import message"]] },
+            res: { dto: "OfflineSaleRow[]", fields: [["id", "local row id"], ["offlineInvoiceNo", "local invoice"], ["payload", "order payload"], ["lastError", "failure reason"]] }
+          },
+          {
+            title: "Refresh Stock Validation",
+            trigger: "Queue page loads or Refresh Stock is clicked",
+            summary: "Frontend fetches live POS item stock, caches it, then simulates each queued sale against current stock/batches.",
+            route: "/offline-sales",
+            nav: "Rows with conflicts are blocked from import",
+            outcome: "Stock conflict rows are marked before hitting backend import.",
+            fe: "GET /items/searchForPos",
+            be: "ItemController.searchForPos",
+            files: ["src/pages/OfflineSalesPage.jsx", "src/api/items.api.js", "src/offline/db.js"],
+            req: { dto: "Query Params", fields: [["branchId", "queued sale branch"], ["name", "optional search text"]] },
+            res: { dto: "ItemResponse[]", fields: [["itemId", "item"], ["batches[]", "live batches"], ["availableQty", "live stock"], ["stockConflict", "client flag"]] }
+          },
+          {
+            title: "Import One or Bulk Import",
+            trigger: "Click Import, Import All, or Retry Failed",
+            summary: "Frontend posts offline sale payloads to dedicated import endpoints and deletes successful local rows.",
+            route: "/offline-sales",
+            nav: "Successful imports leave queue; failed rows keep lastError",
+            outcome: "Backend creates real OrderResponse records and returns success/failure summary.",
+            fe: "POST /orders/offline-import or POST /orders/offline-import/bulk",
+            be: "OrderController.importOffline / importOfflineBulk",
+            files: ["src/pages/OfflineSalesPage.jsx", "src/api/orders.api.js", "src/offline/db.js"],
+            req: { dto: "OfflineOrderImportRequest / BulkOfflineOrderImportRequest", fields: [["offlineInvoiceNo", "local invoice"], ["branchId", "branch"], ["items[]", "order items"], ["paidAmount", "paid"], ["createdAt", "offline sale time"]] },
+            res: { dto: "OrderResponse / BulkOfflineImportResponse", fields: [["invoiceNo", "real invoice"], ["successCount", "bulk success"], ["failedRows[]", "bulk failures"], ["message", "import result"]] }
+          },
+          {
+            title: "Reprint Queued Receipt",
+            trigger: "Click Print on a queued sale",
+            summary: "Receipt printer renders the saved offline payload with cached receipt settings and ZenSys branding.",
+            route: "/offline-sales",
+            nav: "Browser print opens",
+            outcome: "Offline receipt can be printed before import is completed.",
+            fe: "Client print only",
+            be: "None",
+            files: ["src/pages/OfflineSalesPage.jsx", "src/components/pos/ReceiptPrinter.jsx", "src/offline/db.js"],
+            req: { dto: "Offline print payload", fields: [["offlineInvoiceNo", "invoice shown"], ["items[]", "saved lines"], ["receiptSettings", "cached branch settings"]] },
+            res: { dto: "Printable receipt", fields: [["templateType", "receipt template"], ["brandName", "ZenSys POS"], ["total", "printed total"]] }
           }
         ]
       },
@@ -377,6 +466,19 @@
             files: ["src/pages/Shifts.jsx", "src/api/shifts.api.js"],
             req: { dto: "CloseShiftRequest", fields: [["countedCash", "required"], ["note", "optional"]] },
             res: { dto: "ShiftResponse", fields: [["status", "CLOSED"], ["countedCash", "submitted"], ["expectedCash", "system"], ["cashDifference", "variance"], ["closedAt", "time"]] }
+          },
+          {
+            title: "View Shift Details",
+            trigger: "Open shift history row",
+            summary: "Shift detail page loads one shift with paged sales and expense records linked to that shift.",
+            route: "/shifts/history/:id",
+            nav: "History row -> shift details",
+            outcome: "Manager can review shift totals, sales, expenses, cash drops, and close variance.",
+            fe: "GET /shifts/{shiftId} + /shifts/{shiftId}/orders + /shifts/{shiftId}/expenses",
+            be: "ShiftController.getById / getOrders / getExpenses",
+            files: ["src/pages/ShiftDetailsPage.jsx", "src/api/shifts.api.js"],
+            req: { dto: "Path + Query Params", fields: [["shiftId", "selected shift"], ["page", "sales/expense page"], ["size", "page size"]] },
+            res: { dto: "ShiftResponse + Page<OrderResponse> + Page<ExpenseResponse>", fields: [["openingCash", "opened with"], ["expectedCash", "system cash"], ["cashDifference", "variance"], ["content[]", "paged rows"]] }
           }
         ]
       },
@@ -392,15 +494,28 @@
           {
             title: "Load Branch Stock",
             trigger: "Open stock page or change search/page",
-            summary: "Frontend loads branch stock rows with quantity and action buttons.",
+            summary: "Frontend loads branch stock rows with quantity, stock value, filters, and action buttons.",
             route: "/stock",
-            nav: "Adjust and Transfer modals launch from row actions",
-            outcome: "Inventory table renders with stock value and status.",
-            fe: "GET /stock/branch/{branchId}",
-            be: "StockController.branchStock",
+            nav: "Adjust, Transfer, and Details launch from row actions",
+            outcome: "Inventory table renders with stock value, item status, and pagination.",
+            fe: "GET /stock/branch/{branchId} + GET /stock/branch/{branchId}/value",
+            be: "StockController.listBranchStock / stockValue",
             files: ["src/pages/Stock.jsx", "src/api/stock.api.js"],
-            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["page", "page no"], ["size", "page size"]] },
-            res: { dto: "Page<StockResponseWithItems>", fields: [["itemId", "item id"], ["totalQuantity", "base qty"], ["displayQuantity", "display qty"], ["itemType", "NORMAL/WEIGHT"], ["defaultUnit", "unit"]] }
+            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["categoryId", "optional"], ["subCategoryId", "optional"], ["supplierId", "optional"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<StockResponseWithItems> + StockValueResponse", fields: [["itemId", "item id"], ["totalQuantity", "base qty"], ["displayQuantity", "display qty"], ["itemType", "NORMAL/WEIGHT"], ["totalStockValue", "stock value"]] }
+          },
+          {
+            title: "View Stock Item Details",
+            trigger: "Click stock item details action",
+            summary: "Stock item detail page loads stock batches and purchase history with supplier/status/date/search filters.",
+            route: "/stock/item/:id",
+            nav: "Stock row -> item detail page",
+            outcome: "User sees item quantity, batch details, and filtered purchase history.",
+            fe: "GET /stock/branch/{branchId}/item/{itemId} + /purchases",
+            be: "StockController.getItemDetails / getItemPurchaseHistory",
+            files: ["src/pages/StockItemDetailsPage.jsx", "src/api/stock.api.js", "src/api/suppliers.api.js"],
+            req: { dto: "Path + Query Params", fields: [["branchId", "selected branch"], ["itemId", "selected item"], ["supplierId", "optional"], ["status", "purchase status"], ["from/to", "date range"], ["search", "invoice/item search"], ["page", "page no"]] },
+            res: { dto: "StockItemDetailsResponse + Page<StockPurchaseHistoryResponse>", fields: [["itemName", "item"], ["batches[]", "batch details"], ["availableQuantity", "stock"], ["content[]", "purchase history"], ["supplierName", "supplier"]] }
           },
           {
             title: "Create Stock Adjustment",
@@ -437,8 +552,21 @@
         route: "/expenses and /cash-drops",
         tag: "Drawer Ops",
         meta: ["Expense", "Cash drop"],
-        copy: "Daily drawer-side operations. Expenses remove money and cash drops move money out during an open shift.",
+        copy: "Daily drawer-side operations. Expenses remove money and cash drops move money out during an open shift. v1.4.0 adds summaries, filters, cashier views, and pagination.",
         steps: [
+          {
+            title: "Load Expenses With Filters",
+            trigger: "Open expenses page or change date/search/category/cashier/page",
+            summary: "Expenses page defaults to today's date and loads filtered, paginated expense rows.",
+            route: "/expenses",
+            nav: "Stay on expenses page",
+            outcome: "Expense table refreshes with matching rows and page controls.",
+            fe: "GET /expenses",
+            be: "ExpenseController.getAll",
+            files: ["src/pages/Expenses.jsx", "src/api/expenses.api.js", "src/api/users.api.js"],
+            req: { dto: "Query Params", fields: [["from", "date start"], ["to", "date end"], ["search", "text search"], ["category", "expense category"], ["cashierId", "admin/manager filter"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<ExpenseResponse>", fields: [["content[]", "expense rows"], ["amount", "expense amount"], ["category", "category"], ["cashierName", "recorded by"], ["totalPages", "pagination"]] }
+          },
           {
             title: "Record Expense",
             trigger: "Click Record Expense and submit modal",
@@ -451,6 +579,19 @@
             files: ["src/pages/Expenses.jsx", "src/api/expenses.api.js"],
             req: { dto: "CreateExpenseRequest", fields: [["category", "expense enum"], ["amount", "required"], ["branchId", "branch"], ["fromDrawer", "drawer flag"], ["description", "required"]] },
             res: { dto: "ExpenseResponse", fields: [["id", "expense id"], ["amount", "saved amount"], ["branchName", "branch"], ["shiftId", "linked shift"], ["cashierName", "recorded by"]] }
+          },
+          {
+            title: "Load Cash Drops With Summary",
+            trigger: "Open cash drops page or change filter/page",
+            summary: "Cash Drops page loads paged drops and a summary card set for selected date/search/cashier filters.",
+            route: "/cash-drops",
+            nav: "Stay on cash-drops page",
+            outcome: "Total drop amount, drop count, average drop, and table rows update together.",
+            fe: "GET /cash-drops + GET /cash-drops/summary",
+            be: "CashDropController.getAll / getSummary",
+            files: ["src/pages/CashDrops.jsx", "src/api/cashDrops.api.js", "src/api/users.api.js"],
+            req: { dto: "Query Params", fields: [["from", "date start"], ["to", "date end"], ["search", "reason/user"], ["cashierId", "admin/manager filter"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<CashDropResponse> + CashDropSummaryResponse", fields: [["content[]", "drop rows"], ["totalAmount", "sum"], ["dropCount", "count"], ["averageAmount", "average"], ["cashierName", "recorded by"]] }
           },
           {
             title: "Record Cash Drop",
@@ -588,6 +729,69 @@
             files: ["src/pages/Users.jsx", "src/api/users.api.js"],
             req: { dto: "CreateUserRequest / AssignBranchRequest / UpdateUserStatusRequest / ResetPasswordRequest", fields: [["username", "create only"], ["password", "create only"], ["role", "user role"], ["branchId", "assignment"], ["enabled", "status update"], ["newPassword", "reset value"]] },
             res: { dto: "UserResponse", fields: [["id", "user id"], ["username", "login"], ["role", "role"], ["enabled", "status"], ["branchId", "branch"]] }
+          }
+        ]
+      },
+      {
+        id: "system-release",
+        lane: "Release",
+        title: "Branding, Notifications, Version History",
+        route: "/version-history and shell UI",
+        tag: "v1.4.0",
+        meta: ["Logo", "Alerts", "Changelog"],
+        copy: "v1.4.0 adds ZenSys POS branding, header alert center, login-time release dialog, and a saved version history page.",
+        steps: [
+          {
+            title: "Show New Version Dialog",
+            trigger: "User logs in after APP_VERSION changes",
+            summary: "Layout mounts VersionUpdateDialog, checks localStorage per user, and shows v1.4.0 highlights once.",
+            route: "Protected layout after login",
+            nav: "Close dialog or View full version history",
+            outcome: "User sees the release summary once per version.",
+            fe: "Client localStorage check",
+            be: "None",
+            files: ["src/components/version/VersionUpdateDialog.jsx", "src/data/versionHistory.js", "src/components/layout/Layout.jsx"],
+            req: { dto: "Client version state", fields: [["APP_VERSION", "1.4.0"], ["storageKey", "tenant/user scoped"], ["LATEST_VERSION", "dialog content"]] },
+            res: { dto: "Dialog state", fields: [["open", "true when not seen"], ["seenVersion", "saved after close"], ["highlights[]", "release highlights"]] }
+          },
+          {
+            title: "Browse Version History",
+            trigger: "Click Version History in sidebar or user menu",
+            summary: "Version History page renders saved changelog entries from the shared version history data file.",
+            route: "/version-history",
+            nav: "Sidebar/user menu -> version history page",
+            outcome: "All release notes are visible version by version.",
+            fe: "Static route render",
+            be: "None",
+            files: ["src/pages/VersionHistoryPage.jsx", "src/routes/AppRoutes.jsx", "src/data/versionHistory.js"],
+            req: { dto: "Static data", fields: [["VERSION_HISTORY[]", "release list"], ["sections[]", "Added/Improved/Fixed"], ["releaseDate", "release date"]] },
+            res: { dto: "Rendered changelog", fields: [["version", "version number"], ["summary", "release summary"], ["items[]", "change list"]] }
+          },
+          {
+            title: "Render ZenSys Branding",
+            trigger: "App shell loads",
+            summary: "Sidebar, manifest, and receipt/offline print areas use ZenSys POS brand constants and logo assets.",
+            route: "Global UI shell",
+            nav: "Brand visible across app",
+            outcome: "POS System text is replaced with ZenSys POS logo and install metadata.",
+            fe: "Static assets and constants",
+            be: "None",
+            files: ["src/utils/branding.js", "src/components/layout/Sidebar.jsx", "public/branding/zensys-logo.png", "public/manifest.webmanifest"],
+            req: { dto: "Brand constants", fields: [["BRAND_NAME", "ZenSys POS"], ["BRAND_LOGO", "/branding/zensys-logo.png"], ["theme_color", "PWA theme"]] },
+            res: { dto: "Rendered brand", fields: [["logo", "sidebar/PWA logo"], ["brandName", "display name"], ["shortName", "install name"]] }
+          },
+          {
+            title: "Header Alert Center",
+            trigger: "Header loads or offline queue/network/stock state changes",
+            summary: "Header aggregates offline queue, failed imports, stock conflicts, low stock, no open shift, subscription, and credit warnings.",
+            route: "Global header",
+            nav: "Click alert -> related page",
+            outcome: "Active operational warnings are visible from the top bar.",
+            fe: "GET low stock/customers + IndexedDB queue checks",
+            be: "StockController.lowStock + CustomerController.getAll",
+            files: ["src/components/layout/Header.jsx", "src/api/stock.api.js", "src/api/customers.api.js", "src/offline/db.js"],
+            req: { dto: "Mixed client/API checks", fields: [["offlineQueueCount", "local queue"], ["selectedBranchId", "branch"], ["lowStock", "stock API"], ["customers", "credit warning source"]] },
+            res: { dto: "Notification[]", fields: [["id", "alert id"], ["message", "alert text"], ["tone", "blue/amber/red/emerald"], ["action", "navigation target"]] }
           }
         ]
       }
