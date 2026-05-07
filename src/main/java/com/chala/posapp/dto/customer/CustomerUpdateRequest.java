@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.customer;
 
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -15,6 +16,7 @@ public class CustomerUpdateRequest {
     @Size(max = 255)
     private String address;
 
+    @PositiveOrZero
     private Double creditLimit;
 
     private Boolean active;

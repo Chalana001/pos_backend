@@ -3,13 +3,17 @@ package com.chala.posapp.controller;
 import com.chala.posapp.dto.stock.CancelTransferRequest;
 import com.chala.posapp.dto.stock.CreateStockTransferRequest;
 import com.chala.posapp.dto.stock.StockTransferResponse;
+import com.chala.posapp.entity.stock.StockTransferStatus;
 import com.chala.posapp.service.StockTransferService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -68,5 +72,33 @@ public class StockTransferController {
     @GetMapping("/incoming/{toBranchId}")
     public ResponseEntity<List<StockTransferResponse>> incoming(@PathVariable("toBranchId") Long toBranchId) {
         return ResponseEntity.ok(transferService.listIncoming(toBranchId));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/outgoing")
+    public ResponseEntity<Page<StockTransferResponse>> outgoingPage(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "status", required = false) StockTransferStatus status,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(transferService.listOutgoingPage(branchId, search, status, from, to, page, size));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/incoming")
+    public ResponseEntity<Page<StockTransferResponse>> incomingPage(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "status", required = false) StockTransferStatus status,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(transferService.listIncomingPage(branchId, search, status, from, to, page, size));
     }
 }

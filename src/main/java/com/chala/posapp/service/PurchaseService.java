@@ -43,7 +43,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -292,44 +294,50 @@ public class PurchaseService {
     }
 
     public Page<PurchaseResponse> getAllPurchases(int page, int size) {
+        return getAllPurchases(null, null, null, null, null, page, size);
+    }
+
+    public Page<PurchaseResponse> getAllPurchases(
+            String search,
+            Long supplierId,
+            PurchaseStatus status,
+            LocalDate from,
+            LocalDate to,
+            int page,
+            int size
+    ) {
         User user = getLoggedUser();
-        Pageable pageable = PageRequest.of(page, size, Sort.by("id").descending());
-        if (isAdminLike(user)) {
-            Page<Purchase> purchasePage = purchaseRepository.findAllByOrderByIdDesc(pageable);
-            return purchasePage.map(purchase -> PurchaseResponse.builder()
-                    .purchaseId(purchase.getId())
-                    .invoiceNo(purchase.getInvoiceNo())
-                    .supplierName(purchase.getSupplier().getName())
-                    .grandTotal(purchase.getGrandTotal())
-                    .status(normalizeStatus(purchase))
-                    .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
-                    .createdAt(purchase.getCreatedAt())
-                    .canceledAt(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCanceledAt() : null)
-                    .grnList(null)
-                    .build());
-        }
+        Pageable pageable = PageRequest.of(page, size);
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+        LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
+        LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
+        Long managerBranchId = isAdminLike(user) ? null : requireAssignedBranch(user);
 
-        List<Purchase> accessiblePurchases = purchaseRepository.findAllByOrderByIdDesc().stream()
-                .filter(purchase -> canAccessPurchase(user, purchase))
-                .toList();
+        Page<Purchase> purchasePage = purchaseRepository.findHistory(
+                normalizedSearch,
+                supplierId,
+                status,
+                fromDateTime,
+                toDateTime,
+                managerBranchId,
+                pageable
+        );
 
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), accessiblePurchases.size());
-        List<PurchaseResponse> responses = accessiblePurchases.subList(Math.min(start, end), end).stream()
-                .map(purchase -> PurchaseResponse.builder()
-                        .purchaseId(purchase.getId())
-                        .invoiceNo(purchase.getInvoiceNo())
-                        .supplierName(purchase.getSupplier().getName())
-                        .grandTotal(purchase.getGrandTotal())
-                        .status(normalizeStatus(purchase))
-                        .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
-                        .createdAt(purchase.getCreatedAt())
-                        .canceledAt(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCanceledAt() : null)
-                        .grnList(null)
-                        .build())
-                .toList();
+        return purchasePage.map(this::mapListResponse);
+    }
 
-        return new PageImpl<>(responses, pageable, accessiblePurchases.size());
+    private PurchaseResponse mapListResponse(Purchase purchase) {
+        return PurchaseResponse.builder()
+                .purchaseId(purchase.getId())
+                .invoiceNo(purchase.getInvoiceNo())
+                .supplierName(purchase.getSupplier().getName())
+                .grandTotal(purchase.getGrandTotal())
+                .status(normalizeStatus(purchase))
+                .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
+                .createdAt(purchase.getCreatedAt())
+                .canceledAt(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCanceledAt() : null)
+                .grnList(null)
+                .build();
     }
 
     public PurchaseResponse getPurchaseById(Long id) {

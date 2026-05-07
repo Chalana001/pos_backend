@@ -33,6 +33,14 @@ public class UserManagementController {
         return ResponseEntity.ok(userManagementService.listUsers());
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/sales-filter")
+    public ResponseEntity<List<UserResponse>> salesFilterUsers(
+            @RequestParam(value = "branchId", required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(userManagementService.getSalesFilterUsers(branchId));
+    }
+
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> get(@PathVariable("id") Long id) { // Noma danna

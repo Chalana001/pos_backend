@@ -1,12 +1,14 @@
 package com.chala.posapp.repository;
 
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -73,4 +75,39 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
             "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))")
     Page<Item> searchItems(@Param("search") String search, Pageable pageable);
+
+    @Query("""
+            SELECT i FROM Item i
+            LEFT JOIN i.subCategory sc
+            LEFT JOIN sc.category c
+            WHERE (:search IS NULL OR :search = ''
+                OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR CONCAT('', i.id) LIKE CONCAT('%', :search, '%'))
+            AND (:categoryId IS NULL OR c.id = :categoryId)
+            AND (:subCategoryId IS NULL OR sc.id = :subCategoryId)
+            AND (:itemType IS NULL OR i.itemType = :itemType)
+            AND (:active IS NULL OR i.active = :active)
+            AND (:kotEnabled IS NULL OR i.kotEnabled = :kotEnabled)
+            AND (:priceAmount IS NULL OR :priceOperator IS NULL OR :priceOperator = 'ALL'
+                OR (:priceField = 'COST' AND :priceOperator = 'EQUAL' AND i.costPrice = :priceAmount)
+                OR (:priceField = 'COST' AND :priceOperator = 'GREATER_THAN' AND i.costPrice > :priceAmount)
+                OR (:priceField = 'COST' AND :priceOperator = 'LESS_THAN' AND i.costPrice < :priceAmount)
+                OR (:priceField = 'SELLING' AND :priceOperator = 'EQUAL' AND i.sellingPrice = :priceAmount)
+                OR (:priceField = 'SELLING' AND :priceOperator = 'GREATER_THAN' AND i.sellingPrice > :priceAmount)
+                OR (:priceField = 'SELLING' AND :priceOperator = 'LESS_THAN' AND i.sellingPrice < :priceAmount))
+            """)
+    Page<Item> searchItemsWithFilters(
+            @Param("search") String search,
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId,
+            @Param("itemType") ItemType itemType,
+            @Param("active") Boolean active,
+            @Param("kotEnabled") Boolean kotEnabled,
+            @Param("priceField") String priceField,
+            @Param("priceOperator") String priceOperator,
+            @Param("priceAmount") BigDecimal priceAmount,
+            Pageable pageable);
 }

@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 public class StockAdjustmentResponse {
     private Long id;
     private Long branchId;
+    private String branchName;
     private Long itemId;
     private String itemBarcode;
     private String itemName;
@@ -24,5 +25,6 @@ public class StockAdjustmentResponse {
     private MeasurementUnit qtyUnit;
     private String reason;
     private Long userId;
+    private String username;
     private LocalDateTime createdAt;
 }

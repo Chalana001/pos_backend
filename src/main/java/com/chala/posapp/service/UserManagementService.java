@@ -15,6 +15,7 @@ import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.UserRepository;
 import org.jspecify.annotations.Nullable;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,12 @@ public class UserManagementService {
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
+
+    private User getLoggedUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
 
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
@@ -140,5 +147,32 @@ public class UserManagementService {
         return cashiers.stream()
                 .map(this::map)
                 .collect(Collectors.toList());
+    }
+
+    public List<UserResponse> getSalesFilterUsers(Long branchId) {
+        User currentUser = getLoggedUser();
+        Long effectiveBranchId = branchId != null && branchId > 0 ? branchId : null;
+
+        if (currentUser.getRole() == Role.MANAGER) {
+            if (currentUser.getBranchId() == null) {
+                throw new BadRequestException("User branch not assigned");
+            }
+            if (effectiveBranchId != null && !effectiveBranchId.equals(currentUser.getBranchId())) {
+                throw new BadRequestException("Cannot access another branch");
+            }
+            effectiveBranchId = currentUser.getBranchId();
+        }
+
+        if (effectiveBranchId != null && !branchRepository.existsById(effectiveBranchId)) {
+            throw new ResourceNotFoundException("Branch not found in the system");
+        }
+
+        return userRepository.findSalesFilterUsers(
+                        List.of(Role.ADMIN, Role.MANAGER, Role.CASHIER),
+                        effectiveBranchId
+                )
+                .stream()
+                .map(this::map)
+                .toList();
     }
 }

@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
 import com.chala.posapp.dto.shift.ShiftResponse;
@@ -38,6 +39,7 @@ public class ShiftService {
     private final OrderRepository orderRepository;
     private final AuthService authService;
     private final BranchRepository branchRepository;
+    private final CustomerRepository customerRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -391,6 +393,66 @@ public class ShiftService {
         return shiftPage.map(this::map);
     }
 
+    public ShiftResponse getShift(Long shiftId) {
+        User user = getLoggedUser();
+        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        return map(shift);
+    }
+
+    public Page<OrderResponse> getShiftOrders(Long shiftId, int page, int size) {
+        User user = getLoggedUser();
+        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return orderRepository.findShiftOrders(
+                        shift.getBranchId(),
+                        shift.getCashierUserId(),
+                        shift.getOpenedAt(),
+                        shift.getClosedAt(),
+                        pageable
+                )
+                .map(this::mapOrderSummary);
+    }
+
+    public Page<ExpenseResponse> getShiftExpenses(Long shiftId, int page, int size) {
+        User user = getLoggedUser();
+        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return expenseRepository.findByShiftId(shift.getId(), pageable).map(this::mapExpenseSummary);
+    }
+
+    private CashShift getShiftForAdminOrManager(Long shiftId, User user) {
+        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+            throw new BadRequestException("Not allowed");
+        }
+
+        CashShift shift = cashShiftRepository.findById(shiftId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+        ensureManagerBranchAccess(user, shift.getBranchId());
+        return shift;
+    }
+
+    private ExpenseResponse mapExpenseSummary(Expense expense) {
+        String cashierName = userRepository.findById(expense.getCashierUserId())
+                .map(User::getUsername)
+                .orElse("Unknown");
+        String branchName = branchRepository.findById(expense.getBranchId())
+                .map(Branch::getName)
+                .orElse("Unknown");
+
+        return ExpenseResponse.builder()
+                .id(expense.getId())
+                .amount(expense.getAmount())
+                .category(expense.getCategory().name())
+                .description(expense.getDescription())
+                .branchId(expense.getBranchId())
+                .branchName(branchName)
+                .shiftId(expense.getShiftId())
+                .cashierId(expense.getCashierUserId())
+                .cashierName(cashierName)
+                .createdAt(expense.getCreatedAt())
+                .build();
+    }
+
 //    @Transactional
 //    public ShiftResponse closeShiftById(Long shiftId, CloseShiftRequest request) {
 //
@@ -582,6 +644,45 @@ public class ShiftService {
                     .ifPresent(user -> response.setCashierName(user.getUsername()));
         }
         return response;
+    }
+
+    private OrderResponse mapOrderSummary(Order order) {
+        String customerName = "Walk-in Customer";
+        if (order.getCustomerId() != null) {
+            customerName = customerRepository.findById(order.getCustomerId())
+                    .map(Customer::getName)
+                    .orElse("Unknown Customer");
+        }
+
+        String cashierName = userRepository.findById(order.getCashierUserId())
+                .map(User::getUsername)
+                .orElse(null);
+
+        return OrderResponse.builder()
+                .id(order.getId())
+                .invoiceNo(order.getInvoiceNo())
+                .branchId(order.getBranchId())
+                .branchName(order.getReceiptBranchName())
+                .branchAddress(order.getReceiptBranchAddress())
+                .branchPhone(order.getReceiptBranchPhone())
+                .branchLogo(order.getReceiptBranchLogo())
+                .cashierUserId(order.getCashierUserId())
+                .cashierName(cashierName)
+                .customerId(order.getCustomerId())
+                .customerName(customerName)
+                .orderType(order.getOrderType())
+                .saleMode(order.getSaleMode())
+                .tableId(order.getTableId())
+                .tableName(order.getTableName())
+                .status(order.getStatus())
+                .subTotal(order.getSubTotal())
+                .billDiscount(order.getBillDiscount())
+                .grandTotal(order.getGrandTotal())
+                .paidAmount(order.getPaidAmount())
+                .dueAmount(order.getDueAmount())
+                .note(order.getNote())
+                .createdAt(order.getCreatedAt())
+                .build();
     }
 
 }

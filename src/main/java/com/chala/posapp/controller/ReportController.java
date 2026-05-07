@@ -56,8 +56,9 @@ public class ReportController {
             @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "itemType", required = false) String itemType,
+            @RequestParam(name = "rankBy", defaultValue = "REVENUE") String rankBy,
             @RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit, itemType));
+        return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit, itemType, rankBy));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

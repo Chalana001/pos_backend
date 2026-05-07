@@ -52,4 +52,56 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByInvoiceNoContainingIgnoreCaseAndBranchId(String search, Long branchId, Pageable pageable);
 
     Page<Order> findByBranchId(Long branchId, Pageable pageable);
+
+    @Query("""
+        SELECT o
+        FROM Order o
+        WHERE o.branchId = :branchId
+          AND o.cashierUserId = :cashierId
+          AND o.createdAt >= :from
+          AND (:to IS NULL OR o.createdAt <= :to)
+        """)
+    Page<Order> findShiftOrders(
+            @Param("branchId") Long branchId,
+            @Param("cashierId") Long cashierId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            Pageable pageable
+    );
+
+    @Query("""
+        SELECT o
+        FROM Order o
+        LEFT JOIN Customer c ON c.id = o.customerId
+        LEFT JOIN User u ON u.id = o.cashierUserId
+        WHERE (:branchId IS NULL OR o.branchId = :branchId)
+          AND (:search IS NULL OR :search = ''
+               OR LOWER(o.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(c.phone) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(u.username) LIKE LOWER(CONCAT('%', :search, '%')))
+          AND (:from IS NULL OR o.createdAt >= :from)
+          AND (:to IS NULL OR o.createdAt <= :to)
+          AND (:orderType IS NULL OR o.orderType = :orderType)
+          AND (:customerType IS NULL OR :customerType = 'ALL'
+               OR (:customerType = 'WALK_IN' AND o.customerId IS NULL)
+               OR (:customerType = 'CUSTOMER' AND o.customerId IS NOT NULL))
+          AND (:cashierId IS NULL OR o.cashierUserId = :cashierId)
+          AND (:totalAmount IS NULL OR :totalOperator IS NULL OR :totalOperator = 'ALL'
+               OR (:totalOperator = 'EQUAL' AND o.grandTotal = :totalAmount)
+               OR (:totalOperator = 'GREATER_THAN' AND o.grandTotal > :totalAmount)
+               OR (:totalOperator = 'LESS_THAN' AND o.grandTotal < :totalAmount))
+        """)
+    Page<Order> searchOrders(
+            @Param("search") String search,
+            @Param("branchId") Long branchId,
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to,
+            @Param("orderType") OrderType orderType,
+            @Param("customerType") String customerType,
+            @Param("cashierId") Long cashierId,
+            @Param("totalOperator") String totalOperator,
+            @Param("totalAmount") Double totalAmount,
+            Pageable pageable
+    );
 }

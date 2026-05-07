@@ -86,23 +86,36 @@ public class ReportService {
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        return topSelling(requestedBranchId, from, to, limit, null);
+        return topSelling(requestedBranchId, from, to, limit, null, "REVENUE");
     }
 
     public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType) {
+        return topSelling(requestedBranchId, from, to, limit, itemType, "REVENUE");
+    }
+
+    public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType, String rankBy) {
         String tenantId = TenantContext.getTenant();
         Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
+        String normalizedRankBy = normalizeRankBy(rankBy);
 
-        return reportRepository.topSellingRaw(tenantId, branchId, normalizedItemType, range.from(), range.to(), limit).stream()
-                .map(r -> TopSellingItemResponse.builder()
-                        .itemId(((Number) r[0]).longValue())
-                        .itemName((String) r[1])
-                        .itemType(parseItemType(r[2]))
-                        .qtySold(((Number) r[3]).doubleValue())
-                        .revenue(((Number) r[4]).doubleValue())
-                        .build())
+        return reportRepository.topSellingRaw(tenantId, branchId, normalizedItemType, normalizedRankBy, range.from(), range.to(), limit).stream()
+                .map(r -> {
+                    double revenue = ((Number) r[5]).doubleValue();
+                    double profit = ((Number) r[7]).doubleValue();
+                    return TopSellingItemResponse.builder()
+                            .itemId(((Number) r[0]).longValue())
+                            .itemName((String) r[1])
+                            .itemType(parseItemType(r[2]))
+                            .qtyUnit(r[3] != null ? r[3].toString() : null)
+                            .qtySold(((Number) r[4]).doubleValue())
+                            .revenue(revenue)
+                            .cost(((Number) r[6]).doubleValue())
+                            .profit(profit)
+                            .marginPercent(revenue == 0 ? 0 : (profit / revenue) * 100)
+                            .build();
+                })
                 .toList();
     }
 
@@ -256,9 +269,9 @@ public class ReportService {
         double grossProfit = 0;
 
         for (Object[] row : rawData) {
-            totalRevenue += ((Number) row[3]).doubleValue();
-            totalCost += ((Number) row[4]).doubleValue();
-            grossProfit += ((Number) row[5]).doubleValue();
+            totalRevenue += ((Number) row[4]).doubleValue();
+            totalCost += ((Number) row[5]).doubleValue();
+            grossProfit += ((Number) row[6]).doubleValue();
         }
 
         double totalExpenses = reportRepository.getTotalExpenses(tenantId, branchId, range.from(), range.to());
@@ -292,6 +305,17 @@ public class ReportService {
         } catch (IllegalArgumentException ex) {
             throw new BadRequestException("Invalid itemType: " + itemType);
         }
+    }
+
+    private String normalizeRankBy(String rankBy) {
+        if (rankBy == null || rankBy.isBlank()) {
+            return "REVENUE";
+        }
+        String normalized = rankBy.trim().toUpperCase();
+        if (!List.of("REVENUE", "QUANTITY", "PROFIT").contains(normalized)) {
+            throw new BadRequestException("Invalid rankBy: " + rankBy);
+        }
+        return normalized;
     }
 
     private ItemType parseItemType(Object value) {

@@ -25,11 +25,16 @@ import com.chala.posapp.repository.StockTransferRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -305,6 +310,90 @@ public class StockTransferService {
         return transferRepository.findByToBranchIdOrderByRequestedAtDesc(toBranchId).stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
+    }
+
+    public Page<StockTransferResponse> listOutgoingPage(
+            Long fromBranchId,
+            String search,
+            StockTransferStatus status,
+            LocalDate from,
+            LocalDate to,
+            int page,
+            int size
+    ) {
+        User user = getLoggedUser();
+        Long effectiveBranchId = resolveScopedBranchId(user, fromBranchId);
+        LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
+        LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+
+        Page<StockTransfer> transfers = transferRepository.findOutgoingHistory(
+                effectiveBranchId,
+                normalizedSearch,
+                status,
+                fromDateTime,
+                toDateTime,
+                PageRequest.of(page, size)
+        );
+
+        List<StockTransferResponse> content = transfers.getContent().stream()
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
+                .toList();
+        return new PageImpl<>(content, transfers.getPageable(), transfers.getTotalElements());
+    }
+
+    public Page<StockTransferResponse> listIncomingPage(
+            Long toBranchId,
+            String search,
+            StockTransferStatus status,
+            LocalDate from,
+            LocalDate to,
+            int page,
+            int size
+    ) {
+        User user = getLoggedUser();
+        Long effectiveBranchId = resolveScopedBranchId(user, toBranchId);
+        LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
+        LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+
+        Page<StockTransfer> transfers = transferRepository.findIncomingHistory(
+                effectiveBranchId,
+                normalizedSearch,
+                status,
+                fromDateTime,
+                toDateTime,
+                PageRequest.of(page, size)
+        );
+
+        List<StockTransferResponse> content = transfers.getContent().stream()
+                .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
+                .toList();
+        return new PageImpl<>(content, transfers.getPageable(), transfers.getTotalElements());
+    }
+
+    private Long resolveScopedBranchId(User user, Long branchId) {
+        if (isAdminLike(user)) {
+            return branchId != null && branchId > 0 ? branchId : null;
+        }
+
+        if (user.getRole() != Role.MANAGER) {
+            throw new BadRequestException("Not allowed");
+        }
+
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("Manager branch not assigned");
+        }
+
+        if (branchId == null || branchId == 0L) {
+            return user.getBranchId();
+        }
+
+        if (!user.getBranchId().equals(branchId)) {
+            throw new BadRequestException("Manager can only access their branch");
+        }
+
+        return branchId;
     }
 
     private void receiveIntoDestinationBatch(StockTransfer transfer, Branch toBranch, StockBatch sourceBatch, StockTransferItem transferItem) {

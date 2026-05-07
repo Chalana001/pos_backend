@@ -2,11 +2,13 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.CreateExpenseRequest;
 import com.chala.posapp.dto.ExpenseResponse;
+import com.chala.posapp.entity.ExpenseCategory;
 import com.chala.posapp.service.ExpenseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,11 +33,15 @@ public class ExpenseController {
     @GetMapping
     public ResponseEntity<Page<ExpenseResponse>> getExpenses(
             @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "cashierId", required = false) Long cashierId,
+            @RequestParam(name = "category", required = false) ExpenseCategory category,
+            @RequestParam(name = "shiftId", required = false) Long shiftId,
+            @RequestParam(name = "search", required = false) String search,
             @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
-            Pageable pageable
+            @PageableDefault(sort = "createdAt", direction = org.springframework.data.domain.Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(expenseService.getFilteredExpenses(branchId, from, to, pageable));
+        return ResponseEntity.ok(expenseService.getFilteredExpenses(branchId, cashierId, category, shiftId, search, from, to, pageable));
     }
 
 }

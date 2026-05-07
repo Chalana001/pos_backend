@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -247,9 +248,19 @@ public class OrderService {
             dueAmount = grandTotal;
             customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
-            if (customer.getCreditLimit() != null && customer.getCreditLimit() > 0
-                    && customer.getDueAmount() + dueAmount > customer.getCreditLimit()) {
-                throw new BadRequestException("Customer credit limit exceeded");
+            if (!customer.isActive()) {
+                throw new BadRequestException("Cannot create credit sale for inactive customer");
+            }
+            if (customer.getCreditLimit() != null) {
+                double projectedDueAmount = customer.getDueAmount() + dueAmount;
+                if (projectedDueAmount > customer.getCreditLimit()) {
+                    throw new BadRequestException(String.format(
+                            "Customer credit limit exceeded. Current due: %.2f, sale amount: %.2f, limit: %.2f",
+                            customer.getDueAmount(),
+                            dueAmount,
+                            customer.getCreditLimit()
+                    ));
+                }
             }
         } else {
             if (paidAmount < grandTotal) {
@@ -376,7 +387,19 @@ public class OrderService {
         return mapToOrderResponse(order, true);
     }
 
-    public Page<OrderResponse> getAllOrders(String search, int page, int size, String branchIdString) {
+    public Page<OrderResponse> getAllOrders(
+            String search,
+            int page,
+            int size,
+            String branchIdString,
+            String from,
+            String to,
+            String orderType,
+            String customerType,
+            Long cashierId,
+            String totalOperator,
+            Double totalAmount
+    ) {
         User user = getLoggedUser();
 
         if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
@@ -384,7 +407,6 @@ public class OrderService {
         }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        Page<Order> orderPage;
 
         Long branchId = 0L;
         if (branchIdString != null && !branchIdString.isEmpty()) {
@@ -409,18 +431,56 @@ public class OrderService {
             }
         }
 
-        boolean hasSearch = search != null && !search.isEmpty();
-        if (hasSearch && branchId != 0L) {
-            orderPage = orderRepository.findByInvoiceNoContainingIgnoreCaseAndBranchId(search, branchId, pageable);
-        } else if (hasSearch) {
-            orderPage = orderRepository.findByInvoiceNoContainingIgnoreCase(search, pageable);
-        } else if (branchId != 0L) {
-            orderPage = orderRepository.findByBranchId(branchId, pageable);
-        } else {
-            orderPage = orderRepository.findAll(pageable);
-        }
+        LocalDateTime fromDateTime = parseStartOfDay(from);
+        LocalDateTime toDateTime = parseEndOfDay(to);
+        OrderType normalizedOrderType = parseOrderType(orderType);
+        String normalizedCustomerType = normalizeFilter(customerType);
+        Long normalizedCashierId = cashierId != null && cashierId > 0 ? cashierId : null;
+        String normalizedTotalOperator = normalizeFilter(totalOperator);
+        Double normalizedTotalAmount = totalAmount != null && totalAmount >= 0 ? totalAmount : null;
+
+        Page<Order> orderPage = orderRepository.searchOrders(
+                search,
+                branchId != 0L ? branchId : null,
+                fromDateTime,
+                toDateTime,
+                normalizedOrderType,
+                normalizedCustomerType,
+                normalizedCashierId,
+                normalizedTotalOperator,
+                normalizedTotalAmount,
+                pageable
+        );
 
         return orderPage.map(order -> mapToOrderResponse(order, false));
+    }
+
+    private LocalDateTime parseStartOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).atStartOfDay();
+    }
+
+    private LocalDateTime parseEndOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).plusDays(1).atStartOfDay().minusNanos(1);
+    }
+
+    private OrderType parseOrderType(String value) {
+        if (value == null || value.isBlank() || value.equalsIgnoreCase("ALL")) {
+            return null;
+        }
+        return OrderType.valueOf(value.trim().toUpperCase());
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return "ALL";
+        }
+        return value.trim().toUpperCase();
     }
 
     public Page<CustomerOrderListResponse> list(Long customerId, String orderType, Pageable pageable) {
@@ -758,6 +818,9 @@ public class OrderService {
                     .map(Customer::getName)
                     .orElse("Unknown Customer");
         }
+        String cashierName = userRepository.findById(order.getCashierUserId())
+                .map(User::getUsername)
+                .orElse(null);
 
         List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
                 : items.stream()
@@ -800,6 +863,7 @@ public class OrderService {
                 .branchPhone(branchPhone)
                 .branchLogo(branchLogo)
                 .cashierUserId(order.getCashierUserId())
+                .cashierName(cashierName)
                 .customerId(order.getCustomerId())
                 .customerName(customerName)
                 .orderType(order.getOrderType())

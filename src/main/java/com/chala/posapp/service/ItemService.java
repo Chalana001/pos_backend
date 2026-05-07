@@ -147,13 +147,62 @@ public class ItemService {
                 .toList();
     }
 
-    public Page<ItemResponse> getAllItems(String search, int page, int size) {
+    public Page<ItemResponse> getAllItems(
+            String search,
+            int page,
+            int size,
+            Long categoryId,
+            Long subCategoryId,
+            String itemType,
+            Boolean active,
+            Boolean kotEnabled,
+            String priceField,
+            String priceOperator,
+            BigDecimal priceAmount
+    ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        Page<Item> itemPage = (search != null && !search.trim().isEmpty())
-                ? itemRepository.searchItems(search.trim(), pageable)
-                : itemRepository.findAll(pageable);
+        ItemType normalizedItemType = parseItemType(itemType);
+        String normalizedPriceField = normalizePriceField(priceField);
+        String normalizedPriceOperator = normalizeFilter(priceOperator);
+        BigDecimal normalizedPriceAmount = priceAmount != null && priceAmount.compareTo(BigDecimal.ZERO) >= 0
+                ? priceAmount
+                : null;
+        Page<Item> itemPage = itemRepository.searchItemsWithFilters(
+                search != null ? search.trim() : "",
+                categoryId,
+                subCategoryId,
+                normalizedItemType,
+                active,
+                kotEnabled,
+                normalizedPriceField,
+                normalizedPriceOperator,
+                normalizedPriceAmount,
+                pageable
+        );
 
         return itemPage.map(item -> mapToResponse(item, null, List.of()));
+    }
+
+    private ItemType parseItemType(String value) {
+        if (value == null || value.isBlank() || value.equalsIgnoreCase("ALL")) {
+            return null;
+        }
+        return ItemType.valueOf(value.trim().toUpperCase());
+    }
+
+    private String normalizePriceField(String value) {
+        if (value == null || value.isBlank()) {
+            return "SELLING";
+        }
+        String normalized = value.trim().toUpperCase();
+        return normalized.equals("COST") ? "COST" : "SELLING";
+    }
+
+    private String normalizeFilter(String value) {
+        if (value == null || value.isBlank()) {
+            return "ALL";
+        }
+        return value.trim().toUpperCase();
     }
 
     public ItemResponse getItem(Long id) {

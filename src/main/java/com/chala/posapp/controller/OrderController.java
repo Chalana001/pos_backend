@@ -81,8 +81,27 @@ public class OrderController {
             @RequestParam(value = "search", required = false, defaultValue = "") String search,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "10") int size,
-            @RequestParam(value = "branchId", defaultValue = "0") String branchId
+            @RequestParam(value = "branchId", defaultValue = "0") String branchId,
+            @RequestParam(value = "from", required = false) String from,
+            @RequestParam(value = "to", required = false) String to,
+            @RequestParam(value = "orderType", required = false, defaultValue = "ALL") String orderType,
+            @RequestParam(value = "customerType", required = false, defaultValue = "ALL") String customerType,
+            @RequestParam(value = "cashierId", required = false) Long cashierId,
+            @RequestParam(value = "totalOperator", required = false, defaultValue = "ALL") String totalOperator,
+            @RequestParam(value = "totalAmount", required = false) Double totalAmount
     ) {
-        return ResponseEntity.ok(orderService.getAllOrders(search, page, size, branchId));
+        return ResponseEntity.ok(orderService.getAllOrders(
+                search,
+                page,
+                size,
+                branchId,
+                from,
+                to,
+                orderType,
+                customerType,
+                cashierId,
+                totalOperator,
+                totalAmount
+        ));
     }
 }

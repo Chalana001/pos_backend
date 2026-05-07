@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.CashDropResponse;
+import com.chala.posapp.dto.CashDropSummaryResponse;
 import com.chala.posapp.entity.CashDrop;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
@@ -24,31 +25,70 @@ public class CashDropService {
 
     private final CashDropRepository cashDropRepository;
     private final UserRepository userRepository;
-    private final ShiftService shiftService;
-
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    public Page<CashDropResponse> getFilteredCashDrops(Long requestedBranchId, Long requestedShiftId, LocalDateTime from, LocalDateTime to, Pageable pageable) {
+    public Page<CashDropResponse> getFilteredCashDrops(
+            Long requestedBranchId,
+            Long requestedShiftId,
+            Long requestedCashierUserId,
+            String search,
+            LocalDateTime from,
+            LocalDateTime to,
+            Pageable pageable
+    ) {
+        CashDropFilterScope scope = resolveScope(requestedBranchId, requestedShiftId, requestedCashierUserId, search);
+        Page<CashDrop> drops = cashDropRepository.findWithFilters(
+                scope.branchId(),
+                scope.shiftId(),
+                scope.cashierUserId(),
+                scope.search(),
+                from,
+                to,
+                pageable
+        );
 
+        return drops.map(this::mapToResponseDTO);
+    }
+
+    public CashDropSummaryResponse getCashDropSummary(
+            Long requestedBranchId,
+            Long requestedShiftId,
+            Long requestedCashierUserId,
+            String search,
+            LocalDateTime from,
+            LocalDateTime to
+    ) {
+        CashDropFilterScope scope = resolveScope(requestedBranchId, requestedShiftId, requestedCashierUserId, search);
+        CashDropSummaryResponse summary = cashDropRepository.summarizeWithFilters(
+                scope.branchId(),
+                scope.shiftId(),
+                scope.cashierUserId(),
+                scope.search(),
+                from,
+                to
+        );
+        return summary == null ? new CashDropSummaryResponse(0, 0, 0) : summary;
+    }
+
+    private CashDropFilterScope resolveScope(Long requestedBranchId, Long requestedShiftId, Long requestedCashierUserId, String search) {
         User currentUser = getLoggedUser();
-
         Long finalBranchId = requestedBranchId;
         Long finalShiftId = requestedShiftId;
+        Long finalCashierUserId = requestedCashierUserId;
+        String trimmedSearch = search == null || search.isBlank() ? null : search.trim();
 
         if (currentUser.getRole() == Role.CASHIER) {
             finalBranchId = requireAssignedBranch(currentUser);
-            finalShiftId = shiftService.getMyCurrentShift().getId();
+            finalCashierUserId = currentUser.getId();
         } else if (currentUser.getRole() == Role.MANAGER) {
             finalBranchId = requireAssignedBranch(currentUser);
         }
 
-        Page<CashDrop> drops = cashDropRepository.findWithFilters(finalBranchId, finalShiftId, from, to, pageable);
-
-        return drops.map(this::mapToResponseDTO);
+        return new CashDropFilterScope(finalBranchId, finalShiftId, finalCashierUserId, trimmedSearch);
     }
 
     private CashDropResponse mapToResponseDTO(CashDrop cashDrop) {
@@ -74,5 +114,8 @@ public class CashDropService {
             throw new NotAssignedException("User branch not assigned");
         }
         return user.getBranchId();
+    }
+
+    private record CashDropFilterScope(Long branchId, Long shiftId, Long cashierUserId, String search) {
     }
 }

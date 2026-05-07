@@ -61,11 +61,20 @@ public class ExpenseService {
         return mapToResponse(savedExpense);
     }
 
-    public Page<ExpenseResponse> getFilteredExpenses(Long requestedBranchId, LocalDateTime from, LocalDateTime to, Pageable pageable) {
+    public Page<ExpenseResponse> getFilteredExpenses(
+            Long requestedBranchId,
+            Long requestedCashierId,
+            ExpenseCategory category,
+            Long shiftId,
+            String search,
+            LocalDateTime from,
+            LocalDateTime to,
+            Pageable pageable
+    ) {
 
         User currentUser = getLoggedUser();
         Long finalBranchId = requestedBranchId;
-        Long cashierUserId = null;
+        Long cashierUserId = requestedCashierId;
 
         if (currentUser.getRole() == Role.CASHIER) {
             finalBranchId = requireAssignedBranch(currentUser);
@@ -74,9 +83,38 @@ public class ExpenseService {
             finalBranchId = requireAssignedBranch(currentUser);
         }
 
-        Page<Expense> expenses = expenseRepository.findWithFilters(finalBranchId, cashierUserId, from, to, pageable);
+        String trimmedSearch = search == null || search.isBlank() ? null : search.trim();
+        Page<Expense> expenses = expenseRepository.findWithFilters(
+                finalBranchId,
+                cashierUserId,
+                category,
+                shiftId,
+                trimmedSearch,
+                from,
+                to,
+                pageable
+        );
 
         return expenses.map(this::mapToResponse);
+    }
+
+    public Page<ExpenseResponse> getShiftExpenses(Long shiftId, Pageable pageable) {
+        User currentUser = getLoggedUser();
+        CashShift shift = cashShiftRepository.findById(shiftId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        if (currentUser.getRole() == Role.CASHIER) {
+            if (!shift.getCashierUserId().equals(currentUser.getId())) {
+                throw new BadRequestException("Not allowed");
+            }
+        } else if (currentUser.getRole() == Role.MANAGER) {
+            Long managerBranchId = requireAssignedBranch(currentUser);
+            if (!managerBranchId.equals(shift.getBranchId())) {
+                throw new BadRequestException("Manager can only access their branch");
+            }
+        }
+
+        return expenseRepository.findByShiftId(shiftId, pageable).map(this::mapToResponse);
     }
 
     private ExpenseResponse mapToResponse(Expense expense) {

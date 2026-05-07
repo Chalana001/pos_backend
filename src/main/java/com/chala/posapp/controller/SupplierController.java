@@ -30,13 +30,13 @@ public class SupplierController {
         return ResponseEntity.ok(supplierService.createQuickSupplier(req));
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER','CASHIER')")
     @GetMapping
     public ResponseEntity<List<SupplierResponse>> getAll() {
         return ResponseEntity.ok(supplierService.getAllActiveSuppliers());
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{id}")
     public ResponseEntity<SupplierResponse> getById(@PathVariable (name = "id") Long id) {
         return ResponseEntity.ok(supplierService.getSupplierById(id));

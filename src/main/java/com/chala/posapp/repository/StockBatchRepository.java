@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -24,13 +25,21 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     @Query("SELECT sb FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId AND sb.quantity > 0 ORDER BY sb.receivedAt ASC")
     List<StockBatch> findAvailableBatches(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
+    @Query("SELECT sb FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId AND sb.quantity > 0 ORDER BY sb.receivedAt ASC, sb.id ASC")
+    List<StockBatch> findAvailableBatchesForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
+    @Query("SELECT COALESCE(SUM(sb.quantity), 0) FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId")
+    Integer getTotalQuantityByItemAndScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
     List<StockBatch> findAllByBranchId(Long branchId);
 
-    @Query("SELECT sb.item.id AS itemId, sb.item.name AS itemName, SUM(sb.quantity) AS totalQty, sb.item.reorderLevel AS reorderLevel " +
+    @Query("SELECT sb.item.id AS itemId, sb.item.barcode AS barcode, sb.item.name AS itemName, " +
+            "SUM(sb.quantity) AS totalQty, sb.item.reorderLevel AS reorderLevel, " +
+            "sb.item.itemType AS itemType, sb.item.defaultUnit AS defaultUnit " +
             "FROM StockBatch sb " +
-            "WHERE sb.branch.id = :branchId " +
+            "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
             "AND sb.item.itemType != com.chala.posapp.entity.ItemType.SERVICE " +
-            "GROUP BY sb.item.id, sb.item.name, sb.item.reorderLevel " +
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.reorderLevel, sb.item.itemType, sb.item.defaultUnit " +
             "HAVING SUM(sb.quantity) <= sb.item.reorderLevel")
     List<LowStockResponse> findLowStockItems(@Param("branchId") Long branchId);
 
@@ -41,19 +50,86 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "sb.item.costPrice, " +
             "sb.item.sellingPrice, " +
             "SUM(sb.quantity), " +
+            "sb.item.reorderLevel, " +
             "sb.item.itemType, " +
-            "sb.item.defaultUnit) " +
+            "sb.item.defaultUnit, " +
+            "c.id, " +
+            "c.name, " +
+            "sc.id, " +
+            "sc.name) " +
             "FROM StockBatch sb " +
+            "LEFT JOIN sb.item.subCategory sc " +
+            "LEFT JOIN sc.category c " +
             "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
-            "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%'))) " +
-            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.itemType, sb.item.defaultUnit",
-            countQuery = "SELECT COUNT(DISTINCT sb.item.id) FROM StockBatch sb " +
-                    "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
-                    "AND (:search IS NULL OR :search = '' OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')))")
+            "AND sb.item.itemType != com.chala.posapp.entity.ItemType.SERVICE " +
+            "AND (:categoryId IS NULL OR c.id = :categoryId) " +
+            "AND (:subCategoryId IS NULL OR sc.id = :subCategoryId) " +
+            "AND (:search IS NULL OR :search = '' " +
+            "OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR CONCAT('', sb.item.id) LIKE CONCAT('%', :search, '%')) " +
+            "GROUP BY sb.item.id, sb.item.barcode, sb.item.name, sb.item.costPrice, sb.item.sellingPrice, sb.item.reorderLevel, sb.item.itemType, sb.item.defaultUnit, c.id, c.name, sc.id, sc.name " +
+            "HAVING (:stockStatus IS NULL OR :stockStatus = 'ALL' " +
+            "OR (:stockStatus = 'OUT_OF_STOCK' AND COALESCE(SUM(sb.quantity), 0) <= 0) " +
+            "OR (:stockStatus = 'REORDER' AND COALESCE(SUM(sb.quantity), 0) > 0 AND COALESCE(SUM(sb.quantity), 0) <= sb.item.reorderLevel) " +
+            "OR (:stockStatus = 'IN_STOCK' AND COALESCE(SUM(sb.quantity), 0) > sb.item.reorderLevel)) " +
+            "ORDER BY CASE WHEN COALESCE(SUM(sb.quantity), 0) > 0 THEN 0 ELSE 1 END, sb.item.id DESC",
+            countQuery = "SELECT COUNT(DISTINCT i.id) FROM Item i " +
+                    "LEFT JOIN i.subCategory sc " +
+                    "LEFT JOIN sc.category c " +
+                    "WHERE i.itemType != com.chala.posapp.entity.ItemType.SERVICE " +
+                    "AND EXISTS (SELECT 1 FROM StockBatch sbx WHERE sbx.item.id = i.id AND (:branchId IS NULL OR sbx.branch.id = :branchId)) " +
+                    "AND (:categoryId IS NULL OR c.id = :categoryId) " +
+                    "AND (:subCategoryId IS NULL OR sc.id = :subCategoryId) " +
+                    "AND (:search IS NULL OR :search = '' " +
+                    "OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+                    "OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%')) " +
+                    "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+                    "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+                    "OR CONCAT('', i.id) LIKE CONCAT('%', :search, '%')) " +
+                    "AND (:stockStatus IS NULL OR :stockStatus = 'ALL' " +
+                    "OR (:stockStatus = 'OUT_OF_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= 0) " +
+                    "OR (:stockStatus = 'REORDER' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > 0 " +
+                    "AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= i.reorderLevel) " +
+                    "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > i.reorderLevel))")
     Page<StockResponseWithItems> getStockSummary(
             @Param("branchId") Long branchId,
             @Param("search") String search,
+            @Param("stockStatus") String stockStatus,
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId,
             Pageable pageable);
+
+    @Query("SELECT COALESCE(SUM(" +
+            "CASE WHEN sb.item.itemType = com.chala.posapp.entity.ItemType.WEIGHT " +
+            "THEN (sb.quantity / 1000.0) * sb.costPrice " +
+            "ELSE sb.quantity * sb.costPrice END), 0) " +
+            "FROM StockBatch sb " +
+            "LEFT JOIN sb.item.subCategory sc " +
+            "LEFT JOIN sc.category c " +
+            "WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
+            "AND sb.item.itemType != com.chala.posapp.entity.ItemType.SERVICE " +
+            "AND (:categoryId IS NULL OR c.id = :categoryId) " +
+            "AND (:subCategoryId IS NULL OR sc.id = :subCategoryId) " +
+            "AND (:search IS NULL OR :search = '' " +
+            "OR LOWER(sb.item.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(sb.item.barcode) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR CONCAT('', sb.item.id) LIKE CONCAT('%', :search, '%')) " +
+            "AND (:stockStatus IS NULL OR :stockStatus = 'ALL' " +
+            "OR (:stockStatus = 'OUT_OF_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= 0) " +
+            "OR (:stockStatus = 'REORDER' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > 0 " +
+            "AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= sb.item.reorderLevel) " +
+            "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > sb.item.reorderLevel))")
+    BigDecimal getStockValue(
+            @Param("branchId") Long branchId,
+            @Param("search") String search,
+            @Param("stockStatus") String stockStatus,
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId);
 
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
 

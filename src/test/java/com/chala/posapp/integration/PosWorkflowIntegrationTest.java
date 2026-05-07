@@ -196,6 +196,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode allShifts = getJson("/shifts/all?branchId=" + fixture.mainBranch().getId() + "&page=0&size=10", tenantId, adminToken);
         assertEquals(2, allShifts.path("content").size());
 
+        JsonNode salesFilterUsers = getJson("/users/sales-filter?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
+        assertTrue(salesFilterUsers.toString().contains(fixture.cashier().getUsername()));
+
         JsonNode createdExpense = postJson(
                 "/expenses",
                 tenantId,
@@ -260,8 +263,50 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode expensePage = getJson("/expenses?branchId=" + fixture.mainBranch().getId() + "&page=0&size=10", tenantId, adminToken);
         assertEquals(2, expensePage.path("content").size());
 
+        JsonNode teaExpensePage = getJson(
+                "/expenses?branchId=" + fixture.mainBranch().getId() + "&category=" + ExpenseCategory.TEA.name() + "&page=0&size=10",
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, teaExpensePage.path("content").size());
+        assertEquals("Tea counter electricity", teaExpensePage.path("content").get(0).path("description").asText());
+
+        JsonNode searchedExpensePage = getJson(
+                "/expenses?branchId=" + fixture.mainBranch().getId() + "&search=electricity&page=0&size=10",
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, searchedExpensePage.path("content").size());
+
+        JsonNode adminExpensePage = getJson(
+                "/expenses?branchId=" + fixture.mainBranch().getId() + "&cashierId=" + fixture.admin().getId() + "&page=0&size=10",
+                tenantId,
+                adminToken
+        );
+        assertEquals(2, adminExpensePage.path("content").size());
+
+        JsonNode shiftExpenses = getJson("/shifts/" + adminShiftId + "/expenses?page=0&size=10", tenantId, adminToken);
+        assertEquals(2, shiftExpenses.path("content").size());
+
         JsonNode cashDropPage = getJson("/cash-drops?branchId=" + fixture.mainBranch().getId() + "&page=0&size=10", tenantId, adminToken);
         assertEquals(2, cashDropPage.path("content").size());
+
+        JsonNode filteredCashDropPage = getJson(
+                "/cash-drops?branchId=" + fixture.mainBranch().getId() + "&cashierUserId=" + fixture.admin().getId() + "&search=transfer&page=0&size=10",
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, filteredCashDropPage.path("content").size());
+        assertEquals("Admin drawer transfer", filteredCashDropPage.path("content").get(0).path("reason").asText());
+
+        JsonNode cashDropSummary = getJson(
+                "/cash-drops/summary?branchId=" + fixture.mainBranch().getId() + "&cashierUserId=" + fixture.admin().getId(),
+                tenantId,
+                adminToken
+        );
+        assertEquals(150.0, cashDropSummary.path("totalAmount").asDouble(), 0.001);
+        assertEquals(1, cashDropSummary.path("dropCount").asInt());
+        assertEquals(150.0, cashDropSummary.path("averageAmount").asDouble(), 0.001);
 
         JsonNode cashOrder = postJson(
                 "/orders",
@@ -289,6 +334,7 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         );
         String cashInvoice = cashOrder.path("invoiceNo").asText();
         assertEquals(160.0, cashOrder.path("grandTotal").asDouble(), 0.001);
+        assertEquals(fixture.cashier().getUsername(), cashOrder.path("cashierName").asText());
 
         JsonNode shiftAfterCashOrder = getJson("/shifts/me", tenantId, cashierToken);
         assertEquals(160.0, shiftAfterCashOrder.path("cashSales").asDouble(), 0.001);
@@ -321,6 +367,36 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         );
         String creditInvoice = creditOrder.path("invoiceNo").asText();
         assertEquals(240.0, creditOrder.path("dueAmount").asDouble(), 0.001);
+        assertEquals(fixture.cashier().getUsername(), creditOrder.path("cashierName").asText());
+
+        JsonNode creditLimitError = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "branchId": %d,
+                  "customerId": %d,
+                  "orderType": "CREDIT",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 1,
+                      "unitPrice": 700,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 0,
+                  "note": "Blocked credit order"
+                }
+                """.formatted(fixture.mainBranch().getId(), customerId, itemId, batchId),
+                400
+        );
+        assertTrue(creditLimitError.path("message").asText().contains("credit limit exceeded"));
 
         JsonNode fetchedCashOrder = getJson("/orders/" + cashInvoice, tenantId, cashierToken);
         assertEquals(cashInvoice, fetchedCashOrder.path("invoiceNo").asText());
@@ -328,6 +404,17 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         JsonNode ordersPage = getJson("/orders?branchId=" + fixture.mainBranch().getId() + "&page=0&size=10", tenantId, adminToken);
         assertEquals(2, ordersPage.path("content").size());
+        assertEquals(fixture.cashier().getUsername(), ordersPage.path("content").get(0).path("cashierName").asText());
+
+        JsonNode cashierOrdersPage = getJson("/orders?branchId=" + fixture.mainBranch().getId() + "&cashierId=" + fixture.cashier().getId() + "&page=0&size=10", tenantId, adminToken);
+        assertEquals(2, cashierOrdersPage.path("content").size());
+
+        JsonNode shiftDetails = getJson("/shifts/" + cashierShiftId, tenantId, adminToken);
+        assertEquals(fixture.cashier().getUsername(), shiftDetails.path("cashierName").asText());
+
+        JsonNode shiftOrders = getJson("/shifts/" + cashierShiftId + "/orders?page=0&size=10", tenantId, adminToken);
+        assertEquals(2, shiftOrders.path("content").size());
+        assertEquals(creditInvoice, shiftOrders.path("content").get(0).path("invoiceNo").asText());
 
         JsonNode customerOrders = getJson("/customers/" + customerId + "/orders?orderType=ALL&page=0&size=10", tenantId, adminToken);
         assertEquals(1, customerOrders.path("items").size());

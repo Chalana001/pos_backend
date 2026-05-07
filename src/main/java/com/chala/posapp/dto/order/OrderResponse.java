@@ -21,6 +21,7 @@ public class OrderResponse {
     private String branchPhone;
     private String branchLogo;
     private Long cashierUserId;
+    private String cashierName;
     private Long customerId;
     private String customerName;
     private OrderType orderType;

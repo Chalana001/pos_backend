@@ -13,9 +13,15 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -58,10 +64,24 @@ public class CustomerService {
     }
 
     public List<CustomerResponse> list(Boolean activeOnly) {
-        return customerRepository.findAll().stream()
+        return customerRepository.findAll(Sort.by("createdAt").descending())
+                .stream()
                 .filter(c -> activeOnly == null || !activeOnly || c.isActive())
                 .map(this::map)
                 .toList();
+    }
+
+    public Page<CustomerResponse> listPage(String search, Boolean activeOnly, Boolean active, String from, String to, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return customerRepository.searchCustomers(
+                        search != null ? search.trim() : "",
+                        activeOnly,
+                        active,
+                        parseStartOfDay(from),
+                        parseEndOfDay(to),
+                        pageable
+                )
+                .map(this::map);
     }
 
     public List<CustomerResponse> search(String name) {
@@ -77,7 +97,12 @@ public class CustomerService {
         if (request.getName() != null) c.setName(request.getName().trim());
         if (request.getPhone() != null) c.setPhone(request.getPhone().trim());
         if (request.getAddress() != null) c.setAddress(request.getAddress());
-        if (request.getCreditLimit() != null) c.setCreditLimit(request.getCreditLimit());
+        if (request.getCreditLimit() != null) {
+            if (request.getCreditLimit() < c.getDueAmount()) {
+                throw new BadRequestException("Credit limit cannot be lower than current due amount");
+            }
+            c.setCreditLimit(request.getCreditLimit());
+        }
         if (request.getActive() != null) c.setActive(request.getActive());
 
         return map(c);
@@ -136,6 +161,20 @@ public class CustomerService {
                 .active(c.isActive())
                 .createdAt(c.getCreatedAt())
                 .build();
+    }
+
+    private LocalDateTime parseStartOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).atStartOfDay();
+    }
+
+    private LocalDateTime parseEndOfDay(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return LocalDate.parse(value).plusDays(1).atStartOfDay().minusNanos(1);
     }
 
 }

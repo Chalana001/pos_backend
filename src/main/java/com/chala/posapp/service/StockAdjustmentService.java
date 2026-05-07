@@ -20,12 +20,17 @@ import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -45,6 +50,32 @@ public class StockAdjustmentService {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private boolean isAdminLike(User user) {
+        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
+    }
+
+    private Long enforceBranchAccess(Long branchId) {
+        User user = getLoggedUser();
+
+        if (isAdminLike(user)) {
+            return branchId;
+        }
+
+        if (user.getBranchId() == null) {
+            throw new NotAssignedException("User branch not assigned");
+        }
+
+        if (branchId == null || branchId == 0L) {
+            return user.getBranchId();
+        }
+
+        if (!user.getBranchId().equals(branchId)) {
+            throw new BadRequestException("Cannot access another branch");
+        }
+
+        return branchId;
     }
 
     private int computeQtyChange(StockAdjustmentType type, int qty) {
@@ -140,7 +171,8 @@ public class StockAdjustmentService {
     }
 
     public List<StockAdjustmentResponse> historyByBranch(Long branchId) {
-        List<StockAdjustment> adjustments = adjustmentRepository.findByBranchIdOrderByCreatedAtDesc(branchId);
+        Long allowedBranchId = enforceBranchAccess(branchId);
+        List<StockAdjustment> adjustments = adjustmentRepository.findByBranchIdOrderByCreatedAtDesc(allowedBranchId);
 
         List<Long> itemIds = adjustments.stream().map(StockAdjustment::getItemId).distinct().toList();
         List<Item> items = itemRepository.findAllById(itemIds);
@@ -154,15 +186,72 @@ public class StockAdjustmentService {
     }
 
     public List<StockAdjustmentResponse> historyByItem(Long branchId, Long itemId) {
-        return adjustmentRepository.findByBranchIdAndItemIdOrderByCreatedAtDesc(branchId, itemId).stream()
+        Long allowedBranchId = enforceBranchAccess(branchId);
+        return adjustmentRepository.findByBranchIdAndItemIdOrderByCreatedAtDesc(allowedBranchId, itemId).stream()
                 .map(this::map)
                 .toList();
     }
 
+    public Page<StockAdjustmentResponse> historyPage(
+            Long branchId,
+            String search,
+            StockAdjustmentType type,
+            Long userId,
+            LocalDate from,
+            LocalDate to,
+            int page,
+            int size
+    ) {
+        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
+        LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
+        LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+
+        Page<StockAdjustment> adjustments = adjustmentRepository.findHistory(
+                filterBranchId,
+                normalizedSearch,
+                type,
+                userId,
+                fromDateTime,
+                toDateTime,
+                PageRequest.of(page, size)
+        );
+
+        List<Long> itemIds = adjustments.getContent().stream().map(StockAdjustment::getItemId).distinct().toList();
+        List<Long> userIds = adjustments.getContent().stream().map(StockAdjustment::getUserId).distinct().toList();
+        List<Long> branchIds = adjustments.getContent().stream().map(StockAdjustment::getBranchId).distinct().toList();
+
+        Map<Long, Item> itemMap = itemRepository.findAllById(itemIds).stream()
+                .collect(Collectors.toMap(Item::getId, item -> item));
+        Map<Long, User> userMap = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user));
+        Map<Long, Branch> branchMap = branchRepository.findAllById(branchIds).stream()
+                .collect(Collectors.toMap(Branch::getId, branch -> branch));
+
+        List<StockAdjustmentResponse> content = adjustments.getContent().stream()
+                .map(adjustment -> map(
+                        adjustment,
+                        itemMap.get(adjustment.getItemId()),
+                        userMap.get(adjustment.getUserId()),
+                        branchMap.get(adjustment.getBranchId())
+                ))
+                .toList();
+
+        return new PageImpl<>(content, adjustments.getPageable(), adjustments.getTotalElements());
+    }
+
     private StockAdjustmentResponse map(StockAdjustment adjustment, Item item) {
+        User actor = userRepository.findById(adjustment.getUserId()).orElse(null);
+        Branch branch = branchRepository.findById(adjustment.getBranchId()).orElse(null);
+        return map(adjustment, item, actor, branch);
+    }
+
+    private StockAdjustmentResponse map(StockAdjustment adjustment, Item item, User actor, Branch branch) {
         return StockAdjustmentResponse.builder()
                 .id(adjustment.getId())
                 .branchId(adjustment.getBranchId())
+                .branchName(branch != null ? branch.getName() : null)
                 .itemId(adjustment.getItemId())
                 .itemBarcode(item != null ? item.getBarcode() : "UNKNOWN")
                 .itemName(item != null ? item.getName() : "Unknown Item")
@@ -172,6 +261,7 @@ public class StockAdjustmentService {
                 .qtyUnit(adjustment.getQtyUnit())
                 .reason(adjustment.getReason())
                 .userId(adjustment.getUserId())
+                .username(actor != null ? actor.getUsername() : null)
                 .createdAt(adjustment.getCreatedAt())
                 .build();
     }

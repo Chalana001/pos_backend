@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.customer;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -18,5 +19,6 @@ public class CustomerCreateRequest {
     @Size(max = 255)
     private String address;
 
-    private Double creditLimit; // optional
+    @PositiveOrZero
+    private Double creditLimit; // optional; null means no configured limit
 }

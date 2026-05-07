@@ -1,6 +1,7 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.*;
+import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
 import com.chala.posapp.dto.shift.ShiftResponse;
@@ -43,6 +44,32 @@ public class ShiftController {
     ) {
         Page<ShiftResponse> shifts = shiftService.getAllShifts(branchId, cashierId, startDate, endDate, status, page, size);
         return ResponseEntity.ok(shifts);
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/{shiftId}")
+    public ResponseEntity<ShiftResponse> getShift(@PathVariable(name = "shiftId") Long shiftId) {
+        return ResponseEntity.ok(shiftService.getShift(shiftId));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/{shiftId}/orders")
+    public ResponseEntity<Page<OrderResponse>> getShiftOrders(
+            @PathVariable(name = "shiftId") Long shiftId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(shiftService.getShiftOrders(shiftId, page, size));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/{shiftId}/expenses")
+    public ResponseEntity<Page<ExpenseResponse>> getShiftExpenses(
+            @PathVariable(name = "shiftId") Long shiftId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(shiftService.getShiftExpenses(shiftId, page, size));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")

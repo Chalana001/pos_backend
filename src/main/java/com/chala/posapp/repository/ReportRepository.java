@@ -58,10 +58,28 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
 
     @Query(value = """
-        SELECT 
+        SELECT *
+        FROM (
+        SELECT
+            item_id,
+            item_name,
+            item_type,
+            qty_unit,
+            CASE
+                WHEN item_type = 'WEIGHT' AND qty_unit = 'KG' THEN base_qty / 1000.0
+                ELSE base_qty
+            END AS qty_sold,
+            revenue,
+            cost,
+            profit
+        FROM (
+        SELECT
             oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type) AS item_type,
-            COALESCE(SUM(oi.display_qty),0) AS qty_sold,
-            COALESCE(SUM(oi.line_total),0) AS revenue
+            COALESCE(i.default_unit, oi.qty_unit) AS qty_unit,
+            COALESCE(SUM(oi.qty),0) AS base_qty,
+            COALESCE(SUM(oi.line_total),0) AS revenue,
+            COALESCE(SUM(oi.line_cost),0) AS cost,
+            COALESCE(SUM(oi.line_total - oi.line_cost),0) AS profit
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         LEFT JOIN items i ON i.id = oi.item_id
@@ -70,14 +88,21 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND (:itemType IS NULL OR COALESCE(oi.item_type, i.item_type) = :itemType)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type)
-        ORDER BY qty_sold DESC
+        GROUP BY oi.item_id, oi.item_name, COALESCE(oi.item_type, i.item_type), COALESCE(i.default_unit, oi.qty_unit)
+        ) product_performance_grouped
+        ) product_performance
+        ORDER BY
+            CASE WHEN :rankBy = 'QUANTITY' THEN product_performance.qty_sold END DESC,
+            CASE WHEN :rankBy = 'PROFIT' THEN product_performance.profit END DESC,
+            CASE WHEN :rankBy = 'REVENUE' THEN product_performance.revenue END DESC,
+            product_performance.revenue DESC
         LIMIT :limitValue
     """, nativeQuery = true)
     List<Object[]> topSellingRaw(
             @Param("tenantId") String tenantId,
             @Param("branchId") Long branchId,
             @Param("itemType") String itemType,
+            @Param("rankBy") String rankBy,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate,
             @Param("limitValue") int limitValue

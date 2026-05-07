@@ -6,6 +6,8 @@ import com.chala.posapp.entity.supplier.Supplier;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDate;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
@@ -35,6 +37,14 @@ class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
         supplier.setAddress("Supplier address");
         supplier.setActive(true);
         supplier = supplierRepository.save(supplier);
+
+        Supplier backupSupplier = new Supplier();
+        backupSupplier.setTenantId(tenantId);
+        backupSupplier.setName("Backup Weight Supplier");
+        backupSupplier.setPhone("0722222222");
+        backupSupplier.setAddress("Backup supplier address");
+        backupSupplier.setActive(true);
+        backupSupplier = supplierRepository.save(backupSupplier);
 
         JsonNode secondBranch = postJson(
                 "/branches",
@@ -195,11 +205,70 @@ class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
         postJson("/stock-transfers/" + transferId + "/receive", tenantId, adminToken, "");
         assertEquals(1250, firstBatchFor(secondBranchId, itemId).getQuantity());
 
+        JsonNode secondPurchase = postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "WGT-002",
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 1050,
+                          "sellingPrice": 1350
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(backupSupplier.getId(), fixture.mainBranch().getId(), itemId)
+        );
+
         JsonNode stockPage = getJson("/stock/branch/" + fixture.mainBranch().getId() + "?page=0&size=10", tenantId, adminToken);
         JsonNode stockRow = stockPage.path("content").get(0);
-        assertEquals(2000, stockRow.path("totalQuantity").asInt());
-        assertEquals(2.0, stockRow.path("displayQuantity").asDouble(), 0.001);
+        assertEquals(3000, stockRow.path("totalQuantity").asInt());
+        assertEquals(3.0, stockRow.path("displayQuantity").asDouble(), 0.001);
         assertEquals("KG", stockRow.path("defaultUnit").asText());
+
+        JsonNode stockDetails = getJson("/stock/branch/" + fixture.mainBranch().getId() + "/item/" + itemId, tenantId, adminToken);
+        assertEquals(itemId, stockDetails.path("itemId").asLong());
+        assertEquals(3.0, stockDetails.path("displayQuantity").asDouble(), 0.001);
+        assertEquals(2, stockDetails.path("activeBatches").size());
+
+        JsonNode stockPurchases = getJson("/stock/branch/" + fixture.mainBranch().getId() + "/item/" + itemId + "/purchases?page=0&size=10", tenantId, adminToken);
+        assertEquals(2, stockPurchases.path("content").size());
+        assertEquals(secondPurchase.path("purchaseId").asLong(), stockPurchases.path("content").get(0).path("purchaseId").asLong());
+        assertEquals("WGT-002", stockPurchases.path("content").get(0).path("invoiceNo").asText());
+
+        JsonNode supplierFilteredPurchases = getJson(
+                "/stock/branch/" + fixture.mainBranch().getId() + "/item/" + itemId + "/purchases?page=0&size=10&supplierId=" + supplier.getId(),
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, supplierFilteredPurchases.path("content").size());
+        assertEquals(purchase.path("purchaseId").asLong(), supplierFilteredPurchases.path("content").get(0).path("purchaseId").asLong());
+
+        JsonNode searchFilteredPurchases = getJson(
+                "/stock/branch/" + fixture.mainBranch().getId() + "/item/" + itemId + "/purchases?page=0&size=10&search=WGT-002",
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, searchFilteredPurchases.path("content").size());
+        assertEquals(secondPurchase.path("purchaseId").asLong(), searchFilteredPurchases.path("content").get(0).path("purchaseId").asLong());
+
+        String today = LocalDate.now().toString();
+        JsonNode dateFilteredPurchases = getJson(
+                "/stock/branch/" + fixture.mainBranch().getId() + "/item/" + itemId + "/purchases?page=0&size=10&from=" + today + "&to=" + today,
+                tenantId,
+                adminToken
+        );
+        assertEquals(2, dateFilteredPurchases.path("content").size());
 
         JsonNode posItems = getJson(
                 "/items/searchForPos?name=Loose&branchId=" + fixture.mainBranch().getId(),

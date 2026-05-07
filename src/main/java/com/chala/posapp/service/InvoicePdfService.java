@@ -28,7 +28,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class InvoicePdfService {
 
-    private static final String DEFAULT_STORE_NAME = "POS SYSTEM";
+    private static final String DEFAULT_STORE_NAME = "ZENSYS POS";
     private static final String DEFAULT_CUSTOMER_NAME = "Walk-in Customer";
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd hh:mm a");
     private static final NumberFormat CURRENCY_FORMAT = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("en-LK"));

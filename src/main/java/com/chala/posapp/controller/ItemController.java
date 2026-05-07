@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
@@ -45,9 +46,29 @@ public class ItemController {
     public ResponseEntity<Page<ItemResponse>> getAllItems(
             @RequestParam(value = "search", required = false, defaultValue = "") String search,
             @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "10") int size
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "categoryId", required = false) Long categoryId,
+            @RequestParam(value = "subCategoryId", required = false) Long subCategoryId,
+            @RequestParam(value = "itemType", required = false, defaultValue = "ALL") String itemType,
+            @RequestParam(value = "active", required = false) Boolean active,
+            @RequestParam(value = "kotEnabled", required = false) Boolean kotEnabled,
+            @RequestParam(value = "priceField", required = false, defaultValue = "SELLING") String priceField,
+            @RequestParam(value = "priceOperator", required = false, defaultValue = "ALL") String priceOperator,
+            @RequestParam(value = "priceAmount", required = false) BigDecimal priceAmount
     ) {
-        return ResponseEntity.ok(itemService.getAllItems(search, page, size));
+        return ResponseEntity.ok(itemService.getAllItems(
+                search,
+                page,
+                size,
+                categoryId,
+                subCategoryId,
+                itemType,
+                active,
+                kotEnabled,
+                priceField,
+                priceOperator,
+                priceAmount
+        ));
     }
 
     // --- READ (ALL ITEMS - WITHOUT PAGINATION) 🔴 Path එක වෙනස් කළා ---
