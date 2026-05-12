@@ -171,10 +171,6 @@ public class OrderService {
             throw new BadRequestException("Order items required");
         }
 
-        if (request.getOrderType() == OrderType.CREDIT && request.getCustomerId() == null) {
-            throw new BadRequestException("Customer required for CREDIT order");
-        }
-
         SaleMode saleMode = request.getSaleMode() == null ? SaleMode.TAKEAWAY : request.getSaleMode();
         DiningTable diningTable = resolveDiningTable(user, branchId, saleMode, request.getTableId());
 
@@ -243,9 +239,15 @@ public class OrderService {
 
         double dueAmount;
         Customer customer = null;
-        if (request.getOrderType() == OrderType.CREDIT) {
-            paidAmount = 0;
-            dueAmount = grandTotal;
+        OrderType effectiveOrderType = request.getOrderType();
+
+        double paidTowardSale = Math.min(paidAmount, grandTotal);
+        dueAmount = roundMoney(grandTotal - paidTowardSale);
+        if (dueAmount > 0) {
+            if (request.getCustomerId() == null) {
+                throw new BadRequestException("Customer required when paid amount is less than grand total");
+            }
+            effectiveOrderType = OrderType.CREDIT;
             customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
             if (!customer.isActive()) {
@@ -263,10 +265,12 @@ public class OrderService {
                 }
             }
         } else {
-            if (paidAmount < grandTotal) {
-                throw new BadRequestException("Paid amount cannot be less than grand total for CASH sale");
-            }
             dueAmount = 0;
+            if (effectiveOrderType == OrderType.CREDIT && request.getCustomerId() != null) {
+                customerRepository.findById(request.getCustomerId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+            }
+            effectiveOrderType = OrderType.CASH;
         }
 
         Order order = Order.builder()
@@ -279,7 +283,7 @@ public class OrderService {
                 .receiptBranchLogo(branch.getLogo())
                 .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
-                .orderType(request.getOrderType())
+                .orderType(effectiveOrderType)
                 .saleMode(saleMode)
                 .tableId(diningTable != null ? diningTable.getId() : null)
                 .tableName(diningTable != null ? diningTable.getTableName() : null)
@@ -772,7 +776,8 @@ public class OrderService {
     }
 
     private void addCashSaleToOpenShift(Order order) {
-        if (order.getOrderType() != OrderType.CASH || order.getStatus() != OrderStatus.COMPLETED) {
+        double cashAmount = cashAmountForShift(order);
+        if (cashAmount <= 0 || order.getStatus() != OrderStatus.COMPLETED) {
             return;
         }
 
@@ -783,13 +788,14 @@ public class OrderService {
                 )
                 .ifPresent(shift -> {
                     double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
-                    shift.setCashSales(currentCashSales + order.getGrandTotal());
+                    shift.setCashSales(currentCashSales + cashAmount);
                     cashShiftRepository.save(shift);
                 });
     }
 
     private void reverseCashSaleFromOpenShift(Order order) {
-        if (order.getOrderType() != OrderType.CASH) {
+        double cashAmount = cashAmountForShift(order);
+        if (cashAmount <= 0) {
             return;
         }
 
@@ -801,9 +807,20 @@ public class OrderService {
                 .filter(shift -> !order.getCreatedAt().isBefore(shift.getOpenedAt()))
                 .ifPresent(shift -> {
                     double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
-                    shift.setCashSales(Math.max(0.0, currentCashSales - order.getGrandTotal()));
+                    shift.setCashSales(Math.max(0.0, currentCashSales - cashAmount));
                     cashShiftRepository.save(shift);
                 });
+    }
+
+    private double cashAmountForShift(Order order) {
+        if (order == null) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(order.getPaidAmount(), order.getGrandTotal()));
+    }
+
+    private double roundMoney(double amount) {
+        return BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     private OrderResponse mapToOrderResponse(Order order, boolean includeItems) {

@@ -84,6 +84,9 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(nullable = false)
     private boolean showBalance;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean showDueAmount;
+
     @Column(nullable = false)
     private boolean showThanksMessage;
 

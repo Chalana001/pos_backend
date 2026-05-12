@@ -70,14 +70,16 @@ public class InvoicePdfService {
         context.setVariable("customerName", hasText(order.getCustomerName()) ? order.getCustomerName() : DEFAULT_CUSTOMER_NAME);
         context.setVariable("customerPhone", customerPhone);
         context.setVariable("issuedAt", order.getCreatedAt() != null ? DATE_TIME_FORMATTER.format(order.getCreatedAt()) : "");
-        context.setVariable("paymentLabel", order.getOrderType() != null ? order.getOrderType().name() : "");
+        context.setVariable("paymentLabel", paymentLabel(order));
         context.setVariable("saleModeLabel", order.getSaleMode() != null ? order.getSaleMode().name().replace('_', ' ') : "");
-        context.setVariable("statusLabel", order.getOrderType() != null && order.getOrderType().name().equals("CREDIT") ? "Credit Sale" : "Paid");
+        context.setVariable("statusLabel", order.getDueAmount() > 0 ? "Partially Paid" : "Paid");
         context.setVariable("subTotalFormatted", formatCurrency(order.getSubTotal()));
         context.setVariable("discountFormatted", formatCurrency(order.getBillDiscount()));
         context.setVariable("grandTotalFormatted", formatCurrency(order.getGrandTotal()));
         context.setVariable("paidAmountFormatted", formatCurrency(order.getPaidAmount()));
         context.setVariable("balanceFormatted", formatCurrency(Math.max(0.0, order.getPaidAmount() - order.getGrandTotal())));
+        context.setVariable("dueAmountFormatted", formatCurrency(order.getDueAmount()));
+        context.setVariable("hasDue", order.getDueAmount() > 0);
         context.setVariable("hasNotes", hasText(order.getNote()));
         context.setVariable("notesText", hasText(order.getNote())
                 ? order.getNote()
@@ -116,6 +118,16 @@ public class InvoicePdfService {
 
     private String formatCurrency(double amount) {
         return CURRENCY_FORMAT.format(amount);
+    }
+
+    private String paymentLabel(OrderResponse order) {
+        if (order.getDueAmount() > 0 && order.getPaidAmount() > 0) {
+            return "CASH + CREDIT";
+        }
+        if (order.getDueAmount() > 0) {
+            return "CREDIT";
+        }
+        return "CASH";
     }
 
     private String formatQuantity(BigDecimal quantity, String unit) {

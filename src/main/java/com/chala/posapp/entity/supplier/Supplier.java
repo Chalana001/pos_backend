@@ -4,6 +4,7 @@ import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -39,6 +40,9 @@ public class Supplier extends TenantEntity {
     @Column(length = 1000)
     private String address;
 
+    @Column(name = "due_amount", precision = 12, scale = 2)
+    private BigDecimal dueAmount = BigDecimal.ZERO;
+
     private Boolean active = true;
 
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -49,4 +53,10 @@ public class Supplier extends TenantEntity {
 
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SupplierItem> suppliedItems = new ArrayList<>();
+
+    @PrePersist
+    void onCreate() {
+        if (dueAmount == null) dueAmount = BigDecimal.ZERO;
+        if (active == null) active = true;
+    }
 }

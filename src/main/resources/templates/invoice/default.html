@@ -370,7 +370,11 @@
                             <td>Paid</td>
                             <td class="text-right" th:text="${paidAmountFormatted}">Rs 0</td>
                         </tr>
-                        <tr th:if="${settings.showBalance and paymentLabel == 'CASH'}">
+                        <tr th:if="${hasDue}">
+                            <td><strong>Credit Due</strong></td>
+                            <td class="text-right"><strong th:text="${dueAmountFormatted}">Rs 0</strong></td>
+                        </tr>
+                        <tr th:if="${settings.showBalance and !hasDue and paymentLabel == 'CASH'}">
                             <td><strong>Balance</strong></td>
                             <td class="text-right"><strong th:text="${balanceFormatted}">Rs 0</strong></td>
                         </tr>

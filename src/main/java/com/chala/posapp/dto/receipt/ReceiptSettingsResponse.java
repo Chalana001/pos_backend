@@ -31,6 +31,7 @@ public class ReceiptSettingsResponse {
     private boolean showNetTotal;
     private boolean showPaid;
     private boolean showBalance;
+    private boolean showDueAmount;
     private boolean showThanksMessage;
     private boolean showCredits;
     private int logoWidthPercent;

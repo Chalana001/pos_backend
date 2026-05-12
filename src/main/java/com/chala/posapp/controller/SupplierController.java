@@ -1,9 +1,12 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.supplier.SupplierCreateRequest;
+import com.chala.posapp.dto.supplier.SupplierPaymentRequest;
+import com.chala.posapp.dto.supplier.SupplierPaymentResponse;
 import com.chala.posapp.dto.supplier.SupplierQuickCreateRequest;
 import com.chala.posapp.dto.supplier.SupplierResponse;
 import com.chala.posapp.service.SupplierService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -40,6 +43,21 @@ public class SupplierController {
     @GetMapping("/{id}")
     public ResponseEntity<SupplierResponse> getById(@PathVariable (name = "id") Long id) {
         return ResponseEntity.ok(supplierService.getSupplierById(id));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/{id}/payments")
+    public ResponseEntity<SupplierResponse> recordPayment(
+            @PathVariable(name = "id") Long id,
+            @Valid @RequestBody SupplierPaymentRequest request
+    ) {
+        return ResponseEntity.ok(supplierService.recordPayment(id, request));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/{id}/payments")
+    public ResponseEntity<List<SupplierPaymentResponse>> paymentHistory(@PathVariable(name = "id") Long id) {
+        return ResponseEntity.ok(supplierService.paymentHistory(id));
     }
 
 }

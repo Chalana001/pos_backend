@@ -62,6 +62,7 @@ public class ReceiptSettingsService {
         settings.setShowNetTotal(request.isShowNetTotal());
         settings.setShowPaid(request.isShowPaid());
         settings.setShowBalance(request.isShowBalance());
+        settings.setShowDueAmount(request.isShowDueAmount());
         settings.setShowThanksMessage(request.isShowThanksMessage());
         settings.setShowCredits(true);
         settings.setLogoWidthPercent(request.getLogoWidthPercent());
@@ -101,6 +102,7 @@ public class ReceiptSettingsService {
                 .showNetTotal(true)
                 .showPaid(true)
                 .showBalance(true)
+                .showDueAmount(true)
                 .showThanksMessage(true)
                 .showCredits(true)
                 .logoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
@@ -145,6 +147,7 @@ public class ReceiptSettingsService {
                 .showNetTotal(settings.isShowNetTotal())
                 .showPaid(settings.isShowPaid())
                 .showBalance(settings.isShowBalance())
+                .showDueAmount(settings.isShowDueAmount())
                 .showThanksMessage(settings.isShowThanksMessage())
                 .showCredits(true)
                 .logoWidthPercent(settings.getLogoWidthPercent())

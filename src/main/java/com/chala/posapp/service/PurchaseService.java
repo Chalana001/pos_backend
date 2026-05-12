@@ -151,6 +151,14 @@ public class PurchaseService {
     public PurchaseResponse createPurchase(CreatePurchaseRequest request) {
         User user = getLoggedUser();
         ensureCreateAccess(user, request.getBranches());
+        BigDecimal requestedPaidAmount = normalizeMoney(request.getPaidAmount());
+        if (requestedPaidAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Paid amount cannot be negative");
+        }
+        BigDecimal discountAmount = normalizeMoney(request.getDiscountAmount());
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BadRequestException("Discount amount cannot be negative");
+        }
 
         Supplier supplier = supplierRepository.findById(request.getSupplierId())
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found"));
@@ -278,13 +286,34 @@ public class PurchaseService {
         }
 
         savedPurchase.setGrandTotal(grandTotal);
+        if (discountAmount.compareTo(grandTotal) > 0) {
+            throw new BadRequestException("Discount amount cannot exceed purchase total");
+        }
+        BigDecimal netTotal = grandTotal.subtract(discountAmount);
+        if (requestedPaidAmount.compareTo(netTotal) > 0) {
+            throw new BadRequestException("Paid amount cannot exceed purchase total");
+        }
+        BigDecimal dueAmount = netTotal.subtract(requestedPaidAmount);
+        savedPurchase.setDiscountAmount(discountAmount);
+        savedPurchase.setGrandTotal(netTotal);
+        savedPurchase.setPaidAmount(requestedPaidAmount);
+        savedPurchase.setDueAmount(dueAmount);
         purchaseRepository.save(savedPurchase);
+
+        if (dueAmount.compareTo(BigDecimal.ZERO) > 0) {
+            supplier.setDueAmount(normalizeMoney(supplier.getDueAmount()).add(dueAmount));
+            supplierRepository.save(supplier);
+        }
 
         return PurchaseResponse.builder()
                 .purchaseId(savedPurchase.getId())
                 .invoiceNo(savedPurchase.getInvoiceNo())
+                .supplierId(supplier.getId())
                 .supplierName(supplier.getName())
                 .grandTotal(savedPurchase.getGrandTotal())
+                .discountAmount(normalizeMoney(savedPurchase.getDiscountAmount()))
+                .paidAmount(savedPurchase.getPaidAmount())
+                .dueAmount(savedPurchase.getDueAmount())
                 .status(normalizeStatus(savedPurchase))
                 .cancelReason(savedPurchase.getCancelReason())
                 .createdAt(savedPurchase.getCreatedAt())
@@ -330,8 +359,12 @@ public class PurchaseService {
         return PurchaseResponse.builder()
                 .purchaseId(purchase.getId())
                 .invoiceNo(purchase.getInvoiceNo())
+                .supplierId(purchase.getSupplier().getId())
                 .supplierName(purchase.getSupplier().getName())
                 .grandTotal(purchase.getGrandTotal())
+                .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
+                .paidAmount(normalizeMoney(purchase.getPaidAmount()))
+                .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
                 .createdAt(purchase.getCreatedAt())
@@ -377,8 +410,12 @@ public class PurchaseService {
         return PurchaseResponse.builder()
                 .purchaseId(purchase.getId())
                 .invoiceNo(purchase.getInvoiceNo())
+                .supplierId(purchase.getSupplier().getId())
                 .supplierName(purchase.getSupplier().getName())
                 .grandTotal(purchase.getGrandTotal())
+                .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
+                .paidAmount(normalizeMoney(purchase.getPaidAmount()))
+                .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
                 .createdAt(purchase.getCreatedAt())
@@ -418,11 +455,23 @@ public class PurchaseService {
         }
 
         stockBatchRepository.deleteAll(batchesToDelete);
+        BigDecimal purchaseDue = normalizeMoney(purchase.getDueAmount());
+        if (purchaseDue.compareTo(BigDecimal.ZERO) > 0) {
+            Supplier supplier = purchase.getSupplier();
+            BigDecimal nextSupplierDue = normalizeMoney(supplier.getDueAmount()).subtract(purchaseDue);
+            supplier.setDueAmount(nextSupplierDue.max(BigDecimal.ZERO));
+            supplierRepository.save(supplier);
+            purchase.setDueAmount(BigDecimal.ZERO);
+        }
         purchase.setStatus(PurchaseStatus.CANCELED);
         purchase.setCancelReason(request.getReason().trim());
         purchase.setCanceledAt(LocalDateTime.now());
         purchaseRepository.save(purchase);
 
         return getPurchaseById(purchase.getId());
+    }
+
+    private BigDecimal normalizeMoney(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

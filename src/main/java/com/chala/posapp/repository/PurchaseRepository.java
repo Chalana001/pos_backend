@@ -15,6 +15,12 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     Page<Purchase> findAllByOrderByIdDesc(Pageable pageable);
     List<Purchase> findAllByOrderByIdDesc();
 
+    List<Purchase> findBySupplierIdAndStatusAndDueAmountGreaterThanOrderByCreatedAtAscIdAsc(
+            Long supplierId,
+            PurchaseStatus status,
+            java.math.BigDecimal dueAmount
+    );
+
     @Query("""
             SELECT p
             FROM Purchase p

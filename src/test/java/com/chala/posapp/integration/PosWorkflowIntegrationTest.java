@@ -549,6 +549,120 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
     }
 
     @Test
+    void underpaidCashOrderBecomesPartialCreditSale() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("multi-pay"), 1);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Services");
+        category.setTenantId(tenantId);
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setTenantId(tenantId);
+        subCategory.setName("Repairs");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode serviceItem = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "MP-001",
+                  "name": "Screen Repair",
+                  "subCategoryId": %d,
+                  "costPrice": 0,
+                  "sellingPrice": 100,
+                  "itemType": "SERVICE",
+                  "branchIds": [%d]
+                }
+                """.formatted(subCategory.getId(), fixture.mainBranch().getId())
+        );
+        long serviceItemId = serviceItem.path("id").asLong();
+
+        JsonNode customer = postJson(
+                "/customers",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "name": "Partial Pay Customer",
+                  "phone": "0711112222",
+                  "creditLimit": 500
+                }
+                """
+        );
+        long customerId = customer.path("id").asLong();
+
+        postJson(
+                "/shifts/open",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "openingCash": 1000,
+                  "note": "Partial payment shift"
+                }
+                """
+        );
+
+        JsonNode order = postJson(
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "branchId": %d,
+                  "customerId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "qtyUnit": "SERVICE",
+                      "unitPrice": 100,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 40,
+                  "note": "Cash plus credit"
+                }
+                """.formatted(fixture.mainBranch().getId(), customerId, serviceItemId)
+        );
+
+        assertEquals("CREDIT", order.path("orderType").asText());
+        assertEquals(100.0, order.path("grandTotal").asDouble(), 0.001);
+        assertEquals(40.0, order.path("paidAmount").asDouble(), 0.001);
+        assertEquals(60.0, order.path("dueAmount").asDouble(), 0.001);
+
+        JsonNode updatedCustomer = getJson("/customers/" + customerId, tenantId, cashierToken);
+        assertEquals(60.0, updatedCustomer.path("dueAmount").asDouble(), 0.001);
+
+        JsonNode shiftAfterOrder = getJson("/shifts/me", tenantId, cashierToken);
+        assertEquals(40.0, shiftAfterOrder.path("cashSales").asDouble(), 0.001);
+
+        JsonNode closedShift = postJson(
+                "/shifts/close",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "countedCash": 1040,
+                  "note": "Closed with partial payment"
+                }
+                """
+        );
+        assertEquals(40.0, closedShift.path("cashSales").asDouble(), 0.001);
+        assertEquals(1040.0, closedShift.path("expectedCash").asDouble(), 0.001);
+    }
+
+    @Test
     void serviceItemsUseServiceUnitAndCanBeSoldWithoutStock() throws Exception {
         TenantFixture fixture = seedTenantShop(uniqueKey("svc"), 2);
         String tenantId = fixture.tenantId();

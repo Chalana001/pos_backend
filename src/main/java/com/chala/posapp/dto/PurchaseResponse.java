@@ -13,8 +13,12 @@ import java.util.List;
 public class PurchaseResponse {
     private Long purchaseId;
     private String invoiceNo;
+    private Long supplierId;
     private String supplierName;
     private BigDecimal grandTotal;
+    private BigDecimal discountAmount;
+    private BigDecimal paidAmount;
+    private BigDecimal dueAmount;
     private PurchaseStatus status;
     private String cancelReason;
     private LocalDateTime createdAt;

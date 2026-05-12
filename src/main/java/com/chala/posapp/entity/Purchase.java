@@ -38,6 +38,15 @@ public class Purchase extends TenantEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal grandTotal;
 
+    @Column(precision = 12, scale = 2)
+    private BigDecimal discountAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal paidAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal dueAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20, columnDefinition = "ENUM('CANCELED','COMPLETED') DEFAULT 'COMPLETED'")
     private PurchaseStatus status;
@@ -55,6 +64,10 @@ public class Purchase extends TenantEntity {
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
+        if (grandTotal == null) grandTotal = BigDecimal.ZERO;
+        if (discountAmount == null) discountAmount = BigDecimal.ZERO;
+        if (paidAmount == null) paidAmount = BigDecimal.ZERO;
+        if (dueAmount == null) dueAmount = BigDecimal.ZERO;
         if (status == null) status = PurchaseStatus.COMPLETED;
     }
 }

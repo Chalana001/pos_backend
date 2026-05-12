@@ -225,10 +225,10 @@ public class ItemService {
         }
 
         List<StockBatch> batches = branchId == 0L
-                ? stockBatchRepository.findByItemId(item.getId())
-                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
+                ? stockBatchRepository.findBatchesForScope(null, item.getId())
+                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
 
-        return mapToResponse(item, totalQuantity(batches), activeBatchesToResponse(item, batches));
+        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches));
     }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
@@ -242,12 +242,12 @@ public class ItemService {
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
-                                ? stockBatchRepository.findByItemId(item.getId())
-                                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
-                        totalQty = totalQuantity(batches);
+                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                        totalQty = availableQuantity(batches);
                     }
 
-                    return mapToResponse(item, totalQty, activeBatchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
                 })
                 .collect(Collectors.toList());
     }
@@ -272,9 +272,9 @@ public class ItemService {
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
-                                ? stockBatchRepository.findByItemId(item.getId())
-                                : stockBatchRepository.findByBranchIdAndItemId(branchId, item.getId());
-                        totalQty = totalQuantity(batches);
+                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                        totalQty = availableQuantity(batches);
                     }
 
                     if (item.getItemType() != ItemType.SERVICE
@@ -283,7 +283,7 @@ public class ItemService {
                         return null;
                     }
 
-                    return mapToResponse(item, totalQty, activeBatchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -357,30 +357,29 @@ public class ItemService {
         return mapToResponse(savedItem, null, List.of());
     }
 
-    private List<StockBatchResponse> activeBatchesToResponse(Item item, List<StockBatch> batches) {
+    private List<StockBatchResponse> batchesToResponse(Item item, List<StockBatch> batches) {
         if (batches == null || batches.isEmpty()) {
             return new ArrayList<>();
         }
 
         return batches.stream()
-                .filter(batch -> batch.getQuantity() != null && batch.getQuantity() > 0)
                 .map(batch -> new StockBatchResponse(
                         batch.getId(),
                         batch.getSellingPrice(),
-                        batch.getQuantity(),
-                        QuantityConversionUtil.toDisplayQuantity(item, batch.getQuantity()),
+                        batch.getQuantity() == null ? 0 : batch.getQuantity(),
+                        QuantityConversionUtil.toDisplayQuantity(item, batch.getQuantity() == null ? 0 : batch.getQuantity()),
                         item.getDefaultUnit(),
                         batch.getExpireDate()
                 ))
                 .collect(Collectors.toList());
     }
 
-    private Integer totalQuantity(List<StockBatch> batches) {
+    private Integer availableQuantity(List<StockBatch> batches) {
         if (batches == null || batches.isEmpty()) {
             return 0;
         }
         return batches.stream()
-                .filter(batch -> batch.getQuantity() != null)
+                .filter(batch -> batch.getQuantity() != null && batch.getQuantity() > 0)
                 .mapToInt(StockBatch::getQuantity)
                 .sum();
     }

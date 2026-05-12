@@ -210,7 +210,6 @@ public class ShiftService {
         Double calculatedSales = orderRepository.sumCashSales(
                 shift.getBranchId(),
                 shift.getCashierUserId(),
-                OrderType.CASH,
                 OrderStatus.COMPLETED,
                 shift.getOpenedAt(),
                 LocalDateTime.now()
@@ -247,7 +246,6 @@ public class ShiftService {
         Double calculatedSales = orderRepository.sumCashSales(
                 shift.getBranchId(),
                 shift.getCashierUserId(),
-                OrderType.CASH,
                 OrderStatus.COMPLETED,
                 shift.getOpenedAt(),
                 LocalDateTime.now()
