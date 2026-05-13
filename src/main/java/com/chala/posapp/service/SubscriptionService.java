@@ -25,10 +25,9 @@ public class SubscriptionService {
     @Transactional(readOnly = true)
     public List<SubscriptionPlan> getAllPlans() {
         Map<String, Integer> displayOrder = Map.of(
-                "MONTHLY_LITE", 1,
-                "YEARLY_LITE", 2,
-                "MONTHLY_PRO", 3,
-                "YEARLY_PRO", 4
+                "FREE", 1,
+                "STANDARD", 2,
+                "PRO", 3
         );
 
         return planRepository.findAll().stream()

@@ -669,6 +669,7 @@ public class ShiftService {
                 .customerId(order.getCustomerId())
                 .customerName(customerName)
                 .orderType(order.getOrderType())
+                .paymentMethod(order.getPaymentMethod())
                 .saleMode(order.getSaleMode())
                 .tableId(order.getTableId())
                 .tableName(order.getTableName())

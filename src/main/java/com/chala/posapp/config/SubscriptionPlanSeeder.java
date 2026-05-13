@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Slf4j
 @Component
@@ -16,18 +18,28 @@ import java.util.Optional;
 public class SubscriptionPlanSeeder implements CommandLineRunner {
 
     private final SubscriptionPlanRepository planRepository;
+    private final com.chala.posapp.repository.TenantSubscriptionRepository tenantSubscriptionRepository;
+
+    private static final Set<String> LEGACY_PLAN_NAMES = Set.of(
+            "MONTHLY_DEMO",
+            "MONTHLY_LITE",
+            "MONTHLY_BASIC",
+            "MONTHLY_PRO",
+            "YEARLY_LITE",
+            "YEARLY_PRO",
+            "LIFETIME_YEARLY"
+    );
 
     @Override
     public void run(String... args) {
         log.info("Syncing subscription plans...");
 
-        upsertPlan("MONTHLY_DEMO", null, BillingCycle.MONTHLY, 0.0, 0.0, 2);
-        upsertPlan("MONTHLY_LITE", "MONTHLY_BASIC", BillingCycle.MONTHLY, 1500.0, 1500.0, 1);
-        upsertPlan("MONTHLY_PRO", null, BillingCycle.MONTHLY, 2500.0, 2500.0, 2);
-        upsertPlan("YEARLY_LITE", null, BillingCycle.YEARLY, 25000.0, 10000.0, 1);
-        upsertPlan("YEARLY_PRO", "LIFETIME_YEARLY", BillingCycle.YEARLY, 35000.0, 10000.0, 2);
+        upsertPlan("FREE", "MONTHLY_DEMO", BillingCycle.MONTHLY, 0.0, 0.0, 1);
+        upsertPlan("STANDARD", "MONTHLY_LITE", BillingCycle.MONTHLY, 1500.0, 1500.0, 1);
+        upsertPlan("PRO", "MONTHLY_PRO", BillingCycle.MONTHLY, 2500.0, 2500.0, 3);
+        removeUnusedLegacyPlans();
 
-        log.info("Subscription plans synced: MONTHLY_DEMO, MONTHLY_LITE, YEARLY_LITE, MONTHLY_PRO, YEARLY_PRO");
+        log.info("Subscription plans synced: FREE, STANDARD, PRO");
     }
 
     private void upsertPlan(String targetName, String legacyName, BillingCycle billingCycle,
@@ -44,5 +56,12 @@ public class SubscriptionPlanSeeder implements CommandLineRunner {
         plan.setRenewalPrice(renewalPrice);
         plan.setMaxBranches(maxBranches);
         planRepository.save(plan);
+    }
+
+    private void removeUnusedLegacyPlans() {
+        List<SubscriptionPlan> legacyPlans = planRepository.findByNameIn(LEGACY_PLAN_NAMES.stream().toList());
+        legacyPlans.stream()
+                .filter(plan -> !tenantSubscriptionRepository.existsByPlanId(plan.getId()))
+                .forEach(planRepository::delete);
     }
 }

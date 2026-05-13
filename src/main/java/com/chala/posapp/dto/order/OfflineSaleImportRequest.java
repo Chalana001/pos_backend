@@ -40,5 +40,7 @@ public class OfflineSaleImportRequest {
     @Min(0)
     private double paidAmount;
 
+    private String paymentMethod;
+
     private String note;
 }

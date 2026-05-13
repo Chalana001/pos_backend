@@ -25,6 +25,7 @@ public class OrderResponse {
     private Long customerId;
     private String customerName;
     private OrderType orderType;
+    private String paymentMethod;
     private SaleMode saleMode;
     private Long tableId;
     private String tableName;

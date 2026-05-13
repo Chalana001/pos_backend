@@ -40,7 +40,7 @@ public class SupplierService {
     private final UserRepository userRepository;
 
     @Transactional
-    public Supplier create(SupplierCreateRequest req) {
+    public SupplierResponse create(SupplierCreateRequest req) {
 
         Supplier supplier = new Supplier();
         supplier.setName(req.getName());
@@ -73,7 +73,7 @@ public class SupplierService {
             supplier.setBankDetails(bd);
         }
 
-        return supplierRepository.save(supplier);
+        return mapToResponse(supplierRepository.save(supplier));
     }
 
     @Transactional

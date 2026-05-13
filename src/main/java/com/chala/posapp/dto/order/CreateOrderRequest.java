@@ -34,5 +34,7 @@ public class CreateOrderRequest {
     @Min(0)
     private double paidAmount; // for CASH
 
+    private String paymentMethod;
+
     private String note;
 }

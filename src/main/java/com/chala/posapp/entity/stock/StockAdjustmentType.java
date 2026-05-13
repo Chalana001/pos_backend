@@ -5,5 +5,6 @@ public enum StockAdjustmentType {
     DAMAGED,
     LOST,
     FOUND,
+    NEW_STOCK,
     MANUAL
 }

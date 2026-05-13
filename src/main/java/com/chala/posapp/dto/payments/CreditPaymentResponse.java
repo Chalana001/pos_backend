@@ -14,6 +14,7 @@ public class CreditPaymentResponse {
     private Long branchId;
     private Long cashierUserId;
     private double amount;
+    private String paymentMethod;
     private String note;
     private LocalDateTime paidAt;
 }

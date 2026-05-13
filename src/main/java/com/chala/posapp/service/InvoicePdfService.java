@@ -121,13 +121,16 @@ public class InvoicePdfService {
     }
 
     private String paymentLabel(OrderResponse order) {
+        String paidMethod = hasText(order.getPaymentMethod())
+                ? order.getPaymentMethod().replace('_', ' ')
+                : "CASH";
         if (order.getDueAmount() > 0 && order.getPaidAmount() > 0) {
-            return "CASH + CREDIT";
+            return paidMethod + " + CREDIT";
         }
         if (order.getDueAmount() > 0) {
             return "CREDIT";
         }
-        return "CASH";
+        return paidMethod;
     }
 
     private String formatQuantity(BigDecimal quantity, String unit) {

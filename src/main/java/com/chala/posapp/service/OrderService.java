@@ -7,6 +7,7 @@ import com.chala.posapp.dto.order.OfflineSaleImportRequest;
 import com.chala.posapp.dto.order.OfflineSaleImportResponse;
 import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.order.OrderItemResponse;
+import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
@@ -15,6 +16,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -52,6 +54,8 @@ public class OrderService {
     private final DiningTableRepository diningTableRepository;
     private final PendingOrderRepository pendingOrderRepository;
     private final PendingOrderItemRepository pendingOrderItemRepository;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final CreditPaymentRepository creditPaymentRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -120,6 +124,7 @@ public class OrderService {
         createOrderRequest.setItems(request.getItems());
         createOrderRequest.setBillDiscount(request.getBillDiscount());
         createOrderRequest.setPaidAmount(request.getPaidAmount());
+        createOrderRequest.setPaymentMethod(request.getPaymentMethod());
         createOrderRequest.setNote(request.getNote());
 
         OrderResponse response = createOrderInternal(
@@ -233,9 +238,10 @@ public class OrderService {
         if (billDiscount < 0) billDiscount = 0;
         if (billDiscount > subTotal) billDiscount = subTotal;
 
-        double grandTotal = subTotal - billDiscount;
+        double grandTotal = roundRupee(subTotal - billDiscount);
         double paidAmount = request.getPaidAmount();
         if (paidAmount < 0) paidAmount = 0;
+        paidAmount = roundRupee(paidAmount);
 
         double dueAmount;
         Customer customer = null;
@@ -243,7 +249,11 @@ public class OrderService {
 
         double paidTowardSale = Math.min(paidAmount, grandTotal);
         dueAmount = roundMoney(grandTotal - paidTowardSale);
+        String paymentMethod = normalizeSalePaymentMethod(request.getPaymentMethod(), paidTowardSale, dueAmount);
         if (dueAmount > 0) {
+            if (isFreePlanWithoutCustomerCredit()) {
+                throw new BadRequestException("Credit sales are not available in FREE plan");
+            }
             if (request.getCustomerId() == null) {
                 throw new BadRequestException("Customer required when paid amount is less than grand total");
             }
@@ -284,6 +294,7 @@ public class OrderService {
                 .cashierUserId(user.getId())
                 .customerId(request.getCustomerId())
                 .orderType(effectiveOrderType)
+                .paymentMethod(paymentMethod)
                 .saleMode(saleMode)
                 .tableId(diningTable != null ? diningTable.getId() : null)
                 .tableName(diningTable != null ? diningTable.getTableName() : null)
@@ -293,6 +304,8 @@ public class OrderService {
                 .grandTotal(grandTotal)
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
+                .salePaidAmount(paidTowardSale)
+                .saleDueAmount(dueAmount)
                 .note(request.getNote())
                 .createdAt(LocalDateTime.now())
                 .offlineSoldAt(offlineOrderMetadata != null ? offlineOrderMetadata.offlineSoldAt : null)
@@ -389,6 +402,67 @@ public class OrderService {
 
         ensureBranchAccess(user, order.getBranchId());
         return mapToOrderResponse(order, true);
+    }
+
+    @Transactional
+    public OrderResponse recordPayment(String invoiceNo, OrderPaymentRequest request) {
+        User user = getLoggedUser();
+        Order order = orderRepository.findByInvoiceNo(invoiceNo)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        ensureBranchAccess(user, order.getBranchId());
+
+        if (order.getStatus() == OrderStatus.CANCELED) {
+            throw new BadRequestException("Cannot record payment for a canceled order");
+        }
+        if (order.getCustomerId() == null) {
+            throw new BadRequestException("Order is not linked to a customer");
+        }
+
+        double orderDue = roundMoney(order.getDueAmount());
+        if (orderDue <= 0) {
+            throw new BadRequestException("This order has no due amount");
+        }
+
+        double paymentAmount = roundMoney(request.getAmount());
+        if (paymentAmount <= 0) {
+            throw new BadRequestException("Payment amount must be greater than 0");
+        }
+        if (paymentAmount > orderDue) {
+            throw new BadRequestException("Payment amount exceeds this order due amount: " + orderDue);
+        }
+
+        Customer customer = customerRepository.findById(order.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+
+        double customerDue = roundMoney(customer.getDueAmount());
+        if (paymentAmount > customerDue) {
+            throw new BadRequestException("Payment amount exceeds the customer due amount: " + customerDue);
+        }
+
+        order.setPaidAmount(roundMoney(order.getPaidAmount() + paymentAmount));
+        order.setDueAmount(roundMoney(orderDue - paymentAmount));
+
+        customer.setDueAmount(roundMoney(customerDue - paymentAmount));
+
+        Order savedOrder = orderRepository.save(order);
+        customerRepository.save(customer);
+
+        String method = normalizePaymentMethod(request.getPaymentMethod(), "CASH");
+        String note = request.getNote() == null || request.getNote().isBlank()
+                ? "Payment for invoice " + order.getInvoiceNo() + " (" + method + ")"
+                : request.getNote().trim() + " (" + method + ", invoice " + order.getInvoiceNo() + ")";
+
+        creditPaymentRepository.save(CreditPayment.builder()
+                .customerId(order.getCustomerId())
+                .branchId(order.getBranchId())
+                .cashierUserId(user.getId())
+                .amount(paymentAmount)
+                .paymentMethod(method)
+                .note(note)
+                .build());
+
+        return mapToOrderResponse(savedOrder, true);
     }
 
     public Page<OrderResponse> getAllOrders(
@@ -587,6 +661,12 @@ public class OrderService {
             return new StockConsumptionResult(null, unitCost, lineCost, usages);
         }
 
+        if (isFreePlanWithoutStockManagement()) {
+            double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
+            double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
+            return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of());
+        }
+
         if (itemReq.getBatchId() == null && !allowAutomaticBatchSelection) {
             throw new BadRequestException("Batch ID is missing for item: " + item.getName());
         }
@@ -685,6 +765,36 @@ public class OrderService {
                 lineCost,
                 usages
         );
+    }
+
+    private boolean isFreePlanWithoutStockManagement() {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return false;
+        }
+        return tenantSubscriptionRepository.findByTenantId(tenantId)
+                .map(TenantSubscription::getPlan)
+                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                .map(planName -> planName.equals("FREE") || planName.equals("MONTHLY_DEMO"))
+                .orElse(false);
+    }
+
+    private boolean isFreePlanWithoutCustomerCredit() {
+        return isFreePlanWithoutStockManagement();
+    }
+
+    private String normalizeSalePaymentMethod(String paymentMethod, double paidAmount, double dueAmount) {
+        if (paidAmount <= 0 && dueAmount > 0) {
+            return "CREDIT";
+        }
+        return normalizePaymentMethod(paymentMethod, "CASH");
+    }
+
+    private String normalizePaymentMethod(String paymentMethod, String fallback) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return fallback;
+        }
+        return paymentMethod.trim().toUpperCase();
     }
 
     private void decrementBatch(StockBatch batch, int normalizedQty) {
@@ -823,6 +933,10 @@ public class OrderService {
         return BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    private double roundRupee(double amount) {
+        return BigDecimal.valueOf(amount).setScale(0, RoundingMode.HALF_UP).doubleValue();
+    }
+
     private OrderResponse mapToOrderResponse(Order order, boolean includeItems) {
         List<OrderItem> items = includeItems ? orderItemRepository.findByOrderId(order.getId()) : Collections.emptyList();
         return buildOrderResponse(order, items);
@@ -884,6 +998,7 @@ public class OrderService {
                 .customerId(order.getCustomerId())
                 .customerName(customerName)
                 .orderType(order.getOrderType())
+                .paymentMethod(order.getPaymentMethod())
                 .saleMode(order.getSaleMode())
                 .tableId(order.getTableId())
                 .tableName(order.getTableName())

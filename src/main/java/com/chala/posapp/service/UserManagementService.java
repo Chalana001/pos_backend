@@ -7,12 +7,15 @@ import com.chala.posapp.dto.user.UpdateUserStatusRequest;
 import com.chala.posapp.dto.user.UserResponse;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.TenantSubscription;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.tenant.TenantContext;
 import org.jspecify.annotations.Nullable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -32,6 +35,7 @@ public class UserManagementService {
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -47,6 +51,7 @@ public class UserManagementService {
             throw new AlreadyExistsException("Username already exists");
 
         Role role = request.getRole();
+        validateUserLimit(role);
 
         if ((role == Role.MANAGER || role == Role.CASHIER) && request.getBranchId() == null)
             throw new BadRequestException("BranchId required for " + role);
@@ -147,6 +152,39 @@ public class UserManagementService {
         return cashiers.stream()
                 .map(this::map)
                 .collect(Collectors.toList());
+    }
+
+    private void validateUserLimit(Role role) {
+        String planName = currentPlanName();
+        if (isFreePlan(planName) && (role == Role.MANAGER || role == Role.CASHIER)) {
+            throw new BadRequestException("FREE plan supports admin user only");
+        }
+
+        if (isStandardPlan(planName) && role == Role.CASHIER && userRepository.countByRoleAndEnabledTrue(Role.CASHIER) >= 2) {
+            throw new BadRequestException("STANDARD plan supports maximum 2 cashiers");
+        }
+    }
+
+    private String currentPlanName() {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return "";
+        }
+        return tenantSubscriptionRepository.findByTenantId(tenantId)
+                .map(TenantSubscription::getPlan)
+                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                .orElse("");
+    }
+
+    private boolean isFreePlan(String planName) {
+        return "FREE".equals(planName) || "MONTHLY_DEMO".equals(planName);
+    }
+
+    private boolean isStandardPlan(String planName) {
+        return "STANDARD".equals(planName)
+                || "MONTHLY_LITE".equals(planName)
+                || "YEARLY_LITE".equals(planName)
+                || "MONTHLY_BASIC".equals(planName);
     }
 
     public List<UserResponse> getSalesFilterUsers(Long branchId) {

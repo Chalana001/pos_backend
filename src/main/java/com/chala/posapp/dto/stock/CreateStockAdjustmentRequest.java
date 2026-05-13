@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.stock;
 
 import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.stock.StockAdjustmentDirection;
 import com.chala.posapp.entity.stock.StockAdjustmentType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,6 +27,8 @@ public class CreateStockAdjustmentRequest {
 
     @Positive
     private BigDecimal qty;
+
+    private StockAdjustmentDirection direction;
 
     private MeasurementUnit qtyUnit;
 

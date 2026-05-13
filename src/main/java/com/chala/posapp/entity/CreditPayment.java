@@ -27,6 +27,9 @@ public class CreditPayment extends TenantEntity {
     @Column(nullable = false)
     private double amount;
 
+    @Column(name = "payment_method", length = 30)
+    private String paymentMethod;
+
     @Column(length = 255)
     private String note;
 
@@ -35,5 +38,6 @@ public class CreditPayment extends TenantEntity {
     @PrePersist
     void onCreate() {
         paidAt = LocalDateTime.now();
+        if (paymentMethod == null || paymentMethod.isBlank()) paymentMethod = "CASH";
     }
 }

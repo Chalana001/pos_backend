@@ -63,6 +63,7 @@ public class CreditService {
                 .branchId(user.getBranchId())
                 .cashierUserId(user.getId())
                 .amount(request.getAmount())
+                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
                 .note(request.getNote())
                 .build();
 
@@ -74,6 +75,7 @@ public class CreditService {
                 .branchId(payment.getBranchId())
                 .cashierUserId(payment.getCashierUserId())
                 .amount(payment.getAmount())
+                .paymentMethod(payment.getPaymentMethod())
                 .note(payment.getNote())
                 .paidAt(payment.getPaidAt())
                 .build();
@@ -87,9 +89,17 @@ public class CreditService {
                         .branchId(p.getBranchId())
                         .cashierUserId(p.getCashierUserId())
                         .amount(p.getAmount())
+                        .paymentMethod(p.getPaymentMethod())
                         .note(p.getNote())
                         .paidAt(p.getPaidAt())
                         .build())
                 .toList();
+    }
+
+    private String normalizePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return "CASH";
+        }
+        return paymentMethod.trim().toUpperCase();
     }
 }

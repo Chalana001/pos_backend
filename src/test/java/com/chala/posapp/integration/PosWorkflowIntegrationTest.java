@@ -1,9 +1,13 @@
 package com.chala.posapp.integration;
 
+import com.chala.posapp.entity.BillingCycle;
+import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.ExpenseCategory;
 import com.chala.posapp.entity.SubCategory;
+import com.chala.posapp.entity.SubscriptionPlan;
 import com.chala.posapp.entity.supplier.Supplier;
+import com.chala.posapp.entity.stock.StockBatch;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +18,62 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Test
+    void standardPlanCreatesZeroStockBatchesForNewStockItems() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("std"), 3);
+        String tenantId = fixture.tenantId();
+
+        SubscriptionPlan standardPlan = ensurePlan("STANDARD", BillingCycle.MONTHLY, 1500.0, 1500.0, 1);
+        fixture.subscription().setPlan(standardPlan);
+        tenantSubscriptionRepository.save(fixture.subscription());
+
+        Branch secondBranch = new Branch();
+        secondBranch.setTenantId(tenantId);
+        secondBranch.setCode("B2");
+        secondBranch.setName("Branch 2");
+        secondBranch.setActive(true);
+        secondBranch = branchRepository.save(secondBranch);
+
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Grocery");
+        category.setTenantId(tenantId);
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setTenantId(tenantId);
+        subCategory.setName("Dry Goods");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Standard Plan Rice",
+                  "subCategoryId": %d,
+                  "costPrice": 100,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0,
+                  "itemType": "NORMAL",
+                  "defaultUnit": "PCS"
+                }
+                """.formatted(subCategory.getId())
+        );
+
+        long itemId = item.path("id").asLong();
+        StockBatch mainBatch = firstBatchFor(fixture.mainBranch().getId(), itemId);
+        StockBatch secondBatch = firstBatchFor(secondBranch.getId(), itemId);
+
+        assertEquals(0, mainBatch.getQuantity());
+        assertEquals(0, secondBatch.getQuantity());
+        assertTrue(mainBatch.getBatchCode().startsWith("AUTO-ZERO-"));
+        assertTrue(secondBatch.getBatchCode().startsWith("AUTO-ZERO-"));
+    }
 
     @Test
     void customerOrderShiftPaymentDashboardAndReportApisWork() throws Exception {
@@ -449,7 +509,7 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(40.0, creditSettlement.path("amount").asDouble(), 0.001);
 
         JsonNode creditHistory = getJson("/credit/payments/" + customerId, tenantId, adminToken);
-        assertEquals(1, creditHistory.size());
+        assertEquals(2, creditHistory.size());
 
         JsonNode canceledOrder = postJson(
                 "/orders/" + cashInvoice + "/cancel",
@@ -646,6 +706,16 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         JsonNode shiftAfterOrder = getJson("/shifts/me", tenantId, cashierToken);
         assertEquals(40.0, shiftAfterOrder.path("cashSales").asDouble(), 0.001);
+
+        String today = LocalDate.now().toString();
+        JsonNode salesSummary = getJson("/reports/sales-summary?branchId=" + fixture.mainBranch().getId() + "&from=" + today + "&to=" + today, tenantId, adminToken);
+        assertEquals(100.0, salesSummary.path("totalSales").asDouble(), 0.001);
+        assertEquals(40.0, salesSummary.path("cashSales").asDouble(), 0.001);
+        assertEquals(60.0, salesSummary.path("creditSales").asDouble(), 0.001);
+
+        JsonNode dashboardKpis = getJson("/dashboard/kpis?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
+        assertEquals(40.0, dashboardKpis.path("cashSales").asDouble(), 0.001);
+        assertEquals(60.0, dashboardKpis.path("creditSales").asDouble(), 0.001);
 
         JsonNode closedShift = postJson(
                 "/shifts/close",

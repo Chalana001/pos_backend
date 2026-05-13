@@ -23,7 +23,7 @@ public class SupplierController {
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody SupplierCreateRequest req) {
+    public ResponseEntity<SupplierResponse> create(@RequestBody SupplierCreateRequest req) {
         return ResponseEntity.ok(supplierService.create(req));
     }
 

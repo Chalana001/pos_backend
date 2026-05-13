@@ -23,7 +23,14 @@ import java.util.Optional;
 public class SubscriptionFilter extends OncePerRequestFilter {
 
     private final TenantSubscriptionRepository subscriptionRepository;
-    private static final Set<String> LITE_ONLY_BLOCKED_PREFIXES = Set.of(
+    private static final Set<String> STANDARD_BLOCKED_PREFIXES = Set.of(
+            "/reports",
+            "/purchases",
+            "/suppliers",
+            "/grn",
+            "/stock-transfers"
+    );
+    private static final Set<String> FREE_BLOCKED_PREFIXES = Set.of(
             "/reports",
             "/purchases",
             "/suppliers",
@@ -31,7 +38,12 @@ public class SubscriptionFilter extends OncePerRequestFilter {
             "/expenses",
             "/cash-drops",
             "/users",
-            "/stock-transfers"
+            "/stock",
+            "/stock-adjustments",
+            "/stock-transfers",
+            "/dining-tables",
+            "/pending-orders",
+            "/credit"
     );
 
     @Override
@@ -68,7 +80,8 @@ public class SubscriptionFilter extends OncePerRequestFilter {
         }
 
         TenantSubscription subscription = subscriptionOpt.get();
-        if (isLitePlan(subscription) && isFeatureBlockedForLite(path, request.getMethod())) {
+        String featurePath = normalizeFeaturePath(path);
+        if (isFeatureBlockedForPlan(subscription, featurePath, request.getMethod())) {
             log.warn("Feature blocked by plan. tenant={}, plan={}, path={}, method={}",
                     tenantId, subscription.getPlan() != null ? subscription.getPlan().getName() : "N/A", path, request.getMethod());
 
@@ -81,18 +94,55 @@ public class SubscriptionFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private boolean isLitePlan(TenantSubscription subscription) {
+    private boolean isFeatureBlockedForPlan(TenantSubscription subscription, String path, String method) {
         String planName = subscription.getPlan() != null ? subscription.getPlan().getName() : "";
-        return "MONTHLY_LITE".equalsIgnoreCase(planName)
+        if (isFreePlan(planName)) {
+            return isBlockedByPrefixes(path, FREE_BLOCKED_PREFIXES)
+                    || isFreeOnlyBlock(path, method)
+                    || isSharedLowerTierBlock(path, method);
+        }
+        if (isStandardPlan(planName)) {
+            return isBlockedByPrefixes(path, STANDARD_BLOCKED_PREFIXES)
+                    || isSharedLowerTierBlock(path, method);
+        }
+        return false;
+    }
+
+    private String normalizeFeaturePath(String path) {
+        return path != null && path.startsWith("/api/") ? path.substring(4) : path;
+    }
+
+    private boolean isFreePlan(String planName) {
+        return "FREE".equalsIgnoreCase(planName) || "MONTHLY_DEMO".equalsIgnoreCase(planName);
+    }
+
+    private boolean isStandardPlan(String planName) {
+        return "STANDARD".equalsIgnoreCase(planName)
+                || "MONTHLY_LITE".equalsIgnoreCase(planName)
                 || "YEARLY_LITE".equalsIgnoreCase(planName)
                 || "MONTHLY_BASIC".equalsIgnoreCase(planName);
     }
 
-    private boolean isFeatureBlockedForLite(String path, String method) {
-        for (String blockedPrefix : LITE_ONLY_BLOCKED_PREFIXES) {
+    private boolean isBlockedByPrefixes(String path, Set<String> blockedPrefixes) {
+        for (String blockedPrefix : blockedPrefixes) {
             if (path.startsWith(blockedPrefix)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    private boolean isFreeOnlyBlock(String path, String method) {
+        if (path.startsWith("/cash-drops") || path.startsWith("/expenses")) {
+            return true;
+        }
+
+        if ("POST".equalsIgnoreCase(method) && path.startsWith("/orders")) {
+            return true;
+        }
+
+        if (path.startsWith("/orders/offline-import")) {
+            return true;
         }
 
         if ("POST".equalsIgnoreCase(method) && path.startsWith("/items/bulk")) {
@@ -103,15 +153,15 @@ public class SubscriptionFilter extends OncePerRequestFilter {
             return true;
         }
 
+        return false;
+    }
+
+    private boolean isSharedLowerTierBlock(String path, String method) {
         if (path.matches("^/orders/[^/]+/cancel$")) {
             return true;
         }
 
         if (path.startsWith("/shifts/all")) {
-            return true;
-        }
-
-        if (path.matches("^/shifts/[^/]+/cashdrop$") || path.startsWith("/shifts/cashdrop")) {
             return true;
         }
 

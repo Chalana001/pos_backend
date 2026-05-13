@@ -4,6 +4,7 @@ import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
 import com.chala.posapp.dto.order.OfflineSaleImportRequest;
 import com.chala.posapp.dto.order.OfflineSaleImportResponse;
+import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.service.InvoicePdfService;
 import com.chala.posapp.service.OrderService;
@@ -54,6 +55,15 @@ public class OrderController {
     @GetMapping("/{invoiceNo}")
     public ResponseEntity<OrderResponse> get(@PathVariable("invoiceNo") String invoiceNo) {
         return ResponseEntity.ok(orderService.getOrder(invoiceNo));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @PostMapping("/{invoiceNo}/payments")
+    public ResponseEntity<OrderResponse> recordPayment(
+            @PathVariable("invoiceNo") String invoiceNo,
+            @Valid @RequestBody OrderPaymentRequest request
+    ) {
+        return ResponseEntity.ok(orderService.recordPayment(invoiceNo, request));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")

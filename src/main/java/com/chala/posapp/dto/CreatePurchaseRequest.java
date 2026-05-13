@@ -11,5 +11,6 @@ public class CreatePurchaseRequest {
     private String invoiceNo;
     private BigDecimal discountAmount;
     private BigDecimal paidAmount;
+    private String paymentMethod;
     private List<BranchPurchaseRequest> branches;
 }

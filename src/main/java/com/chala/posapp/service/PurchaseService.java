@@ -168,6 +168,7 @@ public class PurchaseService {
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
                 .invoiceNo(invoiceNo)
+                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
                 .createdAt(LocalDateTime.now())
                 .grandTotal(BigDecimal.ZERO)
                 .status(PurchaseStatus.COMPLETED)
@@ -313,6 +314,7 @@ public class PurchaseService {
                 .grandTotal(savedPurchase.getGrandTotal())
                 .discountAmount(normalizeMoney(savedPurchase.getDiscountAmount()))
                 .paidAmount(savedPurchase.getPaidAmount())
+                .paymentMethod(savedPurchase.getPaymentMethod())
                 .dueAmount(savedPurchase.getDueAmount())
                 .status(normalizeStatus(savedPurchase))
                 .cancelReason(savedPurchase.getCancelReason())
@@ -364,6 +366,7 @@ public class PurchaseService {
                 .grandTotal(purchase.getGrandTotal())
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
+                .paymentMethod(purchase.getPaymentMethod())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
@@ -415,6 +418,7 @@ public class PurchaseService {
                 .grandTotal(purchase.getGrandTotal())
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
+                .paymentMethod(purchase.getPaymentMethod())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
@@ -473,5 +477,12 @@ public class PurchaseService {
 
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private String normalizePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return "CASH";
+        }
+        return paymentMethod.trim().toUpperCase();
     }
 }

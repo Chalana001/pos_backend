@@ -12,5 +12,7 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
 
     Optional<SubscriptionPlan> findByName(String name);
 
+    List<SubscriptionPlan> findByNameIn(List<String> names);
+
     List<SubscriptionPlan> findByNameInOrderByInitialPriceAsc(List<String> names);
 }

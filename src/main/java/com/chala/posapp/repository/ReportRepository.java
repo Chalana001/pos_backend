@@ -21,19 +21,39 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     double totalSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
-        SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
+        SELECT COALESCE(SUM(
+            COALESCE(
+                o.sale_paid_amount,
+                CASE
+                    WHEN o.order_type = 'CASH' THEN
+                        CASE
+                            WHEN o.paid_amount < o.grand_total THEN o.paid_amount
+                            ELSE o.grand_total
+                        END
+                    ELSE 0
+                END
+            )
+        ),0) FROM orders o
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED' AND o.order_type = 'CASH'
+          AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
     double cashSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
-        SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
+        SELECT COALESCE(SUM(
+            COALESCE(
+                o.sale_due_amount,
+                CASE
+                    WHEN o.order_type = 'CREDIT' THEN o.grand_total
+                    ELSE 0
+                END
+            )
+        ),0) FROM orders o
         WHERE o.tenant_id = :tenantId
           AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED' AND o.order_type = 'CREDIT'
+          AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
     double creditSales(@Param("tenantId") String tenantId, @Param("branchId") Long branchId, @Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
