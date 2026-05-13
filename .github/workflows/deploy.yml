@@ -1,0 +1,79 @@
+name: POS System CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+
+      - name: Get Metadata
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          DATE=$(date +'%Y-%m-%d')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "JAR_NAME=POS.System-${VERSION}.jar" >> $GITHUB_ENV
+          echo "BACKUP_NAME=POS.System-${VERSION}-${DATE}.jar" >> $GITHUB_ENV
+
+      - name: Upload Artifact to VPS (Using Password)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }} # SSH Key wenuwata password eka
+          source: "target/${{ env.JAR_NAME }}"
+          target: "/tmp"
+
+      - name: Execute Remote Deployment & Backup (Using Password)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }} # SSH Key wenuwata password eka
+          script: |
+            # --- Configuration ---
+            NEW_JAR_PATH="/tmp/target/${{ env.JAR_NAME }}"
+            ROOT_PATH="/root"
+            DEST_JAR="$ROOT_PATH/${{ env.JAR_NAME }}"
+            BACKUP_DIR="$ROOT_PATH/Pos Backup"
+            SERVICE_FILE="/etc/systemd/system/pos.service"
+            AAPANEL_DB_BACKUP="/www/backup/database/pos_db"
+            
+            # --- 1. Database Backup ---
+            mkdir -p $AAPANEL_DB_BACKUP
+            DB_FILE="db_pos_db_$(date +%Y%m%d_%H%M%S).sql.gz"
+            mysqldump -u pos_db -p'L2hs2RcP67cwH84N' pos_db | gzip > "$AAPANEL_DB_BACKUP/$DB_FILE"
+            chown -R www:www $AAPANEL_DB_BACKUP
+            chmod -R 755 $AAPANEL_DB_BACKUP
+
+            # --- 2. JAR Backup & Cleanup ---
+            mkdir -p "$BACKUP_DIR"
+            cp "$NEW_JAR_PATH" "$BACKUP_DIR/${{ env.BACKUP_NAME }}"
+            
+            rm -f $ROOT_PATH/POS.System-*.jar
+            mv "$NEW_JAR_PATH" "$DEST_JAR"
+
+            # Keep only last 3 backups
+            cd "$BACKUP_DIR" && ls -t POS.System-*.jar | tail -n +4 | xargs -r rm
+
+            # --- 3. Update Service & Restart ---
+            sed -i "s|ExecStart=.*|ExecStart=/usr/bin/java -Xms512m -Xmx2g -jar $DEST_JAR|" $SERVICE_FILE
+
+            systemctl daemon-reload
+            systemctl restart pos.service
+            
+            rm -rf /tmp/target
+            echo "Deployment Successful: ${{ env.JAR_NAME }} is live."
