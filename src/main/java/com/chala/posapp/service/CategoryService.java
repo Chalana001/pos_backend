@@ -27,7 +27,7 @@ public class CategoryService {
         this.subCategoryRepository = subCategoryRepository;
     }
 
-    // 1. Get All Categories
+    // 1. Get All Categoriess
     @Transactional(readOnly = true)
     public List<CategoryDto> getAllCategories() {
         return categoryRepository.findAll().stream()
