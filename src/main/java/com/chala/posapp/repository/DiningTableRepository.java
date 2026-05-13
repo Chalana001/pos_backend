@@ -7,6 +7,7 @@ import java.util.List;
 
 public interface DiningTableRepository extends JpaRepository<DiningTable, Long> {
     List<DiningTable> findByBranchIdOrderByTableNameAsc(Long branchId);
+    long countByBranchId(Long branchId);
     boolean existsByBranchIdAndTableNameIgnoreCase(Long branchId, String tableName);
     boolean existsByBranchIdAndTableNameIgnoreCaseAndIdNot(Long branchId, String tableName, Long id);
 }

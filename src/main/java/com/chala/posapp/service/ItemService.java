@@ -14,6 +14,7 @@ import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
 import com.chala.posapp.entity.SubCategory;
+import com.chala.posapp.entity.TenantSubscription;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
@@ -24,6 +25,8 @@ import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.RecipeIngredientRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
+import com.chala.posapp.repository.TenantSubscriptionRepository;
+import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -53,6 +56,7 @@ public class ItemService {
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
@@ -68,6 +72,7 @@ public class ItemService {
                 .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found with ID: " + request.getSubCategoryId()));
 
         ItemType itemType = request.getItemType() != null ? request.getItemType() : ItemType.NORMAL;
+        validateItemTypeAllowed(itemType);
         MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit());
 
         Item item = Item.builder()
@@ -87,6 +92,7 @@ public class ItemService {
         Item savedItem = itemRepository.save(item);
         syncServiceBranches(savedItem, request.getBranchIds());
         syncRecipeIngredients(savedItem, request.getIngredients());
+        createZeroStockBatchesIfRequired(savedItem);
         return mapToResponse(savedItem, null, List.of());
     }
 
@@ -116,6 +122,7 @@ public class ItemService {
                             .orElseThrow(() -> new ResourceNotFoundException("SubCategory ID " + req.getSubCategoryId() + " not found"));
 
                     ItemType itemType = req.getItemType() != null ? req.getItemType() : ItemType.NORMAL;
+                    validateItemTypeAllowed(itemType);
                     MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, req.getDefaultUnit());
 
                     return Item.builder()
@@ -142,6 +149,7 @@ public class ItemService {
                             .orElse(null);
                     syncServiceBranches(item, sourceRequest != null ? sourceRequest.getBranchIds() : null);
                     syncRecipeIngredients(item, sourceRequest != null ? sourceRequest.getIngredients() : null);
+                    createZeroStockBatchesIfRequired(item);
                     return mapToResponse(item, null, List.of());
                 })
                 .toList();
@@ -331,6 +339,7 @@ public class ItemService {
         }
 
         ItemType itemType = request.getItemType() != null ? request.getItemType() : item.getItemType();
+        validateItemTypeAllowed(itemType);
         MeasurementUnit defaultUnit = request.getDefaultUnit() != null
                 ? QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit())
                 : QuantityConversionUtil.normalizeItemUnit(itemType, item.getDefaultUnit());
@@ -456,6 +465,89 @@ public class ItemService {
                         .build())
                 .toList();
         branchServiceItemRepository.saveAll(assignments);
+    }
+
+    private void createZeroStockBatchesIfRequired(Item item) {
+        if (!shouldCreateZeroStockBatches(item)) {
+            return;
+        }
+
+        List<Branch> activeBranches = branchRepository.findAll().stream()
+                .filter(Branch::isActive)
+                .toList();
+        if (activeBranches.isEmpty()) {
+            return;
+        }
+
+        List<StockBatch> zeroBatches = activeBranches.stream()
+                .map(branch -> StockBatch.builder()
+                        .branch(branch)
+                        .item(item)
+                        .quantity(0)
+                        .originalQuantity(0)
+                        .costPrice(item.getCostPrice())
+                        .sellingPrice(item.getSellingPrice())
+                        .batchCode("AUTO-ZERO-" + branch.getId() + "-" + item.getId())
+                        .build())
+                .toList();
+        stockBatchRepository.saveAll(zeroBatches);
+    }
+
+    private boolean shouldCreateZeroStockBatches(Item item) {
+        if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+            return false;
+        }
+
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return false;
+        }
+
+        return tenantSubscriptionRepository.findByTenantId(tenantId)
+                .map(TenantSubscription::getPlan)
+                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                .map(planName -> planName.equals("FREE")
+                        || planName.equals("STANDARD")
+                        || planName.equals("MONTHLY_DEMO")
+                        || planName.equals("MONTHLY_LITE")
+                        || planName.equals("YEARLY_LITE")
+                        || planName.equals("MONTHLY_BASIC"))
+                .orElse(false);
+    }
+
+    private void validateItemTypeAllowed(ItemType itemType) {
+        String planName = currentPlanName();
+        if (isFreePlan(planName) && itemType != ItemType.NORMAL) {
+            throw new BadRequestException("FREE plan supports NORMAL items only");
+        }
+        if (isStandardPlan(planName)
+                && itemType != ItemType.NORMAL
+                && itemType != ItemType.WEIGHT
+                && itemType != ItemType.SERVICE) {
+            throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT and SERVICE items only");
+        }
+    }
+
+    private String currentPlanName() {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return "";
+        }
+        return tenantSubscriptionRepository.findByTenantId(tenantId)
+                .map(TenantSubscription::getPlan)
+                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                .orElse("");
+    }
+
+    private boolean isFreePlan(String planName) {
+        return "FREE".equals(planName) || "MONTHLY_DEMO".equals(planName);
+    }
+
+    private boolean isStandardPlan(String planName) {
+        return "STANDARD".equals(planName)
+                || "MONTHLY_LITE".equals(planName)
+                || "YEARLY_LITE".equals(planName)
+                || "MONTHLY_BASIC".equals(planName);
     }
 
     private void syncRecipeIngredients(Item item, List<ItemIngredientRequest> ingredientRequests) {

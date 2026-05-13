@@ -18,6 +18,7 @@ public class PurchaseResponse {
     private BigDecimal grandTotal;
     private BigDecimal discountAmount;
     private BigDecimal paidAmount;
+    private String paymentMethod;
     private BigDecimal dueAmount;
     private PurchaseStatus status;
     private String cancelReason;

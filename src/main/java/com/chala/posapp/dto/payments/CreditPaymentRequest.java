@@ -13,5 +13,7 @@ public class CreditPaymentRequest {
     @Min(1)
     private double amount;
 
+    private String paymentMethod;
+
     private String note;
 }

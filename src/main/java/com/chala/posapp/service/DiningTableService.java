@@ -7,6 +7,7 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.DiningTable;
 import com.chala.posapp.entity.DiningTableStatus;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.TenantSubscription;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
@@ -14,7 +15,9 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.DiningTableRepository;
 import com.chala.posapp.repository.PendingOrderRepository;
+import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
@@ -31,6 +34,7 @@ public class DiningTableService {
     private final PendingOrderRepository pendingOrderRepository;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final TenantSubscriptionRepository tenantSubscriptionRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -63,6 +67,7 @@ public class DiningTableService {
     @Transactional
     public DiningTableResponse create(DiningTableCreateRequest request) {
         User user = getLoggedUser();
+        validateDiningTableFeature(request.getBranchId());
         ensureBranchAccess(user, request.getBranchId());
 
         Branch branch = branchRepository.findById(request.getBranchId())
@@ -87,6 +92,7 @@ public class DiningTableService {
 
     public List<DiningTableResponse> listByBranch(Long branchId) {
         User user = getLoggedUser();
+        validateDiningFeatureEnabled();
         ensureBranchAccess(user, branchId);
 
         branchRepository.findById(branchId)
@@ -95,6 +101,44 @@ public class DiningTableService {
         return diningTableRepository.findByBranchIdOrderByTableNameAsc(branchId).stream()
                 .map(this::map)
                 .toList();
+    }
+
+    private void validateDiningTableFeature(Long branchId) {
+        String planName = currentPlanName();
+        if (isFreePlan(planName)) {
+            throw new BadRequestException("Tables are not available in FREE plan");
+        }
+        if (isStandardPlan(planName) && diningTableRepository.countByBranchId(branchId) >= 15) {
+            throw new BadRequestException("STANDARD plan supports maximum 15 tables");
+        }
+    }
+
+    private void validateDiningFeatureEnabled() {
+        if (isFreePlan(currentPlanName())) {
+            throw new BadRequestException("Tables are not available in FREE plan");
+        }
+    }
+
+    private String currentPlanName() {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equals(tenantId)) {
+            return "";
+        }
+        return tenantSubscriptionRepository.findByTenantId(tenantId)
+                .map(TenantSubscription::getPlan)
+                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                .orElse("");
+    }
+
+    private boolean isFreePlan(String planName) {
+        return "FREE".equals(planName) || "MONTHLY_DEMO".equals(planName);
+    }
+
+    private boolean isStandardPlan(String planName) {
+        return "STANDARD".equals(planName)
+                || "MONTHLY_LITE".equals(planName)
+                || "YEARLY_LITE".equals(planName)
+                || "MONTHLY_BASIC".equals(planName);
     }
 
     public DiningTableResponse get(Long id) {

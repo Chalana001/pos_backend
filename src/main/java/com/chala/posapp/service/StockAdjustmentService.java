@@ -8,6 +8,7 @@ import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockAdjustment;
+import com.chala.posapp.entity.stock.StockAdjustmentDirection;
 import com.chala.posapp.entity.stock.StockAdjustmentType;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.BadRequestException;
@@ -78,13 +79,21 @@ public class StockAdjustmentService {
         return branchId;
     }
 
-    private int computeQtyChange(StockAdjustmentType type, int qty) {
-        if (type == StockAdjustmentType.EXPIRED
-                || type == StockAdjustmentType.DAMAGED
-                || type == StockAdjustmentType.LOST) {
+    private int computeQtyChange(StockAdjustmentType type, StockAdjustmentDirection direction, int qty) {
+        StockAdjustmentDirection effectiveDirection = direction != null ? direction : defaultDirection(type);
+        if (effectiveDirection == StockAdjustmentDirection.REMOVE) {
             return -qty;
         }
         return qty;
+    }
+
+    private StockAdjustmentDirection defaultDirection(StockAdjustmentType type) {
+        if (type == StockAdjustmentType.EXPIRED
+                || type == StockAdjustmentType.DAMAGED
+                || type == StockAdjustmentType.LOST) {
+            return StockAdjustmentDirection.REMOVE;
+        }
+        return StockAdjustmentDirection.ADD;
     }
 
     @Transactional
@@ -134,7 +143,7 @@ public class StockAdjustmentService {
         }
 
         int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, request.getQty(), request.getQtyUnit());
-        int qtyChange = computeQtyChange(request.getType(), normalizedQty);
+        int qtyChange = computeQtyChange(request.getType(), request.getDirection(), normalizedQty);
 
         if (qtyChange < 0) {
             int qtyToRemove = Math.abs(qtyChange);
@@ -146,11 +155,7 @@ public class StockAdjustmentService {
         batch.setQuantity(batch.getQuantity() + qtyChange);
         stockBatchRepository.save(batch);
 
-        BigDecimal signedDisplayQty = request.getType() == StockAdjustmentType.EXPIRED
-                || request.getType() == StockAdjustmentType.DAMAGED
-                || request.getType() == StockAdjustmentType.LOST
-                ? request.getQty().negate()
-                : request.getQty();
+        BigDecimal signedDisplayQty = qtyChange < 0 ? request.getQty().negate() : request.getQty();
 
         StockAdjustment adjustment = StockAdjustment.builder()
                 .branchId(request.getBranchId())

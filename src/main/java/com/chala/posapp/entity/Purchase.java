@@ -44,6 +44,9 @@ public class Purchase extends TenantEntity {
     @Column(precision = 12, scale = 2)
     private BigDecimal paidAmount;
 
+    @Column(name = "payment_method", length = 30)
+    private String paymentMethod;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal dueAmount;
 

@@ -16,6 +16,8 @@ public interface TenantSubscriptionRepository extends JpaRepository<TenantSubscr
 
     boolean existsByTenantId(String tenantId);
 
+    boolean existsByPlanId(Long planId);
+
     List<TenantSubscription> findByIsActiveTrue();
 
     List<TenantSubscription> findByValidUntilBefore(LocalDateTime now);

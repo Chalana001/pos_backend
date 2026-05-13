@@ -4,19 +4,24 @@ import com.chala.posapp.dto.customer.CustomerCreateRequest;
 import com.chala.posapp.dto.customer.CustomerPaymentRequest;
 import com.chala.posapp.dto.customer.CustomerResponse;
 import com.chala.posapp.dto.customer.CustomerUpdateRequest;
+import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.OrderRepository;
+import com.chala.posapp.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +36,14 @@ public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
+    private final CreditPaymentRepository creditPaymentRepository;
+    private final UserRepository userRepository;
+
+    private User getLoggedUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
 
     @Transactional
     public CustomerResponse create(CustomerCreateRequest request) {
@@ -110,6 +123,7 @@ public class CustomerService {
 
     @Transactional
     public CustomerResponse recordPayment(Long customerId, CustomerPaymentRequest request) {
+        User user = getLoggedUser();
 
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found with ID: " + customerId));
@@ -125,9 +139,13 @@ public class CustomerService {
 
         List<Order> pendingOrders = orderRepository.findPendingCreditOrders(customerId);
         double remainingPayment = paymentAmount;
+        Long paymentBranchId = user.getBranchId();
 
         for (Order order : pendingOrders) {
             if (remainingPayment <= 0) break;
+            if (paymentBranchId == null) {
+                paymentBranchId = order.getBranchId();
+            }
 
             double orderDue = order.getDueAmount();
 
@@ -147,7 +165,23 @@ public class CustomerService {
             orderRepository.save(order);
         }
 
+        creditPaymentRepository.save(CreditPayment.builder()
+                .customerId(customer.getId())
+                .branchId(paymentBranchId != null ? paymentBranchId : 0L)
+                .cashierUserId(user.getId())
+                .amount(paymentAmount)
+                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
+                .note(request.getNote())
+                .build());
+
         return map(customer);
+    }
+
+    private String normalizePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return "CASH";
+        }
+        return paymentMethod.trim().toUpperCase();
     }
 
     private CustomerResponse map(Customer c) {

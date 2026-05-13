@@ -58,6 +58,9 @@ public class Order extends TenantEntity {
     @Column(nullable = false, length = 20)
     private OrderType orderType;
 
+    @Column(name = "payment_method", length = 30)
+    private String paymentMethod;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "sale_mode", nullable = false, length = 20)
     @Builder.Default
@@ -87,6 +90,12 @@ public class Order extends TenantEntity {
 
     @Column(nullable = false)
     private double dueAmount;
+
+    @Column(name = "sale_paid_amount")
+    private Double salePaidAmount;
+
+    @Column(name = "sale_due_amount")
+    private Double saleDueAmount;
 
     private String note;
 
