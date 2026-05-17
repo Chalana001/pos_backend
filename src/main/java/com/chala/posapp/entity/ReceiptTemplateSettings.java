@@ -69,6 +69,9 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(nullable = false)
     private boolean showItemTable;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private boolean showWarranty;
+
     @Column(nullable = false)
     private boolean showSubtotal;
 

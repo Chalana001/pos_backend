@@ -57,6 +57,7 @@ public class ItemService {
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final AppConfigurationService appConfigurationService;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
@@ -223,6 +224,10 @@ public class ItemService {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
+        if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+            throw new ResourceNotFoundException("Item type is disabled");
+        }
+
         if (item.getItemType() == ItemType.SERVICE && branchId != null && branchId != 0L
                 && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
             throw new ResourceNotFoundException("Service item not available in this branch");
@@ -245,6 +250,10 @@ public class ItemService {
 
         return items.stream()
                 .map(item -> {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                        return null;
+                    }
+
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
 
@@ -257,6 +266,7 @@ public class ItemService {
 
                     return mapToResponse(item, totalQty, batchesToResponse(item, batches));
                 })
+                .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
@@ -267,6 +277,10 @@ public class ItemService {
         return items.stream()
                 .map(item -> {
                     if (!item.isActive()) {
+                        return null;
+                    }
+
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
                         return null;
                     }
 
@@ -516,6 +530,10 @@ public class ItemService {
     }
 
     private void validateItemTypeAllowed(ItemType itemType) {
+        if (!appConfigurationService.isItemTypeEnabled(itemType)) {
+            throw new BadRequestException(itemType.name() + " items are disabled in app configuration");
+        }
+
         String planName = currentPlanName();
         if (isFreePlan(planName) && itemType != ItemType.NORMAL) {
             throw new BadRequestException("FREE plan supports NORMAL items only");

@@ -48,4 +48,14 @@ public class PendingOrderItem extends TenantEntity {
 
     @Column(name = "discount_value", nullable = false)
     private double discountValue;
+
+    @Column(name = "warranty_label", length = 120)
+    private String warrantyLabel;
+
+    @Column(name = "warranty_period_value")
+    private Integer warrantyPeriodValue;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "warranty_period_unit", length = 20)
+    private WarrantyPeriodUnit warrantyPeriodUnit;
 }

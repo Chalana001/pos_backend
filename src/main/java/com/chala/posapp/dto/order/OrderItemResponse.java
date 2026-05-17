@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.order;
 
 import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.WarrantyPeriodUnit;
 import lombok.*;
 
 import java.math.BigDecimal;
@@ -21,4 +22,7 @@ public class OrderItemResponse {
     private double discountValue;
     private double finalUnitPrice;
     private double lineTotal;
+    private String warrantyLabel;
+    private Integer warrantyPeriodValue;
+    private WarrantyPeriodUnit warrantyPeriodUnit;
 }

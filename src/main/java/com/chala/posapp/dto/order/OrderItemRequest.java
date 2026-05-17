@@ -2,6 +2,7 @@ package com.chala.posapp.dto.order;
 
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.DiscountType;
+import com.chala.posapp.entity.WarrantyPeriodUnit;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -30,4 +31,11 @@ public class OrderItemRequest {
 
     @PositiveOrZero
     private double discountValue;
+
+    private String warrantyLabel;
+
+    @Positive
+    private Integer warrantyPeriodValue;
+
+    private WarrantyPeriodUnit warrantyPeriodUnit;
 }

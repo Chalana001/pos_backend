@@ -35,6 +35,7 @@ public class DiningTableService {
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final AppConfigurationService appConfigurationService;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -104,6 +105,10 @@ public class DiningTableService {
     }
 
     private void validateDiningTableFeature(Long branchId) {
+        if (!appConfigurationService.isTableManagementEnabled()) {
+            throw new BadRequestException("Table management is disabled in app configuration");
+        }
+
         String planName = currentPlanName();
         if (isFreePlan(planName)) {
             throw new BadRequestException("Tables are not available in FREE plan");
@@ -114,6 +119,10 @@ public class DiningTableService {
     }
 
     private void validateDiningFeatureEnabled() {
+        if (!appConfigurationService.isTableManagementEnabled()) {
+            throw new BadRequestException("Table management is disabled in app configuration");
+        }
+
         if (isFreePlan(currentPlanName())) {
             throw new BadRequestException("Tables are not available in FREE plan");
         }

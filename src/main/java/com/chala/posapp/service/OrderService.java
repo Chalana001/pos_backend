@@ -56,6 +56,8 @@ public class OrderService {
     private final PendingOrderItemRepository pendingOrderItemRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final CreditPaymentRepository creditPaymentRepository;
+    private final WarrantyRepository warrantyRepository;
+    private final AppConfigurationService appConfigurationService;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -189,11 +191,15 @@ public class OrderService {
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
 
         for (OrderItemRequest itemReq : request.getItems()) {
+            validateWarrantySelection(itemReq);
             Item item = itemRepository.findById(itemReq.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemReq.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
+            }
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
 
             int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
@@ -228,6 +234,9 @@ public class OrderService {
                     .finalUnitPrice(finalUnitPrice)
                     .lineCost(consumption.lineCost)
                     .lineTotal(lineTotal)
+                    .warrantyLabel(itemReq.getWarrantyLabel())
+                    .warrantyPeriodValue(itemReq.getWarrantyPeriodValue())
+                    .warrantyPeriodUnit(itemReq.getWarrantyPeriodUnit())
                     .build();
 
             preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages));
@@ -337,6 +346,11 @@ public class OrderService {
             orderItemStockUsageRepository.saveAll(usagesToSave);
         }
 
+        List<Warranty> warrantiesToSave = buildWarranties(savedOrder, savedOrderItems, customer);
+        if (!warrantiesToSave.isEmpty()) {
+            warrantyRepository.saveAll(warrantiesToSave);
+        }
+
         if (!batchesToUpdate.isEmpty()) {
             stockBatchRepository.saveAll(batchesToUpdate.values());
         }
@@ -378,6 +392,13 @@ public class OrderService {
 
         order.setStatus(OrderStatus.CANCELED);
         order.setCancelReason(request.getReason());
+        order.setCanceledAt(LocalDateTime.now());
+
+        List<Warranty> warranties = warrantyRepository.findByOrderId(order.getId());
+        if (!warranties.isEmpty()) {
+            warranties.forEach(warranty -> warranty.setStatus(WarrantyStatus.VOID));
+            warrantyRepository.saveAll(warranties);
+        }
         order.setCanceledAt(LocalDateTime.now());
         Order saved = orderRepository.save(order);
         reverseCashSaleFromOpenShift(saved);
@@ -577,6 +598,10 @@ public class OrderService {
 
     private DiningTable resolveDiningTable(User user, Long branchId, SaleMode saleMode, Long tableId) {
         if (saleMode == SaleMode.DINE_IN) {
+            if (!appConfigurationService.isDineInEnabled()) {
+                throw new BadRequestException("Dine-in is disabled in app configuration");
+            }
+
             if (tableId == null) {
                 throw new BadRequestException("Table ID is required for dine-in orders");
             }
@@ -967,6 +992,9 @@ public class OrderService {
                         .discountValue(orderItem.getDiscountValue())
                         .finalUnitPrice(orderItem.getFinalUnitPrice())
                         .lineTotal(orderItem.getLineTotal())
+                        .warrantyLabel(orderItem.getWarrantyLabel())
+                        .warrantyPeriodValue(orderItem.getWarrantyPeriodValue())
+                        .warrantyPeriodUnit(orderItem.getWarrantyPeriodUnit())
                         .build())
                 .collect(Collectors.toList());
 
@@ -1012,6 +1040,75 @@ public class OrderService {
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
                 .build();
+    }
+
+    private List<Warranty> buildWarranties(Order order, List<OrderItem> orderItems, Customer customer) {
+        if (orderItems == null || orderItems.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        LocalDate startDate = order.getCreatedAt() == null ? LocalDate.now() : order.getCreatedAt().toLocalDate();
+        String customerName = customer != null
+                ? customer.getName()
+                : order.getCustomerId() == null
+                    ? "Walk-in Customer"
+                    : customerRepository.findById(order.getCustomerId())
+                        .map(Customer::getName)
+                        .orElse("Unknown Customer");
+        List<Warranty> warranties = new ArrayList<>();
+
+        for (OrderItem item : orderItems) {
+            Integer periodValue = item.getWarrantyPeriodValue();
+            WarrantyPeriodUnit periodUnit = item.getWarrantyPeriodUnit();
+            if (periodValue == null || periodValue <= 0 || periodUnit == null) {
+                continue;
+            }
+
+            LocalDate endDate = calculateWarrantyEndDate(startDate, periodValue, periodUnit);
+            String label = item.getWarrantyLabel();
+            if (label == null || label.isBlank()) {
+                label = periodValue + " " + periodUnit.name();
+            }
+
+            warranties.add(Warranty.builder()
+                    .warrantyNo("WAR-" + order.getInvoiceNo() + "-" + item.getId())
+                    .orderId(order.getId())
+                    .orderItemId(item.getId())
+                    .branchId(order.getBranchId())
+                    .invoiceNo(order.getInvoiceNo())
+                    .customerId(order.getCustomerId())
+                    .customerName(customerName)
+                    .itemId(item.getItemId())
+                    .itemName(item.getItemName())
+                    .barcode(item.getBarcode())
+                    .warrantyLabel(label)
+                    .periodValue(periodValue)
+                    .periodUnit(periodUnit)
+                    .startDate(startDate)
+                    .endDate(endDate)
+                    .status(WarrantyStatus.ACTIVE)
+                    .build());
+        }
+
+        return warranties;
+    }
+
+    private LocalDate calculateWarrantyEndDate(LocalDate startDate, int periodValue, WarrantyPeriodUnit periodUnit) {
+        return switch (periodUnit) {
+            case DAYS -> startDate.plusDays(periodValue);
+            case MONTHS -> startDate.plusMonths(periodValue);
+            case YEARS -> startDate.plusYears(periodValue);
+        };
+    }
+
+    private void validateWarrantySelection(OrderItemRequest itemReq) {
+        boolean hasLabel = itemReq.getWarrantyLabel() != null && !itemReq.getWarrantyLabel().isBlank();
+        boolean hasPeriodValue = itemReq.getWarrantyPeriodValue() != null;
+        boolean hasPeriodUnit = itemReq.getWarrantyPeriodUnit() != null;
+
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
+            throw new BadRequestException("Warranty selection is incomplete");
+        }
     }
 
     private CustomerOrderListResponse map(Order order) {
