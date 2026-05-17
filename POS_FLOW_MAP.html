@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZenSys POS Flow Map v1.4.0</title>
+  <title>ZenSys POS Flow Map v1.6.0</title>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
     :root { --bg:#07111d; --panel:rgba(10,20,35,.86); --panel2:rgba(7,15,26,.96); --text:#ecf4ff; --muted:#98abc9; --blue:#58a6ff; --cyan:#52f0ff; --mint:#7ef6be; --amber:#ffc56a; --shadow:0 28px 80px rgba(0,0,0,.45); }
@@ -66,9 +66,9 @@
   <div class="app">
     <section class="hero">
       <div class="card">
-        <div class="eyebrow">ZenSys POS v1.4.0 Full Flow Interactive Map</div>
+        <div class="eyebrow">ZenSys POS v1.6.0 Full Flow Interactive Map</div>
         <h1>Click a module.<br />Click a step.<br />See the real flow.</h1>
-        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. It now includes offline sales queue import, POS cart/finalize bill fixes, financial filters, stock item detail, shift detail, branding, notifications, and version history.</p>
+        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. It now includes warranty setup and claims, App Configuration with package-aware gating, dedicated dining-table management, synced table drafts, supplier and purchase linkage, upgraded invoice and receipt printing, shared table and dropdown behavior, and the latest release/version flow.</p>
         <div class="legend">
           <span>Frontend trigger and navigation</span>
           <span>Request DTO and payload shape</span>
@@ -76,10 +76,10 @@
         </div>
       </div>
       <div class="metrics">
-        <div class="metric"><small>Modules</small><strong id="mCount">0</strong><div class="sub">Core POS, offline, stock, financials, release, and admin areas.</div></div>
+        <div class="metric"><small>Modules</small><strong id="mCount">0</strong><div class="sub">Core POS, dine-in, warranty, offline, supplier, stock, financial, release, and admin areas.</div></div>
         <div class="metric"><small>Steps</small><strong id="sCount">0</strong><div class="sub">Selected module flow count.</div></div>
         <div class="metric"><small>Source</small><strong>FE + BE</strong><div class="sub">Frontend behavior first, backend mapping next.</div></div>
-        <div class="metric"><small>Focus</small><strong id="focus">POS</strong><div class="sub">Main retail flow and related operational screens.</div></div>
+        <div class="metric"><small>Focus</small><strong id="focus">POS</strong><div class="sub">Retail, dine-in, warranty, package-aware, and shared frontend flow behavior.</div></div>
       </div>
     </section>
     <section class="workspace">
@@ -259,6 +259,56 @@
         ]
       },
       {
+        id: "dining",
+        lane: "Dine-In",
+        title: "Dining Tables and Draft Orders",
+        route: "/dining-tables and /pos",
+        tag: "Table Drafts",
+        meta: ["Tables", "Drafts", "KOT"],
+        copy: "Dining operations are now separated from print settings: tables are maintained in their own page, while POS stores and recalls branch table drafts through backend pending orders.",
+        steps: [
+          {
+            title: "Manage Dining Tables",
+            trigger: "Open Configuration -> Table Management",
+            summary: "Admins add, edit, and remove branch-wise tables outside Receipt Design.",
+            route: "/dining-tables",
+            nav: "Stay on Table Management",
+            outcome: "Dining tables are maintained independently from receipt layout settings.",
+            fe: "GET /dining-tables + POST/PUT/DELETE /dining-tables",
+            be: "DiningTableController.*",
+            files: ["src/pages/DiningTablesPage.jsx", "src/api/diningTables.api.js", "src/routes/AppRoutes.jsx"],
+            req: { dto: "DiningTableCreateRequest / DiningTableUpdateRequest", fields: [["branchId", "target branch"], ["tableName", "display name"], ["status", "AVAILABLE/OCCUPIED"]] },
+            res: { dto: "DiningTableResponse", fields: [["id", "table id"], ["branchId", "branch"], ["tableName", "name"], ["status", "current status"]] }
+          },
+          {
+            title: "Save or Recall Table Draft",
+            trigger: "Select a table or click Save Draft in dine-in POS",
+            summary: "POS stores the current dine-in cart as a backend pending order and reloads it when the table is reopened.",
+            route: "/pos",
+            nav: "Table tile -> active cart draft",
+            outcome: "Occupied table keeps its temporary bill until checkout or clear.",
+            fe: "GET /pending-orders/table/{tableId} + PUT /pending-orders/table/{tableId}",
+            be: "PendingOrderController.getByTable / saveForTable",
+            files: ["src/pages/POS.jsx", "src/api/pendingOrders.api.js"],
+            req: { dto: "PendingOrderSaveRequest", fields: [["customerId", "optional"], ["items[]", "draft lines"], ["billDiscount", "draft discount"], ["note", "optional"]] },
+            res: { dto: "PendingOrderResponse", fields: [["tableId", "table"], ["tableName", "display name"], ["grandTotal", "draft total"], ["items[]", "saved lines"]] }
+          },
+          {
+            title: "Sync Draft After Cart Removal",
+            trigger: "Delete a line from a saved dine-in draft",
+            summary: "Remaining draft items are re-saved immediately; deleting the final line clears the backend pending order.",
+            route: "/pos",
+            nav: "Stay on selected table",
+            outcome: "Backend draft and table status match the visible cart instead of retaining stale rows.",
+            fe: "PUT /pending-orders/table/{tableId} or DELETE /pending-orders/table/{tableId}",
+            be: "PendingOrderController.saveForTable / clear",
+            files: ["src/pages/POS.jsx", "src/api/pendingOrders.api.js", "src/main/java/com/chala/posapp/service/PendingOrderService.java"],
+            req: { dto: "PendingOrderSaveRequest or tableId", fields: [["items[]", "remaining lines"], ["tableId", "selected table"], ["delete", "used when last line removed"]] },
+            res: { dto: "PendingOrderResponse / 204", fields: [["items[]", "synced remaining draft"], ["status", "table becomes AVAILABLE after clear"]] }
+          }
+        ]
+      },
+      {
         id: "offline",
         lane: "Offline",
         title: "Offline Sales Queue",
@@ -327,8 +377,8 @@
         title: "Sales History",
         route: "/sales",
         tag: "Invoice Trail",
-        meta: ["List", "Detail", "Cancel"],
-        copy: "Invoice list, invoice detail, reprint, and cancel flow.",
+        meta: ["List", "Detail", "Payments"],
+        copy: "Invoice list, invoice detail, payment visibility, due visibility, and cancel flow.",
         steps: [
           {
             title: "Load Sales List",
@@ -336,12 +386,25 @@
             summary: "Frontend loads paged orders with optional search and branch filter.",
             route: "/sales",
             nav: "Row click -> /sales/{invoiceNo}",
-            outcome: "Invoice rows show totals, status, and payment type.",
+            outcome: "Invoice rows show totals, status, payment method, paid amount, and due amount with shared pagination behavior.",
             fe: "GET /orders",
             be: "OrderController.list",
             files: ["src/pages/SalesListPage.jsx", "src/api/sales.api.js"],
             req: { dto: "Query Params", fields: [["search", "invoice/customer"], ["page", "page no"], ["size", "page size"], ["branchId", "selected branch"]] },
-            res: { dto: "Page<OrderResponse>", fields: [["content[]", "invoice rows"], ["totalPages", "pagination"], ["grandTotal", "invoice total"], ["status", "COMPLETED/CANCELED"]] }
+            res: { dto: "Page<OrderResponse>", fields: [["content[]", "invoice rows"], ["totalPages", "pagination"], ["grandTotal", "invoice total"], ["paidAmount", "paid"], ["dueAmount", "remaining due"], ["paymentMethod", "cash/card/bank"], ["status", "COMPLETED/CANCELED"]] }
+          },
+          {
+            title: "Review Sale Payment State",
+            trigger: "Open sale detail page",
+            summary: "Sale detail exposes order total, paid amount, due amount, and mixed payment state clearly.",
+            route: "/sales/:invoiceNo",
+            nav: "Stay on sale detail",
+            outcome: "User can verify exactly what was paid and what remains due on that invoice.",
+            fe: "GET /orders/{invoiceNo}",
+            be: "OrderController.getByInvoiceNo",
+            files: ["src/pages/SalesDetailsPage.jsx", "src/api/sales.api.js"],
+            req: { dto: "Path variable", fields: [["invoiceNo", "selected invoice"]] },
+            res: { dto: "OrderResponse", fields: [["grandTotal", "invoice total"], ["paidAmount", "paid"], ["dueAmount", "balance"], ["orderType", "CASH/CREDIT"], ["paymentMethod", "selected method"]] }
           },
           {
             title: "Cancel Order",
@@ -355,6 +418,56 @@
             files: ["src/pages/SalesDetailsPage.jsx", "src/api/sales.api.js"],
             req: { dto: "CancelOrderRequest", fields: [["reason", "required"]] },
             res: { dto: "OrderResponse", fields: [["status", "CANCELED"], ["invoiceNo", "same invoice"], ["items[]", "original lines"]] }
+          }
+        ]
+      },
+      {
+        id: "warranties",
+        lane: "After-Sales",
+        title: "Warranty Management",
+        route: "/warranties",
+        tag: "Coverage",
+        meta: ["Templates", "Sales", "Claims"],
+        copy: "Warranty flow starts with reusable templates, continues through item-level POS selection, and ends in searchable warranty and claims records.",
+        steps: [
+          {
+            title: "Maintain Warranty Templates",
+            trigger: "Open Configuration -> Warranty Settings",
+            summary: "Managers create reusable warranty periods that POS can apply item by item.",
+            route: "/warranties/settings",
+            nav: "Stay on warranty settings",
+            outcome: "Active templates become available in the POS warranty selector.",
+            fe: "GET /warranty-templates + POST/PUT /warranty-templates",
+            be: "WarrantyTemplateController.*",
+            files: ["src/pages/WarrantySettingsPage.jsx", "src/api/warrantyTemplates.api.js"],
+            req: { dto: "WarrantyTemplateRequest", fields: [["label", "display label"], ["periodValue", "duration"], ["periodUnit", "DAYS/MONTHS/YEARS"], ["active", "availability"]] },
+            res: { dto: "WarrantyTemplateResponse", fields: [["id", "template id"], ["label", "selector label"], ["periodValue", "duration"], ["periodUnit", "unit"], ["active", "status"]] }
+          },
+          {
+            title: "Attach Warranty During Sale",
+            trigger: "Choose warranty dropdown on a POS cart row",
+            summary: "Selected warranty fields travel with each order item and are printed on configured receipts and invoices.",
+            route: "/pos",
+            nav: "Stay in cart until checkout",
+            outcome: "Order item persists warranty label and period together with the sold line.",
+            fe: "POST /orders",
+            be: "OrderController.create",
+            files: ["src/pages/POS.jsx", "src/components/pos/Cart.jsx", "src/main/java/com/chala/posapp/dto/order/OrderItemRequest.java"],
+            req: { dto: "OrderItemRequest", fields: [["itemId", "sold item"], ["warrantyLabel", "selected label"], ["warrantyPeriodValue", "duration"], ["warrantyPeriodUnit", "unit"]] },
+            res: { dto: "OrderItemResponse + WarrantyResponse", fields: [["warrantyLabel", "saved label"], ["warrantyPeriodValue", "saved duration"], ["warrantyPeriodUnit", "saved unit"], ["warrantyNo", "created coverage record"]] }
+          },
+          {
+            title: "Browse Warranty and Claims",
+            trigger: "Open Warranties or Claims Queue",
+            summary: "Users can review warranty rows, open bill-linked warranty details, and track claims.",
+            route: "/warranties and /warranties/claims",
+            nav: "Row click -> /warranties/:id",
+            outcome: "After-sales staff can trace item, invoice, customer, period, status, and claim history.",
+            fe: "GET /warranties + GET /warranty-claims",
+            be: "WarrantyController.*",
+            files: ["src/pages/WarrantiesPage.jsx", "src/pages/WarrantyDetailsPage.jsx", "src/pages/WarrantyClaimsPage.jsx", "src/api/warranties.api.js"],
+            req: { dto: "Query Params", fields: [["search", "invoice/customer/item"], ["page", "page no"], ["size", "page size"], ["status", "optional"]] },
+            res: { dto: "WarrantyResponse[] + WarrantyClaimResponse[]", fields: [["warrantyNo", "coverage no"], ["invoiceNo", "bill"], ["customerName", "customer"], ["endDate", "expiry"], ["status", "coverage/claim state"]] }
           }
         ]
       },
@@ -429,6 +542,43 @@
             files: ["src/pages/CustomerViewPage.jsx", "src/api/customers.api.js"],
             req: { dto: "CustomerPaymentRequest", fields: [["amount", "required"], ["paymentMethod", "CASH/CARD/BANK_TRANSFER"], ["note", "optional"]] },
             res: { dto: "CustomerResponse", fields: [["id", "same customer"], ["dueAmount", "reduced due"], ["creditLimit", "same limit"]] }
+          }
+        ]
+      },
+      {
+        id: "suppliers",
+        lane: "Supplier",
+        title: "Suppliers and Payables",
+        route: "/suppliers",
+        tag: "Supplier Ledger",
+        meta: ["Profile", "Purchases", "Due"],
+        copy: "Supplier flow now behaves more like customer flow, with direct list-to-profile navigation, bank details, purchase history, and visible supplier due context.",
+        steps: [
+          {
+            title: "Browse Supplier List",
+            trigger: "Open suppliers page or change search/page",
+            summary: "Supplier rows are clickable and paged with the same footer behavior used in sales and other history tables.",
+            route: "/suppliers",
+            nav: "Row click -> /suppliers/:id",
+            outcome: "User reaches supplier details directly without relying on action buttons.",
+            fe: "GET /suppliers",
+            be: "SupplierController.getAll",
+            files: ["src/pages/SuppliersPage.jsx", "src/api/suppliers.api.js", "src/components/common/TablePagination.jsx"],
+            req: { dto: "Supplier list query", fields: [["search", "optional"], ["page", "frontend page state"], ["size", "frontend page size"]] },
+            res: { dto: "SupplierResponse[]", fields: [["id", "supplier id"], ["name", "supplier name"], ["dueAmount", "running due"], ["active", "status"]] }
+          },
+          {
+            title: "Open Supplier Profile and Purchase Trail",
+            trigger: "Click supplier row",
+            summary: "Supplier profile shows bank details and linked purchase history. Purchase rows open the underlying purchase detail page.",
+            route: "/suppliers/:id",
+            nav: "Purchase row click -> /purchases/:id",
+            outcome: "Supplier banking and purchase records are visible in one flow.",
+            fe: "GET /suppliers/{id} + GET /purchases",
+            be: "SupplierController.getById + PurchaseController.list",
+            files: ["src/pages/SupplierViewPage.jsx", "src/api/suppliers.api.js", "src/api/purchases.api.js"],
+            req: { dto: "Path + query", fields: [["supplierId", "selected supplier"], ["page", "purchase page"], ["status", "optional purchase status"]] },
+            res: { dto: "SupplierResponse + Page<PurchaseResponse>", fields: [["bankName", "bank"], ["bankBranch", "branch"], ["accountName", "account name"], ["accountNumber", "account number"], ["content[]", "purchase history"]] }
           }
         ]
       },
@@ -552,7 +702,7 @@
         route: "/expenses and /cash-drops",
         tag: "Drawer Ops",
         meta: ["Expense", "Cash drop"],
-        copy: "Daily drawer-side operations. Expenses remove money and cash drops move money out during an open shift. v1.4.0 adds summaries, filters, cashier views, and pagination.",
+        copy: "Daily drawer-side operations. Expenses remove money and cash drops move money out during an open shift while staying aligned with the shared table, filter, pagination, and motion system.",
         steps: [
           {
             title: "Load Expenses With Filters",
@@ -615,7 +765,7 @@
         route: "/purchases",
         tag: "Supplier Intake",
         meta: ["Purchase", "GRN", "Cancel"],
-        copy: "Supplier purchase flow groups branch rows and creates purchase plus branch GRNs.",
+        copy: "Supplier purchase flow groups branch rows, applies invoice discount and payment visibility, and creates purchase plus branch GRNs.",
         steps: [
           {
             title: "Build Purchase Cart",
@@ -623,25 +773,25 @@
             summary: "Purchase form stores rows locally before final submit.",
             route: "/purchases/new",
             nav: "Stay on form until finalize",
-            outcome: "Cart rows hold branchId, qty, cost, sell, unit, and expiry.",
+            outcome: "Cart rows hold branchId, qty, cost, sell, unit, expiry, and purchase-level discount/payment context.",
             fe: "Item search and supplier/branch fetch only",
             be: "No purchase create yet",
             files: ["src/pages/PurchaseFormPage.jsx", "src/api/items.api.js", "src/api/suppliers.api.js", "src/api/branches.api.js"],
-            req: { dto: "Client purchase row state", fields: [["itemId", "item"], ["branchId", "target branch"], ["qty", "branch qty"], ["qtyUnit", "weight unit"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["expiryDate", "optional"]] },
-            res: { dto: "Client state only", fields: [["cartItems[]", "purchase rows"], ["grandTotal", "form total"]] }
+            req: { dto: "Client purchase row state", fields: [["itemId", "item"], ["branchId", "target branch"], ["qty", "branch qty"], ["qtyUnit", "weight unit"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["expiryDate", "optional"], ["discountAmount", "purchase discount"]] },
+            res: { dto: "Client state only", fields: [["cartItems[]", "purchase rows"], ["discountAmount", "invoice discount"], ["grandTotal", "form total"], ["paidAmount", "purchase paid"]] }
           },
           {
             title: "Finalize Purchase",
             trigger: "Click Finalize Purchase",
-            summary: "Frontend groups rows by branch into CreatePurchaseRequest and posts it.",
+            summary: "Frontend groups rows by branch into CreatePurchaseRequest and posts supplier, discount, payment, and GRN data.",
             route: "/purchases/new",
             nav: "On success -> /purchases",
-            outcome: "Backend returns PurchaseResponse with generated GRNs.",
+            outcome: "Backend returns PurchaseResponse with generated GRNs, paid amount, and remaining due visibility.",
             fe: "POST /purchases",
             be: "PurchaseController.create",
             files: ["src/pages/PurchaseFormPage.jsx", "src/api/purchases.api.js"],
-            req: { dto: "CreatePurchaseRequest", fields: [["supplierId", "supplier"], ["invoiceNo", "optional"], ["branches[]", "BranchPurchaseRequest[]"], ["branches[].items[]", "GrnItemRequest[]"]] },
-            res: { dto: "PurchaseResponse", fields: [["purchaseId", "purchase id"], ["supplierName", "supplier"], ["grandTotal", "total"], ["status", "COMPLETED/CANCELED"], ["grnList[]", "branch GRNs"]] }
+            req: { dto: "CreatePurchaseRequest", fields: [["supplierId", "supplier"], ["invoiceNo", "optional"], ["discountAmount", "invoice discount"], ["paidAmount", "paid now"], ["paymentMethod", "cash/card/bank"], ["branches[]", "BranchPurchaseRequest[]"], ["branches[].items[]", "GrnItemRequest[]"]] },
+            res: { dto: "PurchaseResponse", fields: [["purchaseId", "purchase id"], ["supplierName", "supplier"], ["grandTotal", "total"], ["paidAmount", "paid"], ["dueAmount", "remaining due"], ["status", "COMPLETED/CANCELED"], ["grnList[]", "branch GRNs"]] }
           },
           {
             title: "Cancel Purchase",
@@ -685,12 +835,25 @@
       {
         id: "admin",
         lane: "Admin",
-        title: "Branches and Users",
-        route: "/branches and /users",
+        title: "Configuration and Admin",
+        route: "/app-configuration, /branches, /users",
         tag: "Setup",
-        meta: ["Branch", "User", "Admin"],
-        copy: "Administrative setup for branch master data and user accounts.",
+        meta: ["Modules", "Branch", "User", "Packages"],
+        copy: "Administrative setup now starts from App Configuration, then branches into module visibility, branch master data, users, receipt behavior, and package-aware rules.",
         steps: [
+          {
+            title: "Configure Operational Modules",
+            trigger: "Open Configuration -> App Configuration",
+            summary: "Admins toggle shop-level modules, but only package-supported features are exposed and writable.",
+            route: "/app-configuration",
+            nav: "Stay on app configuration",
+            outcome: "Effective configuration controls recipe, weight, service, table, and dine-in visibility across frontend and backend behavior.",
+            fe: "GET /app-configuration + PUT /app-configuration",
+            be: "AppConfigurationController.get / update",
+            files: ["src/pages/AppConfigurationPage.jsx", "src/context/AppConfigurationContext.jsx", "src/api/appConfiguration.api.js", "src/main/java/com/chala/posapp/service/AppConfigurationService.java"],
+            req: { dto: "AppConfigurationRequest", fields: [["recipeItemsEnabled", "PRO only"], ["weightItemsEnabled", "STANDARD/PRO"], ["servicesEnabled", "STANDARD/PRO"], ["tableManagementEnabled", "STANDARD/PRO"], ["dineInEnabled", "depends on tables"]] },
+            res: { dto: "AppConfigurationResponse", fields: [["recipeItemsEnabled", "effective state"], ["weightItemsEnabled", "effective state"], ["servicesEnabled", "effective state"], ["tableManagementEnabled", "effective state"], ["dineInEnabled", "effective state"]] }
+          },
           {
             title: "Create or Update Branch",
             trigger: "Create Branch or Save in Edit modal",
@@ -706,16 +869,16 @@
           },
           {
             title: "Edit Receipt Design",
-            trigger: "Open Receipt Design and save thermal layout",
-            summary: "Editor uses global header branch selector. All Branches hides the form. A real branch loads and saves branch-wise receipt settings.",
+            trigger: "Open Receipt Design and save thermal/KOT/A4 layout",
+            summary: "Receipt Design now stays focused on print layouts only, including thermal, KOT, and full A4 invoice behavior.",
             route: "/receipt-settings",
             nav: "Stay on receipt design page",
-            outcome: "Thermal receipt layout, logo size, and visible sections are saved per branch. Credits stay locked.",
+            outcome: "Print layout, logo size, warranty visibility, due-related fields, and visible sections are saved per branch context.",
             fe: "GET /branches/{branchId}/receipt-settings + PUT /branches/{branchId}/receipt-settings",
             be: "ReceiptSettingsController.getSettings / updateSettings",
-            files: ["src/pages/ReceiptSettingsPage.jsx", "src/api/receiptSettings.api.js", "src/components/pos/ReceiptPrinter.jsx"],
-            req: { dto: "ReceiptSettingsRequest", fields: [["showLogo", "logo visible"], ["showStoreName", "store name visible"], ["showBranchName", "branch visible"], ["showAddress", "address visible"], ["showPhone", "phone visible"], ["showInvoiceNumber", "invoice visible"], ["showDateTime", "date/time visible"], ["showCashier", "cashier visible"], ["showCustomer", "customer visible"], ["showItemTable", "items visible"], ["showSubtotal", "subtotal visible"], ["showDiscount", "discount visible"], ["showNetTotal", "net total visible"], ["showPaid", "paid visible"], ["showBalance", "balance visible"], ["showThanksMessage", "thanks visible"], ["showCredits", "forced true"], ["logoWidthPercent", "logo print size"], ["paperWidthMm", "thermal width"], ["thanksMessage", "editable"], ["creditsLine1", "ignored by backend"], ["creditsLine2", "ignored by backend"]] },
-            res: { dto: "ReceiptSettingsResponse", fields: [["branchId", "selected branch"], ["templateType", "THERMAL/A4"], ["logoWidthPercent", "saved logo size"], ["paperWidthMm", "saved width"], ["showCredits", "always true"], ["creditsLine1", "fixed credit line"], ["creditsLine2", "fixed credit line"]] }
+            files: ["src/pages/ReceiptSettingsPage.jsx", "src/api/receiptSettings.api.js", "src/components/pos/ReceiptPrinter.jsx", "src/components/pos/InvoicePrinter.jsx"],
+            req: { dto: "ReceiptSettingsRequest", fields: [["showLogo", "logo visible"], ["showStoreName", "store name visible"], ["showBranchName", "branch visible"], ["showAddress", "address visible"], ["showPhone", "phone visible"], ["showInvoiceNumber", "invoice visible"], ["showDateTime", "date/time visible"], ["showCashier", "cashier visible"], ["showCustomer", "customer visible"], ["showItemTable", "items visible"], ["showWarranty", "warranty visible"], ["showSubtotal", "subtotal visible"], ["showDiscount", "discount visible"], ["showNetTotal", "net total visible"], ["showPaid", "paid visible"], ["showBalance", "balance visible"], ["showThanksMessage", "thanks visible"], ["showCredits", "forced true"], ["logoWidthPercent", "thermal logo size"], ["invoiceLogoWidthPercent", "A4 logo size"], ["paperWidthMm", "thermal width"], ["thanksMessage", "editable"]] },
+            res: { dto: "ReceiptSettingsResponse", fields: [["branchId", "selected branch"], ["templateType", "THERMAL/KOT/A4"], ["logoWidthPercent", "thermal logo size"], ["invoiceLogoWidthPercent", "invoice logo size"], ["paperWidthMm", "saved width"], ["showWarranty", "saved visibility"]] }
           },
           {
             title: "Create User or Manage User",
@@ -729,29 +892,42 @@
             files: ["src/pages/Users.jsx", "src/api/users.api.js"],
             req: { dto: "CreateUserRequest / AssignBranchRequest / UpdateUserStatusRequest / ResetPasswordRequest", fields: [["username", "create only"], ["password", "create only"], ["role", "user role"], ["branchId", "assignment"], ["enabled", "status update"], ["newPassword", "reset value"]] },
             res: { dto: "UserResponse", fields: [["id", "user id"], ["username", "login"], ["role", "role"], ["enabled", "status"], ["branchId", "branch"]] }
+          },
+          {
+            title: "Apply Single-Branch Package Rules",
+            trigger: "User logs in under FREE or STANDARD package",
+            summary: "BranchContext locks selectedBranchId to the user's own branch, hides the shell branch selector, and package rules constrain unsupported modules.",
+            route: "Global branch context",
+            nav: "User continues normal workflow without branch switching",
+            outcome: "Branch-aware requests use the user's default branch automatically, and unsupported item/table features stay unavailable.",
+            fe: "Client branch context logic only",
+            be: "AppConfigurationService + ItemService enforcement",
+            files: ["src/context/BranchContext.jsx", "src/components/layout/Header.jsx", "src/utils/subscriptionFeatures.js", "src/main/java/com/chala/posapp/service/AppConfigurationService.java", "src/main/java/com/chala/posapp/service/ItemService.java"],
+            req: { dto: "Client + package state", fields: [["planName", "FREE/STANDARD/PRO"], ["user.branchId", "forced branch"], ["selectedBranchId", "derived branch"], ["feature", "package capability"]] },
+            res: { dto: "Effective package behavior", fields: [["isSingleBranchMode", "true where relevant"], ["selectedBranchId", "locked branch"], ["branchSelectorVisible", "false"], ["unsupportedFeatureVisible", "false"]] }
           }
         ]
       },
       {
         id: "system-release",
         lane: "Release",
-        title: "Branding, Notifications, Version History",
+        title: "Branding, Notifications, Version Flow",
         route: "/version-history and shell UI",
-        tag: "v1.4.0",
+        tag: "v1.6.0",
         meta: ["Logo", "Alerts", "Changelog"],
-        copy: "v1.4.0 adds ZenSys POS branding, header alert center, login-time release dialog, and a saved version history page.",
+        copy: "v1.6.0 updates release visibility for the new warranty, configuration, invoice, and dine-in workflow changes while keeping popup and changelog output concise.",
         steps: [
           {
             title: "Show New Version Dialog",
             trigger: "User logs in after APP_VERSION changes",
-            summary: "Layout mounts VersionUpdateDialog, checks localStorage per user, and shows v1.4.0 highlights once.",
+            summary: "Layout mounts VersionUpdateDialog, checks localStorage per user, and shows v1.6.0 release highlights once.",
             route: "Protected layout after login",
             nav: "Close dialog or View full version history",
             outcome: "User sees the release summary once per version.",
             fe: "Client localStorage check",
             be: "None",
             files: ["src/components/version/VersionUpdateDialog.jsx", "src/data/versionHistory.js", "src/components/layout/Layout.jsx"],
-            req: { dto: "Client version state", fields: [["APP_VERSION", "1.4.0"], ["storageKey", "tenant/user scoped"], ["LATEST_VERSION", "dialog content"]] },
+            req: { dto: "Client version state", fields: [["APP_VERSION", "1.6.0"], ["storageKey", "tenant/user scoped"], ["LATEST_VERSION", "dialog content"]] },
             res: { dto: "Dialog state", fields: [["open", "true when not seen"], ["seenVersion", "saved after close"], ["highlights[]", "release highlights"]] }
           },
           {
@@ -764,21 +940,21 @@
             fe: "Static route render",
             be: "None",
             files: ["src/pages/VersionHistoryPage.jsx", "src/routes/AppRoutes.jsx", "src/data/versionHistory.js"],
-            req: { dto: "Static data", fields: [["VERSION_HISTORY[]", "release list"], ["sections[]", "Added/Improved/Fixed"], ["releaseDate", "release date"]] },
+            req: { dto: "Static data", fields: [["VERSION_HISTORY[]", "release list"], ["sections[]", "Added/Improved/Changed/Fixed"], ["releaseDate", "release date"]] },
             res: { dto: "Rendered changelog", fields: [["version", "version number"], ["summary", "release summary"], ["items[]", "change list"]] }
           },
           {
             title: "Render ZenSys Branding",
             trigger: "App shell loads",
-            summary: "Sidebar, manifest, and receipt/offline print areas use ZenSys POS brand constants and logo assets.",
+            summary: "Sidebar, manifest, and receipt/offline print areas use ZenSys POS brand constants, split logo assets, and rotating sidebar mark behavior.",
             route: "Global UI shell",
             nav: "Brand visible across app",
-            outcome: "POS System text is replaced with ZenSys POS logo and install metadata.",
+            outcome: "ZenSys shell shows darker sidebar styling, rotating mark, and refined wordmark presentation.",
             fe: "Static assets and constants",
             be: "None",
-            files: ["src/utils/branding.js", "src/components/layout/Sidebar.jsx", "public/branding/zensys-logo.png", "public/manifest.webmanifest"],
-            req: { dto: "Brand constants", fields: [["BRAND_NAME", "ZenSys POS"], ["BRAND_LOGO", "/branding/zensys-logo.png"], ["theme_color", "PWA theme"]] },
-            res: { dto: "Rendered brand", fields: [["logo", "sidebar/PWA logo"], ["brandName", "display name"], ["shortName", "install name"]] }
+            files: ["src/utils/branding.js", "src/components/layout/Sidebar.jsx", "public/branding/zensys-logo.png", "public/branding/zensys-mark.png", "public/branding/zensys-wordmark.png", "public/manifest.webmanifest"],
+            req: { dto: "Brand constants", fields: [["BRAND_NAME", "ZenSys POS"], ["BRAND_MARK", "/branding/zensys-mark.png"], ["BRAND_WORDMARK", "/branding/zensys-wordmark.png"], ["theme_color", "PWA theme"]] },
+            res: { dto: "Rendered brand", fields: [["logoMark", "rotating sidebar mark"], ["wordmark", "sidebar wordmark"], ["brandName", "display name"], ["shortName", "install name"]] }
           },
           {
             title: "Header Alert Center",

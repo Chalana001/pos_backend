@@ -85,6 +85,9 @@ public class InvoicePdfService {
                 ? order.getNote()
                 : "Thank you for your purchase. Please keep this invoice for your records.");
         context.setVariable("items", mapItems(order.getItems()));
+        context.setVariable("warrantyItems", mapItems(order.getItems()).stream()
+                .filter(item -> hasText(item.warrantyLabel()))
+                .toList());
         context.setVariable("logoBoxWidthMm", 78);
         context.setVariable("logoWidthMm", resolveInvoiceLogoWidthMm(settings.getInvoiceLogoWidthPercent()));
         context.setVariable("logoMaxHeightMm", resolveInvoiceLogoMaxHeightMm(settings.getInvoiceLogoWidthPercent()));
@@ -111,7 +114,11 @@ public class InvoicePdfService {
                         item.getBarcode(),
                         formatQuantity(item.getQty(), item.getQtyUnit() != null ? item.getQtyUnit().name() : ""),
                         formatCurrency(item.getUnitPrice()),
-                        formatCurrency(item.getLineTotal())
+                        formatCurrency(item.getLineTotal()),
+                        item.getWarrantyLabel(),
+                        item.getWarrantyPeriodValue() == null || item.getWarrantyPeriodUnit() == null
+                                ? null
+                                : item.getWarrantyPeriodValue() + " " + item.getWarrantyPeriodUnit().name()
                 ))
                 .toList();
     }
@@ -173,7 +180,9 @@ public class InvoicePdfService {
             String barcode,
             String quantity,
             String unitPrice,
-            String lineTotal
+            String lineTotal,
+            String warrantyLabel,
+            String warrantyPeriod
     ) {
     }
 }

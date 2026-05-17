@@ -163,6 +163,10 @@
             margin-top: 4mm;
         }
 
+        .warranty-wrap {
+            margin-top: 4mm;
+        }
+
         .notes-box {
             width: 56%;
             border: 1px solid #e2e8f0;
@@ -319,10 +323,11 @@
         <thead>
         <tr>
             <th style="width: 6%;">#</th>
-            <th style="width: 46%;">Description</th>
+            <th th:style="${settings.showWarranty ? 'width: 34%;' : 'width: 46%;'}">Description</th>
+            <th th:if="${settings.showWarranty}" style="width: 18%;">Warranty</th>
             <th style="width: 16%;" class="text-center">Qty</th>
             <th style="width: 15%;" class="text-right">Unit Price</th>
-            <th style="width: 17%;" class="text-right">Amount</th>
+            <th th:style="${settings.showWarranty ? 'width: 11%;' : 'width: 17%;'}" class="text-right">Amount</th>
         </tr>
         </thead>
         <tbody>
@@ -333,6 +338,15 @@
                 <div th:if="${item.barcode != null and !#strings.isEmpty(item.barcode)}"
                      class="item-meta"
                      th:text="${'Barcode: ' + item.barcode}">Barcode: 123</div>
+            </td>
+            <td th:if="${settings.showWarranty}">
+                <div th:if="${item.warrantyLabel != null and !#strings.isEmpty(item.warrantyLabel)}">
+                    <div class="item-name" th:text="${item.warrantyLabel}">1 Year</div>
+                    <div th:if="${item.warrantyPeriod != null and !#strings.isEmpty(item.warrantyPeriod)}"
+                         class="item-meta"
+                         th:text="${item.warrantyPeriod}">1 YEARS</div>
+                </div>
+                <div th:unless="${item.warrantyLabel != null and !#strings.isEmpty(item.warrantyLabel)}">-</div>
             </td>
             <td class="text-center" th:text="${item.quantity}">1 PCS</td>
             <td class="text-right" th:text="${item.unitPrice}">Rs 100</td>

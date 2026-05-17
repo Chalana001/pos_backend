@@ -20,6 +20,7 @@ public class ReceiptSettingsRequest {
     private boolean showCashier;
     private boolean showCustomer;
     private boolean showItemTable;
+    private boolean showWarranty;
     private boolean showSubtotal;
     private boolean showDiscount;
     private boolean showNetTotal;

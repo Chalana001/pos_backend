@@ -48,6 +48,7 @@ public class PendingOrderService {
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
+    private final AppConfigurationService appConfigurationService;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -79,6 +80,8 @@ public class PendingOrderService {
 
     @Transactional
     public PendingOrderResponse saveForTable(Long tableId, PendingOrderSaveRequest request) {
+        validateDineInEnabled();
+
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Pending order items required");
         }
@@ -92,11 +95,15 @@ public class PendingOrderService {
         double subTotal = 0.0;
 
         for (OrderItemRequest itemRequest : request.getItems()) {
+            validateWarrantySelection(itemRequest);
             Item item = itemRepository.findById(itemRequest.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemRequest.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
+            }
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
             if (item.getItemType() == ItemType.SERVICE
                     && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(table.getBranchId(), item.getId())) {
@@ -121,6 +128,9 @@ public class PendingOrderService {
                     .unitPrice(itemRequest.getUnitPrice())
                     .discountType(discountType)
                     .discountValue(discountValue)
+                    .warrantyLabel(itemRequest.getWarrantyLabel())
+                    .warrantyPeriodValue(itemRequest.getWarrantyPeriodValue())
+                    .warrantyPeriodUnit(itemRequest.getWarrantyPeriodUnit())
                     .build());
 
             subTotal += lineTotal;
@@ -163,6 +173,8 @@ public class PendingOrderService {
     }
 
     public PendingOrderResponse getByTable(Long tableId) {
+        validateDineInEnabled();
+
         User user = getLoggedUser();
         PendingOrder pendingOrder = pendingOrderRepository.findByTableId(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pending order not found"));
@@ -173,6 +185,8 @@ public class PendingOrderService {
     }
 
     public List<PendingOrderResponse> listByBranch(Long branchId) {
+        validateDineInEnabled();
+
         User user = getLoggedUser();
         ensureBranchAccess(user, branchId);
 
@@ -187,6 +201,8 @@ public class PendingOrderService {
 
     @Transactional
     public void clearTable(Long tableId) {
+        validateDineInEnabled();
+
         User user = getLoggedUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
@@ -257,6 +273,9 @@ public class PendingOrderService {
                 .discountValue(pendingOrderItem.getDiscountValue())
                 .finalUnitPrice(finalUnitPrice)
                 .lineTotal(lineTotal)
+                .warrantyLabel(pendingOrderItem.getWarrantyLabel())
+                .warrantyPeriodValue(pendingOrderItem.getWarrantyPeriodValue())
+                .warrantyPeriodUnit(pendingOrderItem.getWarrantyPeriodUnit())
                 .build();
     }
 
@@ -282,5 +301,21 @@ public class PendingOrderService {
             return item.getDefaultUnit();
         }
         return item.getDefaultUnit();
+    }
+
+    private void validateWarrantySelection(OrderItemRequest itemRequest) {
+        boolean hasLabel = itemRequest.getWarrantyLabel() != null && !itemRequest.getWarrantyLabel().isBlank();
+        boolean hasPeriodValue = itemRequest.getWarrantyPeriodValue() != null;
+        boolean hasPeriodUnit = itemRequest.getWarrantyPeriodUnit() != null;
+
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
+            throw new BadRequestException("Warranty selection is incomplete");
+        }
+    }
+
+    private void validateDineInEnabled() {
+        if (!appConfigurationService.isDineInEnabled()) {
+            throw new BadRequestException("Dine-in is disabled in app configuration");
+        }
     }
 }

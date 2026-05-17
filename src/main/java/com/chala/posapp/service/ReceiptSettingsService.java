@@ -57,6 +57,7 @@ public class ReceiptSettingsService {
         settings.setShowCashier(request.isShowCashier());
         settings.setShowCustomer(request.isShowCustomer());
         settings.setShowItemTable(request.isShowItemTable());
+        settings.setShowWarranty(request.isShowWarranty());
         settings.setShowSubtotal(request.isShowSubtotal());
         settings.setShowDiscount(request.isShowDiscount());
         settings.setShowNetTotal(request.isShowNetTotal());
@@ -97,6 +98,7 @@ public class ReceiptSettingsService {
                 .showCashier(true)
                 .showCustomer(true)
                 .showItemTable(true)
+                .showWarranty(true)
                 .showSubtotal(true)
                 .showDiscount(true)
                 .showNetTotal(true)
@@ -142,6 +144,7 @@ public class ReceiptSettingsService {
                 .showCashier(settings.isShowCashier())
                 .showCustomer(settings.isShowCustomer())
                 .showItemTable(settings.isShowItemTable())
+                .showWarranty(settings.isShowWarranty())
                 .showSubtotal(settings.isShowSubtotal())
                 .showDiscount(settings.isShowDiscount())
                 .showNetTotal(settings.isShowNetTotal())
