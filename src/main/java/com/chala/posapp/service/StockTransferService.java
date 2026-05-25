@@ -11,6 +11,7 @@ import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.stock.StockTransfer;
 import com.chala.posapp.entity.stock.StockTransferItem;
 import com.chala.posapp.entity.stock.StockTransferStatus;
@@ -170,7 +171,7 @@ public class StockTransferService {
                     .itemName(item.getName())
                     .qty(normalizedQty)
                     .displayQty(reqItem.getQty().stripTrailingZeros())
-                    .qtyUnit(item.getItemType() == ItemType.WEIGHT
+                    .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
                             ? (reqItem.getQtyUnit() == null ? item.getDefaultUnit() : reqItem.getQtyUnit())
                             : item.getDefaultUnit())
                     .build());
@@ -416,6 +417,7 @@ public class StockTransferService {
                 .supplier(sourceBatch.getSupplier())
                 .batchCode(buildTransferredBatchCode(transfer, sourceBatch, toBranch.getId()))
                 .originBatchId(sourceBatch.getId())
+                .sourceType(StockBatchSourceType.TRANSFER)
                 .quantity(transferItem.getQty())
                 .originalQuantity(transferItem.getQty())
                 .costPrice(sourceBatch.getCostPrice())

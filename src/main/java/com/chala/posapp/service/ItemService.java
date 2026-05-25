@@ -1,10 +1,13 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.item.ItemCreateRequest;
+import com.chala.posapp.dto.item.ItemDeleteCheckResponse;
 import com.chala.posapp.dto.item.ItemIngredientRequest;
 import com.chala.posapp.dto.item.ItemIngredientResponse;
 import com.chala.posapp.dto.item.ItemResponse;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
+import com.chala.posapp.dto.item.StockProcessingOutputLinkRequest;
+import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
 import com.chala.posapp.dto.stock.StockBatchResponse;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.BranchServiceItem;
@@ -13,9 +16,11 @@ import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
+import com.chala.posapp.entity.StockProcessingOutputLink;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.TenantSubscription;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -24,10 +29,13 @@ import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.RecipeIngredientRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockProcessingOutputLinkRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -35,6 +43,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -56,15 +66,19 @@ public class ItemService {
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
+    private final StockProcessingOutputLinkRepository stockProcessingOutputLinkRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final AppConfigurationService appConfigurationService;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
         String barcode = request.getBarcode() != null ? request.getBarcode().trim() : "";
 
         if (barcode.isEmpty()) {
-            barcode = generateFiveDigitBarcode();
+            barcode = generateUniqueBarcode(new HashSet<>());
         } else if (itemRepository.existsByBarcode(barcode)) {
             throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
         }
@@ -88,20 +102,30 @@ public class ItemService {
                 .imageUrl(request.getImageUrl())
                 .kotEnabled(Boolean.TRUE.equals(request.getIsKotEnabled()))
                 .active(request.getActive() == null || request.getActive())
+                .posVisible(request.getPosVisible() == null || request.getPosVisible())
+                .stockProcessingEnabled(Boolean.TRUE.equals(request.getStockProcessingEnabled()))
                 .build();
 
         Item savedItem = itemRepository.save(item);
         syncServiceBranches(savedItem, request.getBranchIds());
         syncRecipeIngredients(savedItem, request.getIngredients());
+        syncProcessingOutputs(savedItem, request.getProcessingOutputs());
         createZeroStockBatchesIfRequired(savedItem);
         return mapToResponse(savedItem, null, List.of());
     }
 
     @Transactional
     public List<ItemResponse> bulkCreate(List<ItemCreateRequest> requestList) {
+        Set<String> reservedBarcodes = requestList.stream()
+                .map(ItemCreateRequest::getBarcode)
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(barcode -> !barcode.isEmpty())
+                .collect(Collectors.toCollection(HashSet::new));
+
         requestList.forEach(req -> {
             if (req.getBarcode() == null || req.getBarcode().trim().isEmpty()) {
-                req.setBarcode(generateFiveDigitBarcode());
+                req.setBarcode(generateUniqueBarcode(reservedBarcodes));
             } else {
                 req.setBarcode(req.getBarcode().trim());
             }
@@ -138,6 +162,8 @@ public class ItemService {
                             .imageUrl(req.getImageUrl())
                             .kotEnabled(Boolean.TRUE.equals(req.getIsKotEnabled()))
                             .active(req.getActive() == null || req.getActive())
+                            .posVisible(req.getPosVisible() == null || req.getPosVisible())
+                            .stockProcessingEnabled(Boolean.TRUE.equals(req.getStockProcessingEnabled()))
                             .build();
                 })
                 .toList();
@@ -150,6 +176,7 @@ public class ItemService {
                             .orElse(null);
                     syncServiceBranches(item, sourceRequest != null ? sourceRequest.getBranchIds() : null);
                     syncRecipeIngredients(item, sourceRequest != null ? sourceRequest.getIngredients() : null);
+                    syncProcessingOutputs(item, sourceRequest != null ? sourceRequest.getProcessingOutputs() : null);
                     createZeroStockBatchesIfRequired(item);
                     return mapToResponse(item, null, List.of());
                 })
@@ -224,6 +251,10 @@ public class ItemService {
         Item item = itemRepository.findByBarcode(barcode.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
+        if (!item.isActive() || !item.isPosVisible()) {
+            throw new ResourceNotFoundException("Item not available in POS");
+        }
+
         if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
             throw new ResourceNotFoundException("Item type is disabled");
         }
@@ -238,8 +269,8 @@ public class ItemService {
         }
 
         List<StockBatch> batches = branchId == 0L
-                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
 
         return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches));
     }
@@ -259,8 +290,8 @@ public class ItemService {
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
-                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
                         totalQty = availableQuantity(batches);
                     }
 
@@ -276,7 +307,7 @@ public class ItemService {
 
         return items.stream()
                 .map(item -> {
-                    if (!item.isActive()) {
+                    if (!item.isActive() || !item.isPosVisible()) {
                         return null;
                     }
 
@@ -294,8 +325,8 @@ public class ItemService {
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
-                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
                         totalQty = availableQuantity(batches);
                     }
 
@@ -369,6 +400,10 @@ public class ItemService {
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
         if (request.getIsKotEnabled() != null) item.setKotEnabled(request.getIsKotEnabled());
         if (request.getActive() != null) item.setActive(request.getActive());
+        if (request.getPosVisible() != null) item.setPosVisible(request.getPosVisible());
+        if (request.getStockProcessingEnabled() != null) {
+            item.setStockProcessingEnabled(request.getStockProcessingEnabled());
+        }
 
         Item savedItem = itemRepository.save(item);
         if (request.getBranchIds() != null || previousItemType != itemType) {
@@ -377,7 +412,127 @@ public class ItemService {
         if (request.getIngredients() != null || previousItemType != itemType) {
             syncRecipeIngredients(savedItem, request.getIngredients());
         }
+        if (request.getProcessingOutputs() != null || previousItemType != itemType || request.getStockProcessingEnabled() != null) {
+            syncProcessingOutputs(savedItem, request.getProcessingOutputs());
+        }
         return mapToResponse(savedItem, null, List.of());
+    }
+
+    public ItemDeleteCheckResponse checkDelete(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        List<String> reasons = collectDeleteBlockers(id);
+        return ItemDeleteCheckResponse.builder()
+                .itemId(item.getId())
+                .itemName(item.getName())
+                .canDelete(reasons.isEmpty())
+                .reasons(reasons)
+                .build();
+    }
+
+    @Transactional
+    public void deleteItem(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        List<String> reasons = collectDeleteBlockers(id);
+        if (!reasons.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Item cannot be deleted because it has history or active references");
+        }
+
+        branchServiceItemRepository.deleteByItemId(id);
+        recipeIngredientRepository.deleteByParentItemId(id);
+        recipeIngredientRepository.flush();
+        stockProcessingOutputLinkRepository.deleteBySourceItemId(id);
+        stockProcessingOutputLinkRepository.flush();
+
+        List<StockBatch> stockBatches = stockBatchRepository.findByItemId(id);
+        if (!stockBatches.isEmpty()) {
+            stockBatchRepository.deleteAll(stockBatches);
+            stockBatchRepository.flush();
+        }
+
+        itemRepository.delete(item);
+    }
+
+    @Transactional
+    public void deactivateItem(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        item.setActive(false);
+        item.setPosVisible(false);
+        itemRepository.save(item);
+    }
+
+    private List<String> collectDeleteBlockers(Long itemId) {
+        List<String> reasons = new ArrayList<>();
+
+        addReason(reasons, countRefs("order_items", "item_id", itemId), "Item has order history");
+        addReason(reasons, countRefs("order_item_stock_usages", "item_id", itemId), "Item has stock usage history");
+        addReason(reasons, countStockBatchBlockers(itemId), "Item has real stock batches");
+        addReason(reasons, countRefs("grn_items", "item_id", itemId), "Item has purchase/GRN history");
+        addReason(reasons, countRefs("pending_order_items", "item_id", itemId), "Item is used in pending table orders");
+        addReason(reasons, countRefs("recipe_ingredients", "ingredient_id", itemId), "Item is used as a recipe ingredient");
+        addReason(reasons, countRefs("stock_processing_output_links", "output_item_id", itemId), "Item is linked as a stock processing output");
+        addReason(reasons, countRefs("stock_processings", "source_item_id", itemId), "Item has stock processing history as a source");
+        addReason(reasons, countRefs("stock_processing_outputs", "output_item_id", itemId), "Item has stock processing output history");
+        addReason(reasons, countRefs("stock_adjustments", "item_id", itemId), "Item has stock adjustment history");
+        addReason(reasons, countRefs("stock_transfer_items", "item_id", itemId), "Item has stock transfer history");
+        addReason(reasons, countRefs("promotion_targets", "item_id", itemId), "Item is used in promotion rules");
+        addReason(reasons, countRefs("warranties", "item_id", itemId), "Item has warranty history");
+        addReason(reasons, countRefs("stock_override_audits", "sale_item_id", itemId), "Item has stock override sale history");
+        addReason(reasons, countRefs("stock_override_audits", "stock_item_id", itemId), "Item has stock override ingredient history");
+        addReason(reasons, countSupplierItemRefs(itemId), "Item is linked to suppliers");
+
+        return reasons;
+    }
+
+    private void addReason(List<String> reasons, long count, String message) {
+        if (count > 0) {
+            reasons.add(message + " (" + count + ")");
+        }
+    }
+
+    private long countRefs(String tableName, String columnName, Long itemId) {
+        String tenantId = TenantContext.getTenant();
+        Number count = (Number) entityManager.createNativeQuery(
+                        "SELECT COUNT(*) FROM " + tableName + " WHERE tenant_id = :tenantId AND " + columnName + " = :itemId")
+                .setParameter("tenantId", tenantId)
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
+    }
+
+    private long countStockBatchBlockers(Long itemId) {
+        String tenantId = TenantContext.getTenant();
+        Number count = (Number) entityManager.createNativeQuery("""
+                        SELECT COUNT(*)
+                        FROM stock_batches
+                        WHERE tenant_id = :tenantId
+                          AND item_id = :itemId
+                          AND (
+                            COALESCE(quantity, 0) <> 0
+                            OR COALESCE(original_quantity, 0) <> 0
+                            OR COALESCE(source_type, 'PURCHASE') <> 'AUTO'
+                          )
+                        """)
+                .setParameter("tenantId", tenantId)
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
+    }
+
+    private long countSupplierItemRefs(Long itemId) {
+        String tenantId = TenantContext.getTenant();
+        Number count = (Number) entityManager.createNativeQuery("""
+                        SELECT COUNT(*)
+                        FROM supplier_items
+                        WHERE tenant_id = :tenantId
+                          AND item_id = :itemId
+                        """)
+                .setParameter("tenantId", tenantId)
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
     }
 
     private List<StockBatchResponse> batchesToResponse(Item item, List<StockBatch> batches) {
@@ -421,6 +576,9 @@ public class ItemService {
         List<ItemIngredientResponse> ingredients = item.getItemType() == ItemType.RECIPE
                 ? mapRecipeIngredientResponses(recipeIngredientRepository.findByParentItemId(item.getId()))
                 : List.of();
+        List<StockProcessingOutputLinkResponse> processingOutputs = item.isStockProcessingEnabled()
+                ? mapProcessingOutputResponses(stockProcessingOutputLinkRepository.findBySourceItemIdOrderByIdAsc(item.getId()))
+                : List.of();
 
         BigDecimal availableQty = availableBaseQty == null
                 ? null
@@ -445,9 +603,12 @@ public class ItemService {
                 .imageUrl(item.getImageUrl())
                 .kotEnabled(item.isKotEnabled())
                 .active(item.isActive())
+                .posVisible(item.isPosVisible())
+                .stockProcessingEnabled(item.isStockProcessingEnabled())
                 .createdAt(item.getCreatedAt())
                 .branchIds(branchIds)
                 .ingredients(ingredients)
+                .processingOutputs(processingOutputs)
                 .batches(batches)
                 .build();
     }
@@ -501,6 +662,7 @@ public class ItemService {
                         .originalQuantity(0)
                         .costPrice(item.getCostPrice())
                         .sellingPrice(item.getSellingPrice())
+                        .sourceType(StockBatchSourceType.AUTO)
                         .batchCode("AUTO-ZERO-" + branch.getId() + "-" + item.getId())
                         .build())
                 .toList();
@@ -541,8 +703,9 @@ public class ItemService {
         if (isStandardPlan(planName)
                 && itemType != ItemType.NORMAL
                 && itemType != ItemType.WEIGHT
+                && itemType != ItemType.VOLUME
                 && itemType != ItemType.SERVICE) {
-            throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT and SERVICE items only");
+            throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT, VOLUME and SERVICE items only");
         }
     }
 
@@ -655,21 +818,120 @@ public class ItemService {
                 .build();
     }
 
-    @Transactional
-    public void deactivateItem(Long id) {
-        Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        item.setActive(false);
-        itemRepository.save(item);
+    private void syncProcessingOutputs(Item item, List<StockProcessingOutputLinkRequest> outputRequests) {
+        if (!item.isStockProcessingEnabled()) {
+            stockProcessingOutputLinkRepository.deleteBySourceItemId(item.getId());
+            stockProcessingOutputLinkRepository.flush();
+            return;
+        }
+
+        if (!isStockTrackedItem(item)) {
+            throw new BadRequestException("Only normal, weight, or volume stock items can be used as stock processing sources");
+        }
+
+        if (outputRequests == null) {
+            return;
+        }
+
+        stockProcessingOutputLinkRepository.deleteBySourceItemId(item.getId());
+        stockProcessingOutputLinkRepository.flush();
+        if (outputRequests.isEmpty()) {
+            return;
+        }
+
+        Set<Long> distinctOutputIds = new HashSet<>();
+        List<StockProcessingOutputLink> outputLinks = new ArrayList<>();
+
+        for (StockProcessingOutputLinkRequest outputRequest : outputRequests) {
+            if (outputRequest.getOutputItemId() == null) {
+                throw new BadRequestException("Processing output item is required");
+            }
+            if (!distinctOutputIds.add(outputRequest.getOutputItemId())) {
+                throw new BadRequestException("Duplicate processing output item found");
+            }
+            if (outputRequest.getOutputItemId().equals(item.getId())) {
+                throw new BadRequestException("Processing source item cannot be used as its own output");
+            }
+
+            Item outputItem = itemRepository.findById(outputRequest.getOutputItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Processing output item not found: " + outputRequest.getOutputItemId()));
+
+            if (!outputItem.isActive()) {
+                throw new BadRequestException("Processing output item is inactive: " + outputItem.getName());
+            }
+            if (!isStockTrackedItem(outputItem)) {
+                throw new BadRequestException("Processing outputs must be normal, weight, or volume stock items");
+            }
+
+            int defaultQuantity = QuantityConversionUtil.normalizeQuantity(
+                    outputItem,
+                    outputRequest.getDefaultQty(),
+                    QuantityConversionUtil.primaryDisplayUnit(outputItem)
+            );
+
+            outputLinks.add(StockProcessingOutputLink.builder()
+                    .sourceItemId(item.getId())
+                    .outputItemId(outputItem.getId())
+                    .defaultQuantity(defaultQuantity)
+                    .waste(Boolean.TRUE.equals(outputRequest.getWaste()))
+                    .build());
+        }
+
+        stockProcessingOutputLinkRepository.saveAll(outputLinks);
+    }
+
+    private List<StockProcessingOutputLinkResponse> mapProcessingOutputResponses(List<StockProcessingOutputLink> links) {
+        if (links == null || links.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Item> outputMap = itemRepository.findAllById(
+                        links.stream()
+                                .map(StockProcessingOutputLink::getOutputItemId)
+                                .distinct()
+                                .toList()
+                ).stream()
+                .collect(Collectors.toMap(Item::getId, output -> output));
+
+        return links.stream()
+                .map(link -> {
+                    Item output = outputMap.get(link.getOutputItemId());
+                    if (output == null) {
+                        throw new ResourceNotFoundException("Processing output item not found: " + link.getOutputItemId());
+                    }
+                    return StockProcessingOutputLinkResponse.builder()
+                            .outputItemId(output.getId())
+                            .outputBarcode(output.getBarcode())
+                            .outputName(output.getName())
+                            .itemType(output.getItemType())
+                            .defaultUnit(output.getDefaultUnit())
+                            .defaultQty(QuantityConversionUtil.toDisplayQuantity(output, link.getDefaultQuantity()))
+                            .defaultQtyUnit(QuantityConversionUtil.primaryDisplayUnit(output))
+                            .defaultSellingPrice(output.getSellingPrice())
+                            .waste(link.isWaste())
+                            .build();
+                })
+                .toList();
+    }
+
+    private boolean isStockTrackedItem(Item item) {
+        return item.getItemType() == ItemType.NORMAL
+                || item.getItemType() == ItemType.WEIGHT
+                || item.getItemType() == ItemType.VOLUME;
     }
 
     public String generateFiveDigitBarcode() {
+        return generateUniqueBarcode(new HashSet<>());
+    }
+
+    private String generateUniqueBarcode(Set<String> reservedBarcodes) {
         String newBarcode;
         Random random = new Random();
         do {
             int randomNumber = 10000 + random.nextInt(90000);
             newBarcode = String.valueOf(randomNumber);
-        } while (itemRepository.existsByBarcode(newBarcode));
+        } while (reservedBarcodes.contains(newBarcode) || itemRepository.existsByBarcode(newBarcode));
+        reservedBarcodes.add(newBarcode);
         return newBarcode;
     }
 

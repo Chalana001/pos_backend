@@ -158,6 +158,16 @@ public class InvoicePdfService {
             return kilograms.toPlainString() + " KG";
         }
 
+        if ("L".equalsIgnoreCase(unit) && quantity.compareTo(BigDecimal.ONE) < 0) {
+            BigDecimal milliliters = quantity.multiply(BigDecimal.valueOf(1000)).stripTrailingZeros();
+            return milliliters.toPlainString() + " ML";
+        }
+
+        if ("ML".equalsIgnoreCase(unit) && quantity.compareTo(BigDecimal.valueOf(1000)) >= 0) {
+            BigDecimal liters = quantity.divide(BigDecimal.valueOf(1000)).stripTrailingZeros();
+            return liters.toPlainString() + " L";
+        }
+
         return hasText(unit) ? qtyValue + " " + unit : qtyValue;
     }
 

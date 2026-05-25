@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ZenSys POS Flow Map v1.6.0</title>
+  <title>ZenSys POS Flow Map v1.9.0</title>
   <style>
     @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
     :root { --bg:#07111d; --panel:rgba(10,20,35,.86); --panel2:rgba(7,15,26,.96); --text:#ecf4ff; --muted:#98abc9; --blue:#58a6ff; --cyan:#52f0ff; --mint:#7ef6be; --amber:#ffc56a; --shadow:0 28px 80px rgba(0,0,0,.45); }
@@ -66,9 +66,9 @@
   <div class="app">
     <section class="hero">
       <div class="card">
-        <div class="eyebrow">ZenSys POS v1.6.0 Full Flow Interactive Map</div>
+        <div class="eyebrow">ZenSys POS v1.9.0 Full Flow Interactive Map</div>
         <h1>Click a module.<br />Click a step.<br />See the real flow.</h1>
-        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. It now includes warranty setup and claims, App Configuration with package-aware gating, dedicated dining-table management, synced table drafts, supplier and purchase linkage, upgraded invoice and receipt printing, shared table and dropdown behavior, and the latest release/version flow.</p>
+        <p>This is a standalone map built from the current frontend routes, button actions, API modules, backend controllers, and DTO contracts. It now includes configurable category structure, promotion and discount rules, Excel item import with separate recipe ingredient linking, POS visibility controls, volume item sales with L/ML units, stock processing with source/output batches and waste history, actual recipe costing from consumed stock batches, advanced paginated reports with Excel export, premium Basic Reports charts, low-stock filter routing, mobile sidebar behavior, warranty setup and claims, App Configuration with package-aware gating, supplier and purchase linkage, upgraded invoice and receipt printing, shared table and dropdown behavior, and the latest release/version flow.</p>
         <div class="legend">
           <span>Frontend trigger and navigation</span>
           <span>Request DTO and payload shape</span>
@@ -202,7 +202,7 @@
             be: "ShiftController + ItemController.searchForPos",
             files: ["src/pages/POS.jsx", "src/api/shifts.api.js", "src/api/items.api.js"],
             req: { dto: "Query Params", fields: [["branchId", "selected branch"], ["q", "search text"]] },
-            res: { dto: "ShiftResponse + ItemResponse[]", fields: [["status", "OPEN required"], ["branchId", "current branch"], ["itemType", "NORMAL/WEIGHT/SERVICE"], ["batches", "stock batches"], ["availableQty", "stock summary"]] }
+            res: { dto: "ShiftResponse + ItemResponse[]", fields: [["status", "OPEN required"], ["branchId", "current branch"], ["itemType", "NORMAL/WEIGHT/VOLUME/SERVICE/RECIPE"], ["batches", "stock batches"], ["availableQty", "stock summary"]] }
           },
           {
             title: "Add Item to Cart",
@@ -214,7 +214,7 @@
             fe: "Client state update only",
             be: "None",
             files: ["src/pages/POS.jsx", "src/components/pos/BatchSelectModal.jsx", "src/components/pos/Cart.jsx"],
-            req: { dto: "Client cart state", fields: [["itemId", "selected item"], ["batchId", "batch or null"], ["qty", "line qty"], ["qtyUnit", "PCS/G/KG/SERVICE"], ["unitPrice", "line price"]] },
+            req: { dto: "Client cart state", fields: [["itemId", "selected item"], ["batchId", "batch or null"], ["qty", "line qty"], ["qtyUnit", "PCS/G/KG/ML/L/SERVICE"], ["unitPrice", "line price"]] },
             res: { dto: "Client state only", fields: [["cartItems[]", "updated state"], ["stockBaseQty", "validation source"]] }
           },
           {
@@ -477,8 +477,8 @@
         title: "Items and Services",
         route: "/items",
         tag: "Catalog",
-        meta: ["Create", "Edit", "Service branch"],
-        copy: "Item list, item form, bulk add, barcode print, and service branch assignment.",
+        meta: ["Create", "Excel import", "Recipe", "Volume"],
+        copy: "Item list, item form, Excel import, recipe ingredient linking, barcode print, POS visibility, volume items, and service branch assignment.",
         steps: [
           {
             title: "Load Item List",
@@ -491,20 +491,83 @@
             be: "ItemController.getAll",
             files: ["src/pages/ItemsPage.jsx", "src/api/items.api.js"],
             req: { dto: "Query Params", fields: [["search", "name/barcode"], ["page", "page no"], ["size", "page size"]] },
-            res: { dto: "Page<ItemResponse>", fields: [["content[]", "item rows"], ["defaultUnit", "PCS/KG/G/SERVICE"], ["itemType", "NORMAL/WEIGHT/SERVICE"]] }
+            res: { dto: "Page<ItemResponse>", fields: [["content[]", "item rows"], ["defaultUnit", "PCS/KG/G/ML/L/SERVICE"], ["itemType", "NORMAL/WEIGHT/VOLUME/SERVICE/RECIPE"]] }
           },
           {
             title: "Create or Update Item",
             trigger: "Click Save on item form",
-            summary: "Frontend builds item payload. Service items include branchIds.",
+            summary: "Frontend builds item payload. Service items include branchIds, and every item can be hidden from POS while remaining available for stock/recipe use.",
             route: "/items/new or /items/:id/edit",
             nav: "On success -> /items",
             outcome: "Backend returns ItemResponse after save.",
             fe: "POST /items or PUT /items/{id}",
             be: "ItemController.create / update",
             files: ["src/pages/ItemFormPage.jsx", "src/api/items.api.js"],
-            req: { dto: "ItemCreateRequest / ItemUpdateRequest", fields: [["barcode", "optional"], ["name", "required"], ["subCategoryId", "required on create"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["reorderLevel", "threshold"], ["itemType", "NORMAL/WEIGHT/SERVICE"], ["defaultUnit", "PCS/KG/G/SERVICE"], ["branchIds", "service assignments"]] },
-            res: { dto: "ItemResponse", fields: [["id", "item id"], ["branchIds", "service branch list"], ["batches", "stock batches"], ["active", "status"]] }
+            req: { dto: "ItemCreateRequest / ItemUpdateRequest", fields: [["barcode", "optional; auto-generated if empty"], ["name", "required"], ["subCategoryId", "required on create"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["reorderLevel", "threshold"], ["itemType", "NORMAL/WEIGHT/VOLUME/SERVICE/RECIPE"], ["defaultUnit", "PCS/KG/G/ML/L/SERVICE"], ["posVisible", "show on POS"], ["branchIds", "service assignments"]] },
+            res: { dto: "ItemResponse", fields: [["id", "item id"], ["branchIds", "service branch list"], ["batches", "stock batches"], ["active", "status"], ["posVisible", "POS visibility"]] }
+          },
+          {
+            title: "Import Items From Excel",
+            trigger: "Open Items -> Import Excel, upload workbook, review preview, click Import",
+            summary: "Excel import now keeps item rows and recipe ingredient links in separate tabs. The Items tab creates stock, service, recipe, weight, and volume items; the Recipe Ingredients tab links existing stock items by id or name, quantity, and unit.",
+            route: "/items/import-excel",
+            nav: "Invalid rows remain in preview with ERROR status; valid rows import and show IMPORTED status",
+            outcome: "Partial import saves valid rows, skips/keeps failed rows, auto-generates missing barcodes, and lets users correct category/subcategory mappings before retry.",
+            fe: "POST /items/import/preview + POST /items/import/commit + recipe ingredient import endpoints",
+            be: "ItemController import endpoints + ItemExcelImportService",
+            files: ["src/pages/ItemExcelImportPage.jsx", "src/pages/RecipeIngredientsImportPage.jsx", "src/api/items.api.js", "src/main/java/com/chala/posapp/service/ItemExcelImportService.java"],
+            req: { dto: "ItemImportWorkbook / ItemImportCommitRequest", fields: [["Items tab", "barcode/name/category/subcategory/prices/type/unit/posVisible"], ["Recipe Ingredients tab", "itemId/ingredientId or ingredientName/qty/qtyUnit"], ["rowStatus", "READY/ERROR/SKIPPED"], ["category correction", "dropdown selected ids"]] },
+            res: { dto: "ItemImportPreviewResponse / ItemImportResultResponse", fields: [["rows[]", "preview rows"], ["status", "READY/IMPORTED/ERROR/SKIPPED"], ["errors[]", "row issues"], ["importedCount", "saved rows"], ["failedCount", "remaining errors"]] }
+          },
+          {
+            title: "Delete or Deactivate Item",
+            trigger: "Click delete icon on item row",
+            summary: "Frontend asks the backend whether the item has any history or active references. Unused items can be deleted permanently; used items show reference reasons and offer deactivate instead.",
+            route: "/items",
+            nav: "Delete modal -> single delete action or deactivate fallback",
+            outcome: "Old orders, stock, recipes, processing, promotions, and warranty history stay protected from broken references.",
+            fe: "GET /items/{id}/delete-check + DELETE /items/{id} or POST /items/{id}/deactivate",
+            be: "ItemController.deleteCheck / delete / deactivate",
+            files: ["src/pages/ItemsPage.jsx", "src/api/items.api.js", "src/main/java/com/chala/posapp/service/ItemService.java"],
+            req: { dto: "Item delete flow", fields: [["itemId", "selected item"], ["deleteCheck", "reference scan"], ["delete", "single endpoint delete/deactivate decision"], ["deactivate", "safe fallback"]] },
+            res: { dto: "ItemDeleteCheckResponse", fields: [["canDelete", "true only when unused"], ["reasons[]", "blocking references"], ["itemName", "modal display"], ["status", "deleted or deactivated"]] }
+          }
+        ]
+      },
+      {
+        id: "promotions",
+        lane: "Discounts",
+        title: "Promotions and Discount Rules",
+        route: "/promotions and /pos",
+        tag: "Rules",
+        meta: ["Date range", "Item/category", "Cart stack"],
+        copy: "Promotion rules are configured separately from manual POS discounts, then applied in the cart with controlled date ranges and target matching.",
+        steps: [
+          {
+            title: "Configure Promotion",
+            trigger: "Open Promotions -> Create or Edit",
+            summary: "Admin creates an active discount rule with scope, date range, branch context, targets, priority, and discount type/value.",
+            route: "/promotions",
+            nav: "Stay on promotions page",
+            outcome: "PromotionResponse is saved and listed with active/edit/status controls.",
+            fe: "POST /promotions or PUT /promotions/{id}",
+            be: "PromotionController + PromotionService",
+            files: ["src/pages/PromotionsPage.jsx", "src/api/promotions.api.js", "src/main/java/com/chala/posapp/service/PromotionService.java"],
+            req: { dto: "PromotionRequest", fields: [["name", "rule name"], ["scope", "ITEM/CATEGORY/BILL/CUSTOMER"], ["discountType", "FIXED/PERCENT"], ["discountValue", "amount"], ["startAt/endAt", "date range"], ["targets[]", "items or categories"], ["active", "status"]] },
+            res: { dto: "PromotionResponse", fields: [["id", "promotion id"], ["active", "status"], ["targets[]", "configured targets"], ["priority", "matching order"], ["date range", "validity"]] }
+          },
+          {
+            title: "Apply Promotion in POS",
+            trigger: "Add matching item to cart or change discount",
+            summary: "POS asks the backend for the best active item/category promotion and stacks it with any manual cart discount.",
+            route: "/pos",
+            nav: "Cart totals refresh",
+            outcome: "Line total includes promotion discount and manual discount where both apply.",
+            fe: "POST /promotions/preview through POS cart flow",
+            be: "PromotionService.calculateBestDiscount",
+            files: ["src/pages/POS.jsx", "src/components/pos/Cart.jsx", "src/api/promotions.api.js", "src/main/java/com/chala/posapp/service/PromotionService.java"],
+            req: { dto: "PromotionPreviewRequest", fields: [["branchId", "selling branch"], ["customerId", "optional"], ["items[]", "cart lines"], ["discountType/value", "manual line discount"], ["billDiscount", "manual bill discount"]] },
+            res: { dto: "PromotionPreviewResponse", fields: [["items[]", "effective line discounts"], ["promotionApplied", "true/false"], ["promotionDiscountAmount", "controlled discount"], ["effectiveLineTotal", "final line total"]] }
           }
         ]
       },
@@ -644,15 +707,28 @@
           {
             title: "Load Branch Stock",
             trigger: "Open stock page or change search/page",
-            summary: "Frontend loads branch stock rows with quantity, stock value, filters, and action buttons.",
+            summary: "Frontend loads branch stock rows with quantity, stock value, filters, and action buttons. Dashboard/header low-stock alerts navigate here with status=REORDER so the existing Reorder Level filter is selected.",
             route: "/stock",
             nav: "Adjust, Transfer, and Details launch from row actions",
             outcome: "Inventory table renders with stock value, item status, and pagination.",
             fe: "GET /stock/branch/{branchId} + GET /stock/branch/{branchId}/value",
             be: "StockController.listBranchStock / stockValue",
             files: ["src/pages/Stock.jsx", "src/api/stock.api.js"],
-            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["categoryId", "optional"], ["subCategoryId", "optional"], ["supplierId", "optional"], ["page", "page no"], ["size", "page size"]] },
-            res: { dto: "Page<StockResponseWithItems> + StockValueResponse", fields: [["itemId", "item id"], ["totalQuantity", "base qty"], ["displayQuantity", "display qty"], ["itemType", "NORMAL/WEIGHT"], ["totalStockValue", "stock value"]] }
+            req: { dto: "Query Params", fields: [["search", "name/barcode"], ["stockStatus", "ALL/REORDER/OUT_OF_STOCK/IN_STOCK"], ["categoryId", "optional"], ["subCategoryId", "optional"], ["supplierId", "optional"], ["page", "page no"], ["size", "page size"]] },
+            res: { dto: "Page<StockResponseWithItems> + StockValueResponse", fields: [["itemId", "item id"], ["totalQuantity", "base qty"], ["displayQuantity", "display qty"], ["itemType", "NORMAL/WEIGHT/VOLUME"], ["totalStockValue", "stock value"]] }
+          },
+          {
+            title: "Open Low Stock Filter",
+            trigger: "Click Dashboard Low Stock card or Header Stock Alert",
+            summary: "The app stays on the Stock page and passes status=REORDER instead of opening a separate low-stock page.",
+            route: "/stock?status=REORDER",
+            nav: "Dashboard/header alert -> stock page with Reorder Level selected",
+            outcome: "Users see the low stock list inside the same stock table and can clear or change filters normally.",
+            fe: "Client route query + GET /stock/branch/{branchId}",
+            be: "StockController.listBranchStock",
+            files: ["src/pages/Dashboard.jsx", "src/components/layout/Header.jsx", "src/pages/Stock.jsx"],
+            req: { dto: "Query Params", fields: [["status", "REORDER in URL"], ["stockStatus", "REORDER sent to API"], ["branchId", "selected branch"]] },
+            res: { dto: "Page<StockResponseWithItems>", fields: [["content[]", "low/reorder stock rows"], ["reorderLevel", "threshold"], ["totalQuantity", "current stock"], ["totalElements", "low stock count"]] }
           },
           {
             title: "View Stock Item Details",
@@ -668,16 +744,42 @@
             res: { dto: "StockItemDetailsResponse + Page<StockPurchaseHistoryResponse>", fields: [["itemName", "item"], ["batches[]", "batch details"], ["availableQuantity", "stock"], ["content[]", "purchase history"], ["supplierName", "supplier"]] }
           },
           {
+            title: "Process Source Stock",
+            trigger: "Open Stock Processing -> New Processing",
+            summary: "A source item such as whole chicken is consumed into linked output stock items and waste rows. The create form opens in a popup, and history rows open full detail popups.",
+            route: "/stock/processing",
+            nav: "Stock sidebar -> Processing -> New Processing or history row",
+            outcome: "Source batch is reduced, non-waste outputs create PROCESSING batches, and waste outputs are stored in processing history only.",
+            fe: "GET /stock-processing/sources + POST /stock-processing + GET /stock-processing",
+            be: "StockProcessingController + StockProcessingService",
+            files: ["src/pages/StockProcessingPage.jsx", "src/api/stock.api.js", "src/main/java/com/chala/posapp/service/StockProcessingService.java", "src/main/java/com/chala/posapp/entity/stock/StockBatch.java"],
+            req: { dto: "CreateStockProcessingRequest", fields: [["branchId", "branch"], ["sourceItemId", "source item"], ["sourceBatchId", "batch consumed"], ["sourceQty/sourceQtyUnit", "consumed quantity"], ["outputs[]", "output item qty/unit rows"], ["note", "optional"]] },
+            res: { dto: "StockProcessingResponse", fields: [["sourceCost", "actual consumed source cost"], ["outputs[]", "stock or waste rows"], ["createdBatchId", "PROCESSING batch for stock outputs"], ["allocatedCost", "cost assigned to output"], ["processedAt", "history time"]] }
+          },
+          {
+            title: "Use Processed Stock in Recipe Cost",
+            trigger: "Sell a recipe item that uses processed output stock",
+            summary: "Recipe stock deduction consumes PROCESSING batches before PURCHASE batches and stores the actual consumed ingredient cost on the order line.",
+            route: "/pos -> /orders",
+            nav: "POS sale completes normally",
+            outcome: "Recipe lineCost is calculated from actual batch costs, so drumstick from whole chicken and separately purchased drumstick keep their own costs.",
+            fe: "POST /orders",
+            be: "OrderService.consumeStockForSale",
+            files: ["src/main/java/com/chala/posapp/service/OrderService.java", "src/main/java/com/chala/posapp/repository/StockBatchRepository.java", "src/test/java/com/chala/posapp/integration/PosWorkflowIntegrationTest.java"],
+            req: { dto: "CreateOrderRequest", fields: [["itemType", "RECIPE"], ["ingredients", "stock-tracked item links"], ["batch priority", "PROCESSING first then PURCHASE"], ["qty", "recipe quantity"]] },
+            res: { dto: "OrderItem", fields: [["lineTotal", "sale revenue"], ["lineCost", "actual consumed ingredient cost"], ["costPrice", "average actual recipe cost"], ["OrderItemStockUsage", "ingredient batch usage rows"]] }
+          },
+          {
             title: "Create Stock Adjustment",
             trigger: "Adjust -> select batch -> enter qty -> confirm",
-            summary: "Adjustment request is batch-specific and unit-aware for weight items.",
+            summary: "Adjustment request is batch-specific and unit-aware for measured stock items.",
             route: "/stock -> adjust modal",
             nav: "Stay on /stock and refresh list",
             outcome: "StockAdjustmentResponse is returned and history can show same record.",
             fe: "POST /stock-adjustments",
             be: "StockAdjustmentController.create",
             files: ["src/pages/Stock.jsx", "src/pages/StockAdjustments.jsx"],
-            req: { dto: "CreateStockAdjustmentRequest", fields: [["branchId", "branch"], ["itemId", "item"], ["batchId", "required"], ["type", "adjustment type"], ["qty", "positive"], ["qtyUnit", "weight unit"], ["reason", "required"]] },
+            req: { dto: "CreateStockAdjustmentRequest", fields: [["branchId", "branch"], ["itemId", "item"], ["batchId", "required"], ["type", "adjustment type"], ["qty", "positive"], ["qtyUnit", "PCS/G/KG/ML/L"], ["reason", "required"]] },
             res: { dto: "StockAdjustmentResponse", fields: [["qtyChange", "base change"], ["displayQtyChange", "display change"], ["qtyUnit", "display unit"], ["itemName", "affected item"]] }
           },
           {
@@ -777,7 +879,7 @@
             fe: "Item search and supplier/branch fetch only",
             be: "No purchase create yet",
             files: ["src/pages/PurchaseFormPage.jsx", "src/api/items.api.js", "src/api/suppliers.api.js", "src/api/branches.api.js"],
-            req: { dto: "Client purchase row state", fields: [["itemId", "item"], ["branchId", "target branch"], ["qty", "branch qty"], ["qtyUnit", "weight unit"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["expiryDate", "optional"], ["discountAmount", "purchase discount"]] },
+            req: { dto: "Client purchase row state", fields: [["itemId", "item"], ["branchId", "target branch"], ["qty", "branch qty"], ["qtyUnit", "PCS/G/KG/ML/L"], ["costPrice", "cost"], ["sellingPrice", "sell"], ["expiryDate", "optional"], ["discountAmount", "purchase discount"]] },
             res: { dto: "Client state only", fields: [["cartItems[]", "purchase rows"], ["discountAmount", "invoice discount"], ["grandTotal", "form total"], ["paidAmount", "purchase paid"]] }
           },
           {
@@ -814,21 +916,47 @@
         title: "Reports and Analytics",
         route: "/reports",
         tag: "Read Model",
-        meta: ["Sales", "Profit", "Top lists"],
-        copy: "Reports page is tab-driven. Each tab hits a specific reporting endpoint.",
+        meta: ["Basic charts", "Advanced pages", "Excel export"],
+        copy: "Basic Reports is a chart-only executive overview. Sales, product, customer, and supplier reports are separate paginated advanced pages with filters and Excel export.",
         steps: [
           {
-            title: "Run Report Tab",
-            trigger: "Choose tab and click Run Report",
-            summary: "Frontend sends branch and date filters to the active report endpoint.",
+            title: "Load Basic Report Overview",
+            trigger: "Open Basic Reports or change date range",
+            summary: "Frontend loads sales summary, trend, category sales, top products, top customers, top suppliers, profit summary, low stock, and credit due into premium overview charts.",
             route: "/reports",
             nav: "Stay on reports page",
-            outcome: "Charts and tables refresh with analytics data.",
-            fe: "GET report endpoints from reportsAPI",
-            be: "ReportController.*",
+            outcome: "Executive summary, donut charts, trend metrics, and ranked snapshots refresh for selected range or all time.",
+            fe: "GET /reports/sales-summary + sales-trend + sales-by-category + performance endpoints",
+            be: "ReportController overview endpoints",
             files: ["src/pages/Reports.jsx", "src/api/reports.api.js"],
-            req: { dto: "Query Params", fields: [["branchId", "optional"], ["from", "date start"], ["to", "date end"], ["limit", "top list limit"], ["type", "trend type"]] },
-            res: { dto: "Report-specific responses", fields: [["totalSales", "sales summary"], ["grossProfit", "profit summary"], ["itemName", "top product"], ["customerName", "top customer"], ["dueAmount", "credit due"]] }
+            req: { dto: "Query Params", fields: [["branchId", "optional"], ["from", "optional date start"], ["to", "optional date end"], ["type", "DAILY/MONTHLY trend"], ["page", "snapshot page 0"], ["size", "snapshot size"]] },
+            res: { dto: "Overview report responses", fields: [["totalSales", "sales summary"], ["netProfit", "profit summary"], ["categories[]", "category sales"], ["products[]", "top product revenue"], ["customers[]", "top customer spend"], ["suppliers[]", "top supplier purchases"]] }
+          },
+          {
+            title: "Run Advanced Paginated Report",
+            trigger: "Open Sales/Product/Customer/Supplier report from sidebar and change filters",
+            summary: "Advanced report pages are table-only with pagination, top/lowest sorting, report-specific filters, and all-time date support.",
+            route: "/reports/sales, /reports/products, /reports/customers, /reports/suppliers",
+            nav: "Stay on report page and page through records",
+            outcome: "A paged table loads report rows with current filters.",
+            fe: "GET /reports/sales | product-performance | customer-performance | supplier-performance",
+            be: "ReportController paged report endpoints",
+            files: ["src/pages/Reports.jsx", "src/api/reports.api.js", "src/main/java/com/chala/posapp/service/ReportService.java"],
+            req: { dto: "Query Params", fields: [["branchId", "optional"], ["from/to", "optional; omitted for all time"], ["page/size", "pagination"], ["sortBy", "DATE/REVENUE/etc"], ["sortDirection", "ASC/DESC"], ["itemType/orderType", "report-specific filters"]] },
+            res: { dto: "PageResponse<ReportRow>", fields: [["items[]", "paged rows"], ["totalElements", "record count"], ["totalPages", "page count"], ["revenue/spent/purchased", "report measures"]] }
+          },
+          {
+            title: "Export Report To Excel",
+            trigger: "Click Export Excel on an advanced report page",
+            summary: "Frontend sends the active report type, date range, branch, sorting, and filters. Backend streams an XLSX workbook.",
+            route: "/reports/*",
+            nav: "Browser downloads .xlsx",
+            outcome: "Excel file contains the selected range, or every matching row when All Time is selected.",
+            fe: "GET /reports/export",
+            be: "ReportController.export + ReportService.exportPerformanceReport",
+            files: ["src/pages/Reports.jsx", "src/api/reports.api.js", "src/main/java/com/chala/posapp/controller/ReportController.java"],
+            req: { dto: "Export Query Params", fields: [["reportType", "SALES/PRODUCT/CUSTOMER/SUPPLIER"], ["branchId", "optional"], ["from/to", "optional"], ["sortBy", "active sort"], ["sortDirection", "ASC/DESC"], ["filters", "itemType/orderType where relevant"]] },
+            res: { dto: "XSSFWorkbook", fields: [["Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"], ["filename", "report type + range"], ["rows", "exported report data"]] }
           }
         ]
       },
@@ -839,20 +967,20 @@
         route: "/app-configuration, /branches, /users",
         tag: "Setup",
         meta: ["Modules", "Branch", "User", "Packages"],
-        copy: "Administrative setup now starts from App Configuration, then branches into module visibility, branch master data, users, receipt behavior, and package-aware rules.",
+        copy: "Administrative setup now starts from App Configuration, then branches into module visibility, category structure, branch master data, users, receipt behavior, and package-aware rules.",
         steps: [
           {
             title: "Configure Operational Modules",
             trigger: "Open Configuration -> App Configuration",
-            summary: "Admins toggle shop-level modules, but only package-supported features are exposed and writable.",
+            summary: "Admins toggle shop-level modules and choose category structure, while only package-supported features are exposed and writable.",
             route: "/app-configuration",
             nav: "Stay on app configuration",
-            outcome: "Effective configuration controls recipe, weight, service, table, and dine-in visibility across frontend and backend behavior.",
+            outcome: "Effective configuration controls recipe, weight/volume, service, table, dine-in, and category structure behavior across frontend and backend behavior.",
             fe: "GET /app-configuration + PUT /app-configuration",
             be: "AppConfigurationController.get / update",
             files: ["src/pages/AppConfigurationPage.jsx", "src/context/AppConfigurationContext.jsx", "src/api/appConfiguration.api.js", "src/main/java/com/chala/posapp/service/AppConfigurationService.java"],
-            req: { dto: "AppConfigurationRequest", fields: [["recipeItemsEnabled", "PRO only"], ["weightItemsEnabled", "STANDARD/PRO"], ["servicesEnabled", "STANDARD/PRO"], ["tableManagementEnabled", "STANDARD/PRO"], ["dineInEnabled", "depends on tables"]] },
-            res: { dto: "AppConfigurationResponse", fields: [["recipeItemsEnabled", "effective state"], ["weightItemsEnabled", "effective state"], ["servicesEnabled", "effective state"], ["tableManagementEnabled", "effective state"], ["dineInEnabled", "effective state"]] }
+            req: { dto: "AppConfigurationRequest", fields: [["recipeItemsEnabled", "PRO only"], ["weightItemsEnabled", "STANDARD/PRO; includes volume items"], ["servicesEnabled", "STANDARD/PRO"], ["tableManagementEnabled", "STANDARD/PRO"], ["dineInEnabled", "depends on tables"], ["categoryMode", "MAIN_AND_SUB/SINGLE_CATEGORY"]] },
+            res: { dto: "AppConfigurationResponse", fields: [["recipeItemsEnabled", "effective state"], ["weightItemsEnabled", "effective state"], ["servicesEnabled", "effective state"], ["tableManagementEnabled", "effective state"], ["dineInEnabled", "effective state"], ["categoryMode", "effective category structure"]] }
           },
           {
             title: "Create or Update Branch",
@@ -913,21 +1041,21 @@
         lane: "Release",
         title: "Branding, Notifications, Version Flow",
         route: "/version-history and shell UI",
-        tag: "v1.6.0",
-        meta: ["Logo", "Alerts", "Changelog"],
-        copy: "v1.6.0 updates release visibility for the new warranty, configuration, invoice, and dine-in workflow changes while keeping popup and changelog output concise.",
+        tag: "v1.9.0",
+        meta: ["Logo", "Alerts", "Changelog", "Mobile shell"],
+        copy: "v1.9.0 documents stock processing, actual recipe costing from consumed batches, configurable category structure, promotion rules, Excel recipe ingredient linking, POS visibility, volume items with L/ML units, and measured stock flow updates across sales, purchase, stock, receipts, and reports.",
         steps: [
           {
             title: "Show New Version Dialog",
             trigger: "User logs in after APP_VERSION changes",
-            summary: "Layout mounts VersionUpdateDialog, checks localStorage per user, and shows v1.6.0 release highlights once.",
+            summary: "Layout mounts VersionUpdateDialog, checks localStorage per user, and shows v1.9.0 release highlights once.",
             route: "Protected layout after login",
             nav: "Close dialog or View full version history",
             outcome: "User sees the release summary once per version.",
             fe: "Client localStorage check",
             be: "None",
             files: ["src/components/version/VersionUpdateDialog.jsx", "src/data/versionHistory.js", "src/components/layout/Layout.jsx"],
-            req: { dto: "Client version state", fields: [["APP_VERSION", "1.6.0"], ["storageKey", "tenant/user scoped"], ["LATEST_VERSION", "dialog content"]] },
+            req: { dto: "Client version state", fields: [["APP_VERSION", "1.9.0"], ["storageKey", "tenant/user scoped"], ["LATEST_VERSION", "dialog content"]] },
             res: { dto: "Dialog state", fields: [["open", "true when not seen"], ["seenVersion", "saved after close"], ["highlights[]", "release highlights"]] }
           },
           {
@@ -959,7 +1087,7 @@
           {
             title: "Header Alert Center",
             trigger: "Header loads or offline queue/network/stock state changes",
-            summary: "Header aggregates offline queue, failed imports, stock conflicts, low stock, no open shift, subscription, and credit warnings.",
+            summary: "Header aggregates offline queue, failed imports, stock conflicts, low stock, no open shift, subscription, and credit warnings. Low stock alert opens /stock?status=REORDER.",
             route: "Global header",
             nav: "Click alert -> related page",
             outcome: "Active operational warnings are visible from the top bar.",
@@ -968,6 +1096,19 @@
             files: ["src/components/layout/Header.jsx", "src/api/stock.api.js", "src/api/customers.api.js", "src/offline/db.js"],
             req: { dto: "Mixed client/API checks", fields: [["offlineQueueCount", "local queue"], ["selectedBranchId", "branch"], ["lowStock", "stock API"], ["customers", "credit warning source"]] },
             res: { dto: "Notification[]", fields: [["id", "alert id"], ["message", "alert text"], ["tone", "blue/amber/red/emerald"], ["action", "navigation target"]] }
+          },
+          {
+            title: "Mobile Sidebar Open and Close",
+            trigger: "Tap hamburger, close button, backdrop, or route link on mobile",
+            summary: "Sidebar keeps the hamburger above the header layer, hides it while drawer is open, and applies entry animation only while open so the closed transform is not overridden.",
+            route: "Global mobile shell",
+            nav: "Open drawer -> navigate or close -> hamburger returns",
+            outcome: "Mobile users can repeatedly open and close the sidebar without the drawer getting stuck.",
+            fe: "Client state only",
+            be: "None",
+            files: ["src/components/layout/Sidebar.jsx", "src/index.css"],
+            req: { dto: "Client sidebar state", fields: [["isOpen", "drawer state"], ["location.pathname/search", "auto close triggers"], ["z-index", "hamburger above header"]] },
+            res: { dto: "Rendered mobile shell", fields: [["hamburger", "visible when closed"], ["drawer", "translate-x-0 only when open"], ["backdrop", "click closes drawer"]] }
           }
         ]
       }

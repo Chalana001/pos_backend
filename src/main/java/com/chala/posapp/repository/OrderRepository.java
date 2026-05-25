@@ -4,6 +4,7 @@ import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
@@ -19,6 +20,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByClientSaleId(String clientSaleId);
 
     long countByBranchId(Long branchId);
+
+    @Modifying
+    @Query("""
+        UPDATE Order o
+        SET o.createdAt = o.offlineSoldAt
+        WHERE o.tenantId = :tenantId
+          AND o.branchId = :branchId
+          AND o.offlineImported = true
+          AND o.offlineSoldAt IS NOT NULL
+          AND o.clientSaleId LIKE 'legacy:%'
+    """)
+    int repairLegacyImportedCreatedAt(
+            @Param("tenantId") String tenantId,
+            @Param("branchId") Long branchId
+    );
 
     @Query("""
         SELECT COALESCE(SUM(

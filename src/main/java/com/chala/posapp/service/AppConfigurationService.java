@@ -3,7 +3,9 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.configuration.AppConfigurationRequest;
 import com.chala.posapp.dto.configuration.AppConfigurationResponse;
 import com.chala.posapp.entity.AppConfiguration;
+import com.chala.posapp.entity.CategoryMode;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.StockOverrideMode;
 import com.chala.posapp.repository.AppConfigurationRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
@@ -41,6 +43,12 @@ public class AppConfigurationService {
             configuration.setTableManagementEnabled(request.isTableManagementEnabled());
             configuration.setDineInEnabled(request.isDineInEnabled() && request.isTableManagementEnabled());
         }
+        configuration.setCategoryMode(request.getCategoryMode() != null
+                ? request.getCategoryMode()
+                : CategoryMode.MAIN_AND_SUB);
+        configuration.setStockOverrideMode(request.getStockOverrideMode() != null
+                ? request.getStockOverrideMode()
+                : StockOverrideMode.MANAGER_OVERRIDE);
 
         return mapEffective(appConfigurationRepository.save(configuration));
     }
@@ -50,6 +58,7 @@ public class AppConfigurationService {
         return switch (itemType) {
             case NORMAL -> true;
             case WEIGHT -> planSupportsWeightItems() && configuration.isWeightItemsEnabled();
+            case VOLUME -> planSupportsWeightItems() && configuration.isWeightItemsEnabled();
             case SERVICE -> planSupportsServices() && configuration.isServicesEnabled();
             case RECIPE -> planSupportsRecipeItems() && configuration.isRecipeItemsEnabled();
         };
@@ -64,6 +73,11 @@ public class AppConfigurationService {
         return planSupportsDiningTables() && configuration.isTableManagementEnabled() && configuration.isDineInEnabled();
     }
 
+    public StockOverrideMode getStockOverrideMode() {
+        StockOverrideMode mode = getOrDefault().getStockOverrideMode();
+        return mode != null ? mode : StockOverrideMode.MANAGER_OVERRIDE;
+    }
+
     private AppConfiguration getOrDefault() {
         return appConfigurationRepository.findFirstByOrderByIdAsc()
                 .orElseGet(this::buildDefaultConfiguration);
@@ -76,6 +90,8 @@ public class AppConfigurationService {
                 .servicesEnabled(true)
                 .tableManagementEnabled(true)
                 .dineInEnabled(true)
+                .categoryMode(CategoryMode.MAIN_AND_SUB)
+                .stockOverrideMode(StockOverrideMode.MANAGER_OVERRIDE)
                 .build();
     }
 
@@ -86,6 +102,12 @@ public class AppConfigurationService {
                 .servicesEnabled(planSupportsServices() && configuration.isServicesEnabled())
                 .tableManagementEnabled(planSupportsDiningTables() && configuration.isTableManagementEnabled())
                 .dineInEnabled(planSupportsDiningTables() && configuration.isTableManagementEnabled() && configuration.isDineInEnabled())
+                .categoryMode(configuration.getCategoryMode() != null
+                        ? configuration.getCategoryMode()
+                        : CategoryMode.MAIN_AND_SUB)
+                .stockOverrideMode(configuration.getStockOverrideMode() != null
+                        ? configuration.getStockOverrideMode()
+                        : StockOverrideMode.MANAGER_OVERRIDE)
                 .build();
     }
 

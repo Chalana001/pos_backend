@@ -63,6 +63,16 @@ public class OrderItem extends TenantEntity {
     @Column(name = "discount_value", nullable = false)
     private double discountValue;
 
+    @Column(name = "promotion_id")
+    private Long promotionId;
+
+    @Column(name = "promotion_name", length = 120)
+    private String promotionName;
+
+    @Column(name = "promotion_discount_amount", nullable = false)
+    @Builder.Default
+    private double promotionDiscountAmount = 0.0;
+
     @Column(name = "final_unit_price", nullable = false)
     private double finalUnitPrice;
 

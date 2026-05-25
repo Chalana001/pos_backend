@@ -2,11 +2,14 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.dto.order.LegacySalesImportCommitResponse;
+import com.chala.posapp.dto.order.LegacySalesImportPreviewResponse;
 import com.chala.posapp.dto.order.OfflineSaleImportRequest;
 import com.chala.posapp.dto.order.OfflineSaleImportResponse;
 import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.service.InvoicePdfService;
+import com.chala.posapp.service.LegacySalesImportService;
 import com.chala.posapp.service.OrderService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -17,8 +20,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/orders")
@@ -27,6 +32,7 @@ public class OrderController {
 
     private final OrderService orderService;
     private final InvoicePdfService invoicePdfService;
+    private final LegacySalesImportService legacySalesImportService;
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping
@@ -49,6 +55,35 @@ public class OrderController {
             List<@Valid OfflineSaleImportRequest> requests
     ) {
         return ResponseEntity.ok(orderService.importOfflineSales(requests));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping(value = "/legacy-import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<LegacySalesImportPreviewResponse> previewLegacySalesImport(
+            @RequestPart("salesFile") MultipartFile salesFile,
+            @RequestPart(value = "mappingFile", required = false) MultipartFile mappingFile,
+            @RequestParam("branchId") Long branchId,
+            @RequestParam(value = "cashierUserId", required = false) Long cashierUserId
+    ) {
+        return ResponseEntity.ok(legacySalesImportService.preview(salesFile, mappingFile, branchId, cashierUserId));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping(value = "/legacy-import/commit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<LegacySalesImportCommitResponse> commitLegacySalesImport(
+            @RequestPart("salesFile") MultipartFile salesFile,
+            @RequestPart(value = "mappingFile", required = false) MultipartFile mappingFile,
+            @RequestParam("branchId") Long branchId,
+            @RequestParam(value = "cashierUserId", required = false) Long cashierUserId
+    ) {
+        return ResponseEntity.ok(legacySalesImportService.commit(salesFile, mappingFile, branchId, cashierUserId));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/legacy-import/repair-dates")
+    public ResponseEntity<Map<String, Object>> repairLegacyImportedSaleDates(@RequestParam("branchId") Long branchId) {
+        int updated = legacySalesImportService.repairImportedSaleDates(branchId);
+        return ResponseEntity.ok(Map.of("updatedOrders", updated));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")

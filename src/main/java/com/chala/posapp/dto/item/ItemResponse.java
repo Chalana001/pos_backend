@@ -38,8 +38,11 @@ public class ItemResponse {
     private boolean kotEnabled;
 
     private boolean active;
+    private boolean posVisible;
+    private boolean stockProcessingEnabled;
     private LocalDateTime createdAt;
     private List<Long> branchIds;
     private List<ItemIngredientResponse> ingredients;
+    private List<StockProcessingOutputLinkResponse> processingOutputs;
     private List<StockBatchResponse> batches;
 }

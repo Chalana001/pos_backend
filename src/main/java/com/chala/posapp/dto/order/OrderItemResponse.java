@@ -20,6 +20,10 @@ public class OrderItemResponse {
     private double unitPrice;
     private String discountType;
     private double discountValue;
+    private Long promotionId;
+    private String promotionName;
+    private double promotionDiscountAmount;
+    private boolean promotionApplied;
     private double finalUnitPrice;
     private double lineTotal;
     private String warrantyLabel;

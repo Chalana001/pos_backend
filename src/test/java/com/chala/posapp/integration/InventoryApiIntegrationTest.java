@@ -346,7 +346,8 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         StockBatch sourceBatch = firstBatchFor(fixture.mainBranch().getId(), itemId);
 
         JsonNode stockPage = getJson("/stock/branch/" + fixture.mainBranch().getId() + "?page=0&size=10", tenantId, managerToken);
-        assertEquals(10, stockPage.path("content").get(0).path("totalQuantity").asInt());
+        assertEquals(10000, stockPage.path("content").get(0).path("totalQuantity").asInt());
+        assertEquals(10.0, stockPage.path("content").get(0).path("displayQuantity").asDouble(), 0.001);
 
         JsonNode lowStock = getJson("/stock/low?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertFalse(lowStock.isEmpty());
@@ -366,7 +367,8 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
                 }
                 """.formatted(fixture.mainBranch().getId(), itemId, sourceBatch.getId())
         );
-        assertEquals(-2, adjustment.path("qtyChange").asInt());
+        assertEquals(-2000, adjustment.path("qtyChange").asInt());
+        assertEquals(-2.0, adjustment.path("displayQtyChange").asDouble(), 0.001);
 
         JsonNode branchAdjustmentHistory = getJson("/stock-adjustments/branch/" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(1, branchAdjustmentHistory.size());
@@ -408,7 +410,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode receivedTransfer = postJson("/stock-transfers/" + firstTransferId + "/receive", tenantId, adminToken, "");
         assertEquals("COMPLETED", receivedTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(secondBranchId, itemId).size());
-        assertEquals(3, firstBatchFor(secondBranchId, itemId).getQuantity());
+        assertEquals(3000, firstBatchFor(secondBranchId, itemId).getQuantity());
 
         JsonNode secondTransfer = postJson(
                 "/stock-transfers",
@@ -433,7 +435,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode receivedSecondTransfer = postJson("/stock-transfers/" + secondTransferId + "/receive", tenantId, adminToken, "");
         assertEquals("COMPLETED", receivedSecondTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(secondBranchId, itemId).size());
-        assertEquals(4, firstBatchFor(secondBranchId, itemId).getQuantity());
+        assertEquals(4000, firstBatchFor(secondBranchId, itemId).getQuantity());
 
         JsonNode thirdTransfer = postJson(
                 "/stock-transfers",
@@ -468,7 +470,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         );
         assertEquals("CANCELED", canceledTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(fixture.mainBranch().getId(), itemId).size());
-        assertEquals(4, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
+        assertEquals(4000, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
 
         JsonNode outgoingTransfers = getJson("/stock-transfers/outgoing/" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(3, outgoingTransfers.size());

@@ -67,6 +67,14 @@ public class Item extends TenantEntity {
     @Builder.Default
     private boolean active = true;
 
+    @Column(name = "pos_visible", nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private boolean posVisible = true;
+
+    @Column(name = "stock_processing_enabled", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private boolean stockProcessingEnabled = false;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

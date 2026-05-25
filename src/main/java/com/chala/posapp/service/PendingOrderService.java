@@ -109,11 +109,7 @@ public class PendingOrderService {
                     && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(table.getBranchId(), item.getId())) {
                 throw new BadRequestException("Service item is not assigned to this branch: " + item.getName());
             }
-            if (item.getItemType() != ItemType.SERVICE && item.getItemType() != ItemType.RECIPE && itemRequest.getBatchId() == null) {
-                throw new BadRequestException("Batch ID is missing for item: " + item.getName());
-            }
-
-            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
+            int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
             DiscountType discountType = itemRequest.getDiscountType() == null ? DiscountType.NONE : itemRequest.getDiscountType();
             double discountValue = itemRequest.getDiscountValue();
             double finalUnitPrice = calculateFinalUnitPrice(itemRequest.getUnitPrice(), discountType, discountValue);
@@ -251,7 +247,7 @@ public class PendingOrderService {
     private PendingOrderItemResponse mapItem(PendingOrderItem pendingOrderItem) {
         Item item = itemRepository.findById(pendingOrderItem.getItemId())
                 .orElse(null);
-        int normalizedQty = item == null ? 0 : QuantityConversionUtil.normalizeQuantity(item, pendingOrderItem.getDisplayQty(), pendingOrderItem.getQtyUnit());
+        int normalizedQty = item == null ? 0 : QuantityConversionUtil.normalizeSaleQuantity(item, pendingOrderItem.getDisplayQty(), pendingOrderItem.getQtyUnit());
         double finalUnitPrice = calculateFinalUnitPrice(
                 pendingOrderItem.getUnitPrice(),
                 pendingOrderItem.getDiscountType(),
@@ -294,7 +290,7 @@ public class PendingOrderService {
     }
 
     private com.chala.posapp.entity.MeasurementUnit resolveQtyUnit(Item item, OrderItemRequest itemRequest) {
-        if (item.getItemType() == ItemType.WEIGHT) {
+        if (QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
             return itemRequest.getQtyUnit() == null ? item.getDefaultUnit() : itemRequest.getQtyUnit();
         }
         if (item.getItemType() == ItemType.SERVICE) {

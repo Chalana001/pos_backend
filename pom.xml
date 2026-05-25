@@ -6,7 +6,7 @@
 
     <groupId>com.chala.posapp</groupId>
     <artifactId>POS.System</artifactId>
-    <version>1.6.0</version>
+    <version>1.9.0</version>
 
 
     <parent>
@@ -93,6 +93,16 @@
             <groupId>io.github.openhtmltopdf</groupId>
             <artifactId>openhtmltopdf-pdfbox</artifactId>
             <version>1.1.37</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
     </dependencies>

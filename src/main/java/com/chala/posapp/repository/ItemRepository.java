@@ -18,11 +18,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     Optional<Item> findByBarcode(String barcode);
 
+    List<Item> findAllByNameIgnoreCase(String name);
+
     List<Item> findAllByBarcodeIn(List<String> barcodes);
 
     List<Item> findByNameContainingIgnoreCase(String name);
 
     List<Item> findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(String name, String barcode);
+
+    List<Item> findByStockProcessingEnabledTrueAndActiveTrueOrderByNameAsc();
 
     @Query(value = """
             SELECT 

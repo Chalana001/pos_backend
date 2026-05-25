@@ -1,5 +1,7 @@
 package com.chala.posapp.dto.configuration;
 
+import com.chala.posapp.entity.CategoryMode;
+import com.chala.posapp.entity.StockOverrideMode;
 import lombok.Builder;
 import lombok.Data;
 
@@ -11,4 +13,6 @@ public class AppConfigurationResponse {
     private boolean servicesEnabled;
     private boolean tableManagementEnabled;
     private boolean dineInEnabled;
+    private CategoryMode categoryMode;
+    private StockOverrideMode stockOverrideMode;
 }

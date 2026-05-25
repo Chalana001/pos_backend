@@ -21,10 +21,11 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query(value = """
     SELECT id, name, due_amount
     FROM customers
-    WHERE due_amount > 0
+    WHERE tenant_id = :tenantId
+      AND due_amount > 0
     ORDER BY due_amount DESC
 """, nativeQuery = true)
-    List<Object[]> creditDueRaw();
+    List<Object[]> creditDueRaw(@Param("tenantId") String tenantId);
 
     @Query("""
         SELECT c

@@ -22,10 +22,34 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     List<StockBatch> findByBranchIdAndItemIdAndQuantityGreaterThanOrderByIdAsc(Long branchId, Long itemId, Double quantity);
 
-    @Query("SELECT sb FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId AND sb.quantity > 0 ORDER BY sb.receivedAt ASC")
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE sb.branch.id = :branchId AND sb.item.id = :itemId AND sb.quantity > 0
+            ORDER BY CASE WHEN sb.sourceType = com.chala.posapp.entity.stock.StockBatchSourceType.PROCESSING THEN 0 ELSE 1 END,
+                     sb.receivedAt ASC,
+                     sb.id ASC
+            """)
     List<StockBatch> findAvailableBatches(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
-    @Query("SELECT sb FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId AND sb.quantity > 0 ORDER BY sb.receivedAt ASC, sb.id ASC")
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE sb.branch.id = :branchId
+              AND sb.item.id = :itemId
+              AND sb.quantity > 0
+              AND sb.sellingPrice = :sellingPrice
+            ORDER BY CASE WHEN sb.sourceType = com.chala.posapp.entity.stock.StockBatchSourceType.PROCESSING THEN 0 ELSE 1 END,
+                     sb.receivedAt ASC,
+                     sb.id ASC
+            """)
+    List<StockBatch> findAvailableBatchesBySellingPrice(@Param("branchId") Long branchId, @Param("itemId") Long itemId, @Param("sellingPrice") BigDecimal sellingPrice);
+
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId AND sb.quantity > 0
+            ORDER BY CASE WHEN sb.sourceType = com.chala.posapp.entity.stock.StockBatchSourceType.PROCESSING THEN 0 ELSE 1 END,
+                     sb.receivedAt ASC,
+                     sb.id ASC
+            """)
     List<StockBatch> findAvailableBatchesForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
     @Query("SELECT sb FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId ORDER BY sb.receivedAt ASC, sb.id ASC")
@@ -106,7 +130,9 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             Pageable pageable);
 
     @Query("SELECT COALESCE(SUM(" +
-            "CASE WHEN sb.item.itemType = com.chala.posapp.entity.ItemType.WEIGHT " +
+            "CASE WHEN sb.item.itemType = com.chala.posapp.entity.ItemType.NORMAL " +
+            "OR sb.item.itemType = com.chala.posapp.entity.ItemType.WEIGHT " +
+            "OR sb.item.itemType = com.chala.posapp.entity.ItemType.VOLUME " +
             "THEN (sb.quantity / 1000.0) * sb.costPrice " +
             "ELSE sb.quantity * sb.costPrice END), 0) " +
             "FROM StockBatch sb " +
@@ -135,6 +161,9 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             @Param("subCategoryId") Long subCategoryId);
 
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
+
+    @Query("SELECT sb FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId ORDER BY sb.receivedAt ASC, sb.id ASC")
+    List<StockBatch> findBatchesForBranchItem(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
     List<StockBatch> findByItemId(Long id);
 

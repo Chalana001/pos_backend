@@ -215,7 +215,7 @@ public class StockService {
                 .sellingPrice(batch.getSellingPrice())
                 .qty(batch.getQuantity())
                 .displayQty(QuantityConversionUtil.toDisplayQuantity(batch.getItem().getItemType(), batch.getItem().getDefaultUnit(), batch.getQuantity()))
-                .displayUnit(batch.getItem().getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : batch.getItem().getDefaultUnit())
+                .displayUnit(QuantityConversionUtil.primaryDisplayUnit(batch.getItem()))
                 .receivedAt(batch.getReceivedAt())
                 .expiry(batch.getExpireDate())
                 .build();

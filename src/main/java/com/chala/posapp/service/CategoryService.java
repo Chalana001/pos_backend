@@ -7,6 +7,7 @@ import com.chala.posapp.dto.SubCategoryRequest;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.exception.AlreadyExistsException;
+import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CategoryRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
@@ -18,6 +19,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class CategoryService {
+
+    private static final String SINGLE_CATEGORY_PARENT_NAME = "General";
 
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
@@ -70,6 +73,44 @@ public class CategoryService {
 
         SubCategory savedSubCategory = subCategoryRepository.save(subCategory);
         return mapToSubCategoryDto(savedSubCategory);
+    }
+
+    @Transactional
+    public List<SubCategoryDto> getSingleCategories() {
+        return subCategoryRepository.findByCategoryId(getSingleCategoryParent().getId()).stream()
+                .map(this::mapToSubCategoryDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public SubCategoryDto createSingleCategory(CategoryRequest request) {
+        if (request.getName() == null || request.getName().isBlank()) {
+            throw new BadRequestException("Category name is required");
+        }
+
+        String name = request.getName().trim();
+        if (subCategoryRepository.findByNameIgnoreCase(name).isPresent()) {
+            throw new AlreadyExistsException("Category name already exists");
+        }
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName(name);
+        subCategory.setCategory(getSingleCategoryParent());
+        return mapToSubCategoryDto(subCategoryRepository.save(subCategory));
+    }
+
+    @Transactional
+    public CategoryDto getSingleCategoryParentDto() {
+        return mapToCategoryDto(getSingleCategoryParent());
+    }
+
+    private Category getSingleCategoryParent() {
+        return categoryRepository.findByNameIgnoreCase(SINGLE_CATEGORY_PARENT_NAME)
+                .orElseGet(() -> {
+                    Category category = new Category();
+                    category.setName(SINGLE_CATEGORY_PARENT_NAME);
+                    return categoryRepository.save(category);
+                });
     }
 
     private CategoryDto mapToCategoryDto(Category category) {

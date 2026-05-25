@@ -82,6 +82,20 @@ public class Order extends TenantEntity {
     @Column(nullable = false)
     private double billDiscount;
 
+    @Column(name = "promotion_discount_total", nullable = false)
+    @Builder.Default
+    private double promotionDiscountTotal = 0.0;
+
+    @Column(name = "bill_promotion_id")
+    private Long billPromotionId;
+
+    @Column(name = "bill_promotion_name", length = 120)
+    private String billPromotionName;
+
+    @Column(name = "bill_promotion_discount_amount", nullable = false)
+    @Builder.Default
+    private double billPromotionDiscountAmount = 0.0;
+
     @Column(nullable = false)
     private double grandTotal;
 
@@ -120,7 +134,7 @@ public class Order extends TenantEntity {
 
     @PrePersist
     void onCreate() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = LocalDateTime.now();
         if (status == null) status = OrderStatus.COMPLETED;
     }
 }

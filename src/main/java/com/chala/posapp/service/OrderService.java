@@ -9,12 +9,15 @@ import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.order.OrderItemResponse;
 import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
+import com.chala.posapp.dto.order.StockShortageIssue;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.exception.StockOverrideRequiredException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
@@ -58,6 +61,8 @@ public class OrderService {
     private final CreditPaymentRepository creditPaymentRepository;
     private final WarrantyRepository warrantyRepository;
     private final AppConfigurationService appConfigurationService;
+    private final PromotionService promotionService;
+    private final StockOverrideAuditRepository stockOverrideAuditRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -187,8 +192,14 @@ public class OrderService {
         String invoiceNo = invoiceService.generateInvoiceNo(branchId);
 
         double subTotal = 0;
+        double promotionDiscountTotal = 0;
+        LocalDateTime promotionTime = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
+                ? offlineOrderMetadata.offlineSoldAt
+                : LocalDateTime.now();
+        List<Promotion> activePromotions = promotionService.activePromotionsForBranch(branchId, promotionTime);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
+        StockOverrideContext stockOverrideContext = buildStockOverrideContext(request, user);
 
         for (OrderItemRequest itemReq : request.getItems()) {
             validateWarrantySelection(itemReq);
@@ -202,21 +213,36 @@ public class OrderService {
                 throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
 
-            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
+            int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
             StockConsumptionResult consumption = consumeStockForSale(
                     branchId,
                     item,
                     itemReq,
                     normalizedQty,
                     batchesToUpdate,
-                    offlineOrderMetadata != null
+                    offlineOrderMetadata != null,
+                    stockOverrideContext
             );
 
             double unitPrice = itemReq.getUnitPrice();
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
+            PromotionApplication promotionApplication = promotionService.calculateBestDiscount(
+                    item,
+                    branchId,
+                    unitPrice,
+                    normalizedQty,
+                    discountType,
+                    discountValue,
+                    activePromotions
+            );
+            discountType = promotionApplication.discountType();
+            discountValue = promotionApplication.discountValue();
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
             double lineTotal = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(finalUnitPrice), normalizedQty).doubleValue();
+            if (promotionApplication.promotionApplied()) {
+                promotionDiscountTotal += promotionApplication.promotionDiscountAmount();
+            }
 
             OrderItem orderItem = OrderItem.builder()
                     .itemId(item.getId())
@@ -231,6 +257,9 @@ public class OrderService {
                     .costPrice(consumption.unitCost)
                     .discountType(discountType)
                     .discountValue(discountValue)
+                    .promotionId(promotionApplication.promotionApplied() ? promotionApplication.promotionId() : null)
+                    .promotionName(promotionApplication.promotionApplied() ? promotionApplication.promotionName() : null)
+                    .promotionDiscountAmount(promotionApplication.promotionApplied() ? promotionApplication.promotionDiscountAmount() : 0.0)
                     .finalUnitPrice(finalUnitPrice)
                     .lineCost(consumption.lineCost)
                     .lineTotal(lineTotal)
@@ -239,13 +268,24 @@ public class OrderService {
                     .warrantyPeriodUnit(itemReq.getWarrantyPeriodUnit())
                     .build();
 
-            preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages));
+            preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages, consumption.overrides));
             subTotal += lineTotal;
         }
 
         double billDiscount = request.getBillDiscount();
         if (billDiscount < 0) billDiscount = 0;
         if (billDiscount > subTotal) billDiscount = subTotal;
+        PromotionOrderApplication billPromotionApplication = promotionService.calculateBestOrderDiscount(
+                branchId,
+                request.getCustomerId(),
+                subTotal,
+                billDiscount,
+                activePromotions
+        );
+        billDiscount = billPromotionApplication.appliedDiscountAmount();
+        if (billPromotionApplication.promotionApplied()) {
+            promotionDiscountTotal += billPromotionApplication.promotionDiscountAmount();
+        }
 
         double grandTotal = roundRupee(subTotal - billDiscount);
         double paidAmount = request.getPaidAmount();
@@ -310,6 +350,10 @@ public class OrderService {
                 .status(OrderStatus.COMPLETED)
                 .subTotal(subTotal)
                 .billDiscount(billDiscount)
+                .promotionDiscountTotal(promotionDiscountTotal)
+                .billPromotionId(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionId() : null)
+                .billPromotionName(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionName() : null)
+                .billPromotionDiscountAmount(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionDiscountAmount() : 0.0)
                 .grandTotal(grandTotal)
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
@@ -344,6 +388,34 @@ public class OrderService {
         }
         if (!usagesToSave.isEmpty()) {
             orderItemStockUsageRepository.saveAll(usagesToSave);
+        }
+
+        List<StockOverrideAudit> overrideAuditsToSave = new ArrayList<>();
+        for (int i = 0; i < savedOrderItems.size(); i++) {
+            OrderItem savedOrderItem = savedOrderItems.get(i);
+            for (StockOverrideDraft override : preparedItems.get(i).overrides) {
+                overrideAuditsToSave.add(StockOverrideAudit.builder()
+                        .orderId(savedOrder.getId())
+                        .orderItemId(savedOrderItem.getId())
+                        .branchId(branchId)
+                        .saleItemId(override.saleItemId)
+                        .saleItemName(override.saleItemName)
+                        .stockItemId(override.stockItemId)
+                        .stockItemName(override.stockItemName)
+                        .batchId(override.batchId)
+                        .requiredQuantity(override.requiredQuantity)
+                        .availableQuantity(override.availableQuantity)
+                        .shortageQuantity(override.shortageQuantity)
+                        .qtyUnit(override.qtyUnit)
+                        .overrideMode(stockOverrideContext.mode)
+                        .overrideUserId(user.getId())
+                        .overrideUsername(user.getUsername())
+                        .reason(stockOverrideContext.reason)
+                        .build());
+            }
+        }
+        if (!overrideAuditsToSave.isEmpty()) {
+            stockOverrideAuditRepository.saveAll(overrideAuditsToSave);
         }
 
         List<Warranty> warrantiesToSave = buildWarranties(savedOrder, savedOrderItems, customer);
@@ -408,6 +480,9 @@ public class OrderService {
             List<OrderItemStockUsage> usages = orderItemStockUsageRepository.findByOrderItemId(orderItem.getId());
             if (!usages.isEmpty()) {
                 restoreStockUsages(usages, order.getBranchId());
+            } else if (order.isOfflineImported() && orderItem.getBatchId() == null) {
+                // Legacy imported sales do not create stock usage rows or batch references.
+                continue;
             } else {
                 restoreStockToOriginalBatch(orderItem, order.getBranchId());
             }
@@ -627,7 +702,8 @@ public class OrderService {
             OrderItemRequest itemReq,
             int normalizedQty,
             Map<Long, StockBatch> batchesToUpdate,
-            boolean allowAutomaticBatchSelection
+            boolean allowAutomaticBatchSelection,
+            StockOverrideContext stockOverrideContext
     ) {
         if (item.getItemType() == ItemType.SERVICE) {
             if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
@@ -635,7 +711,7 @@ public class OrderService {
             }
             double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
-            return new StockConsumptionResult(null, unitCost, lineCost, List.of());
+            return new StockConsumptionResult(null, unitCost, lineCost, List.of(), List.of());
         }
 
         if (item.getItemType() == ItemType.RECIPE) {
@@ -653,6 +729,7 @@ public class OrderService {
                     .collect(Collectors.toMap(Item::getId, ingredient -> ingredient));
 
             List<StockUsageDraft> usages = new ArrayList<>();
+            List<StockOverrideDraft> overrides = new ArrayList<>();
             double lineCost = 0.0;
 
             for (RecipeIngredient recipeIngredient : recipeIngredients) {
@@ -668,13 +745,17 @@ public class OrderService {
 
                 InventoryConsumptionResult ingredientConsumption = consumeInventoryItem(
                         branchId,
+                        item,
                         ingredientItem,
                         null,
+                        null,
                         (int) requiredQty,
-                        batchesToUpdate
+                        batchesToUpdate,
+                        stockOverrideContext
                 );
                 usages.addAll(ingredientConsumption.usages);
                 lineCost += ingredientConsumption.lineCost;
+                overrides.addAll(ingredientConsumption.overrides);
             }
 
             double unitCost = normalizedQty == 0
@@ -683,13 +764,13 @@ public class OrderService {
                     .divide(BigDecimal.valueOf(normalizedQty), 6, RoundingMode.HALF_UP)
                     .doubleValue();
 
-            return new StockConsumptionResult(null, unitCost, lineCost, usages);
+            return new StockConsumptionResult(null, unitCost, lineCost, usages, overrides);
         }
 
         if (isFreePlanWithoutStockManagement()) {
             double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
-            return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of());
+            return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of(), List.of());
         }
 
         if (itemReq.getBatchId() == null && !allowAutomaticBatchSelection) {
@@ -699,25 +780,32 @@ public class OrderService {
         InventoryConsumptionResult inventoryConsumption = consumeInventoryItem(
                 branchId,
                 item,
+                item,
                 itemReq.getBatchId(),
+                BigDecimal.valueOf(itemReq.getUnitPrice()),
                 normalizedQty,
-                batchesToUpdate
+                batchesToUpdate,
+                stockOverrideContext
         );
 
         return new StockConsumptionResult(
                 inventoryConsumption.primaryBatchId,
                 inventoryConsumption.unitCost,
                 inventoryConsumption.lineCost,
-                inventoryConsumption.usages
+                inventoryConsumption.usages,
+                inventoryConsumption.overrides
         );
     }
 
     private InventoryConsumptionResult consumeInventoryItem(
             Long branchId,
+            Item saleItem,
             Item item,
             Long explicitBatchId,
+            BigDecimal preferredSellingPrice,
             int normalizedQty,
-            Map<Long, StockBatch> batchesToUpdate
+            Map<Long, StockBatch> batchesToUpdate,
+            StockOverrideContext stockOverrideContext
     ) {
         if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
             throw new BadRequestException("Stock-tracked grocery item required for stock deduction");
@@ -734,26 +822,40 @@ public class OrderService {
                 throw new BadRequestException("Batch does not belong to this branch");
             }
 
-            decrementBatch(batch, normalizedQty);
+            int availableQty = positiveQuantity(batch);
+            if (availableQty < normalizedQty && !stockOverrideContext.allowed) {
+                throwStockShortage(saleItem, item, batch, normalizedQty, availableQty, stockOverrideContext);
+            }
+            decrementBatch(batch, normalizedQty, stockOverrideContext.allowed);
             batchesToUpdate.put(batch.getId(), batch);
 
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), normalizedQty).doubleValue();
+            List<StockOverrideDraft> overrides = availableQty < normalizedQty
+                    ? List.of(buildOverrideDraft(saleItem, item, batch.getId(), normalizedQty, availableQty, stockOverrideContext))
+                    : List.of();
             return new InventoryConsumptionResult(
                     batch.getId(),
                     batch.getCostPrice().doubleValue(),
                     lineCost,
-                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty))
+                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty)),
+                    overrides
             );
         }
 
-        List<StockBatch> availableBatches = stockBatchRepository.findAvailableBatches(branchId, item.getId());
+        List<StockBatch> availableBatches = preferredSellingPrice == null
+                ? stockBatchRepository.findAvailableBatches(branchId, item.getId())
+                : stockBatchRepository.findAvailableBatchesBySellingPrice(branchId, item.getId(), preferredSellingPrice);
         if (availableBatches.isEmpty()) {
-            throw new BadRequestException("Insufficient stock for " + item.getName());
+            availableBatches = stockBatchRepository.findAvailableBatches(branchId, item.getId());
         }
-
         int remainingQty = normalizedQty;
         List<StockUsageDraft> usages = new ArrayList<>();
+        List<StockOverrideDraft> overrides = new ArrayList<>();
         double lineCost = 0.0;
+        int availableBefore = availableBatches.stream()
+                .mapToInt(this::positiveQuantity)
+                .sum();
+        StockBatch lastUsedBatch = null;
 
         for (StockBatch batch : availableBatches) {
             if (remainingQty <= 0) {
@@ -766,8 +868,9 @@ public class OrderService {
             }
 
             int usedQty = Math.min(availableQty, remainingQty);
-            decrementBatch(batch, usedQty);
+            decrementBatch(batch, usedQty, false);
             batchesToUpdate.put(batch.getId(), batch);
+            lastUsedBatch = batch;
 
             usages.add(new StockUsageDraft(item.getId(), batch.getId(), usedQty));
             lineCost += QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), usedQty).doubleValue();
@@ -775,7 +878,17 @@ public class OrderService {
         }
 
         if (remainingQty > 0) {
-            throw new BadRequestException("Insufficient stock for " + item.getName());
+            if (!stockOverrideContext.allowed) {
+                throwStockShortage(saleItem, item, lastUsedBatch, normalizedQty, availableBefore, stockOverrideContext);
+            }
+
+            StockBatch overrideBatch = resolveOverrideBatch(branchId, item, lastUsedBatch);
+            decrementBatch(overrideBatch, remainingQty, true);
+            batchesToUpdate.put(overrideBatch.getId(), overrideBatch);
+
+            usages.add(new StockUsageDraft(item.getId(), overrideBatch.getId(), remainingQty));
+            lineCost += QuantityConversionUtil.calculateActualAmount(item, overrideBatch.getCostPrice(), remainingQty).doubleValue();
+            overrides.add(buildOverrideDraft(saleItem, item, overrideBatch.getId(), normalizedQty, availableBefore, stockOverrideContext));
         }
 
         double unitCost = normalizedQty == 0
@@ -788,7 +901,117 @@ public class OrderService {
                 usages.isEmpty() ? null : usages.get(0).batchId,
                 unitCost,
                 lineCost,
-                usages
+                usages,
+                overrides
+        );
+    }
+
+    private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user) {
+        StockOverrideMode mode = appConfigurationService.getStockOverrideMode();
+        boolean requested = request.isAllowStockOverride();
+        boolean managerAllowed = user.getRole() == Role.SUPER_ADMIN || user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER;
+
+        if (mode == StockOverrideMode.ALWAYS_ALLOW) {
+            return new StockOverrideContext(mode, true, true, normalizeOverrideReason(request.getStockOverrideReason()));
+        }
+        if (mode == StockOverrideMode.MANAGER_OVERRIDE) {
+            if (requested && !managerAllowed) {
+                throw new BadRequestException("Stock override requires manager or admin permission");
+            }
+            return new StockOverrideContext(mode, requested && managerAllowed, managerAllowed, normalizeOverrideReason(request.getStockOverrideReason()));
+        }
+        return new StockOverrideContext(StockOverrideMode.BLOCK, false, false, normalizeOverrideReason(request.getStockOverrideReason()));
+    }
+
+    private String normalizeOverrideReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        String trimmed = reason.trim();
+        return trimmed.length() <= 255 ? trimmed : trimmed.substring(0, 255);
+    }
+
+    private int positiveQuantity(StockBatch batch) {
+        if (batch == null || batch.getQuantity() == null) {
+            return 0;
+        }
+        return Math.max(0, batch.getQuantity());
+    }
+
+    private StockBatch resolveOverrideBatch(Long branchId, Item item, StockBatch lastUsedBatch) {
+        if (lastUsedBatch != null) {
+            return lastUsedBatch;
+        }
+
+        List<StockBatch> allBatches = stockBatchRepository.findBatchesForBranchItem(branchId, item.getId());
+        if (!allBatches.isEmpty()) {
+            return allBatches.get(0);
+        }
+
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+        return stockBatchRepository.save(StockBatch.builder()
+                .branch(branch)
+                .item(item)
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(item.getCostPrice())
+                .sellingPrice(item.getSellingPrice())
+                .sourceType(StockBatchSourceType.OVERRIDE)
+                .batchCode("OVERRIDE-" + branchId + "-" + item.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .build());
+    }
+
+    private void throwStockShortage(
+            Item saleItem,
+            Item stockItem,
+            StockBatch batch,
+            int requiredQty,
+            int availableQty,
+            StockOverrideContext stockOverrideContext
+    ) {
+        StockShortageIssue shortage = buildShortageIssue(saleItem, stockItem, batch, requiredQty, availableQty);
+        String message = stockOverrideContext.overrideAvailable
+                ? "Insufficient stock. Manager override required."
+                : "Insufficient stock for " + stockItem.getName();
+        throw new StockOverrideRequiredException(message, List.of(shortage), stockOverrideContext.overrideAvailable);
+    }
+
+    private StockShortageIssue buildShortageIssue(Item saleItem, Item stockItem, StockBatch batch, int requiredQty, int availableQty) {
+        int safeAvailable = Math.max(0, availableQty);
+        return StockShortageIssue.builder()
+                .itemId(saleItem.getId())
+                .itemName(saleItem.getName())
+                .stockItemId(stockItem.getId())
+                .stockItemName(stockItem.getName())
+                .batchId(batch != null ? batch.getId() : null)
+                .requiredQuantity(requiredQty)
+                .availableQuantity(safeAvailable)
+                .shortageQuantity(Math.max(0, requiredQty - safeAvailable))
+                .unit(QuantityConversionUtil.primaryDisplayUnit(stockItem))
+                .build();
+    }
+
+    private StockOverrideDraft buildOverrideDraft(
+            Item saleItem,
+            Item stockItem,
+            Long batchId,
+            int requiredQty,
+            int availableQty,
+            StockOverrideContext stockOverrideContext
+    ) {
+        int safeAvailable = Math.max(0, availableQty);
+        return new StockOverrideDraft(
+                saleItem.getId(),
+                saleItem.getName(),
+                stockItem.getId(),
+                stockItem.getName(),
+                batchId,
+                requiredQty,
+                safeAvailable,
+                Math.max(0, requiredQty - safeAvailable),
+                QuantityConversionUtil.primaryDisplayUnit(stockItem),
+                stockOverrideContext.reason
         );
     }
 
@@ -822,12 +1045,13 @@ public class OrderService {
         return paymentMethod.trim().toUpperCase();
     }
 
-    private void decrementBatch(StockBatch batch, int normalizedQty) {
-        if (batch.getQuantity() < normalizedQty) {
+    private void decrementBatch(StockBatch batch, int normalizedQty, boolean allowNegative) {
+        int currentQuantity = batch.getQuantity() == null ? 0 : batch.getQuantity();
+        if (!allowNegative && currentQuantity < normalizedQty) {
             throw new BadRequestException("Insufficient stock for " + batch.getItem().getName()
-                    + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+                    + " (Batch #" + batch.getId() + "). Available: " + currentQuantity);
         }
-        batch.setQuantity(batch.getQuantity() - normalizedQty);
+        batch.setQuantity(currentQuantity - normalizedQty);
     }
 
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {
@@ -845,7 +1069,7 @@ public class OrderService {
     }
 
     private MeasurementUnit resolveQtyUnit(Item item, OrderItemRequest itemReq) {
-        if (item.getItemType() == ItemType.WEIGHT) {
+        if (QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
             return itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit();
         }
         return item.getDefaultUnit();
@@ -990,6 +1214,10 @@ public class OrderService {
                         .unitPrice(orderItem.getUnitPrice())
                         .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
                         .discountValue(orderItem.getDiscountValue())
+                        .promotionId(orderItem.getPromotionId())
+                        .promotionName(orderItem.getPromotionName())
+                        .promotionDiscountAmount(orderItem.getPromotionDiscountAmount())
+                        .promotionApplied(orderItem.getPromotionId() != null)
                         .finalUnitPrice(orderItem.getFinalUnitPrice())
                         .lineTotal(orderItem.getLineTotal())
                         .warrantyLabel(orderItem.getWarrantyLabel())
@@ -1033,6 +1261,10 @@ public class OrderService {
                 .status(order.getStatus())
                 .subTotal(order.getSubTotal())
                 .billDiscount(order.getBillDiscount())
+                .promotionDiscountTotal(order.getPromotionDiscountTotal())
+                .billPromotionId(order.getBillPromotionId())
+                .billPromotionName(order.getBillPromotionName())
+                .billPromotionDiscountAmount(order.getBillPromotionDiscountAmount())
                 .grandTotal(order.getGrandTotal())
                 .paidAmount(order.getPaidAmount())
                 .dueAmount(order.getDueAmount())
@@ -1128,10 +1360,12 @@ public class OrderService {
     private static final class PreparedOrderItem {
         private final OrderItem orderItem;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private PreparedOrderItem(OrderItem orderItem, List<StockUsageDraft> usages) {
+        private PreparedOrderItem(OrderItem orderItem, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.orderItem = orderItem;
             this.usages = usages;
+            this.overrides = overrides;
         }
 
         private OrderItem orderItem() {
@@ -1154,12 +1388,14 @@ public class OrderService {
         private final double unitCost;
         private final double lineCost;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private StockConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+        private StockConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.primaryBatchId = primaryBatchId;
             this.unitCost = unitCost;
             this.lineCost = lineCost;
             this.usages = usages;
+            this.overrides = overrides;
         }
     }
 
@@ -1168,12 +1404,14 @@ public class OrderService {
         private final double unitCost;
         private final double lineCost;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private InventoryConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+        private InventoryConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.primaryBatchId = primaryBatchId;
             this.unitCost = unitCost;
             this.lineCost = lineCost;
             this.usages = usages;
+            this.overrides = overrides;
         }
     }
 
@@ -1186,6 +1424,57 @@ public class OrderService {
             this.itemId = itemId;
             this.batchId = batchId;
             this.quantity = quantity;
+        }
+    }
+
+    private static final class StockOverrideDraft {
+        private final Long saleItemId;
+        private final String saleItemName;
+        private final Long stockItemId;
+        private final String stockItemName;
+        private final Long batchId;
+        private final int requiredQuantity;
+        private final int availableQuantity;
+        private final int shortageQuantity;
+        private final MeasurementUnit qtyUnit;
+        private final String reason;
+
+        private StockOverrideDraft(
+                Long saleItemId,
+                String saleItemName,
+                Long stockItemId,
+                String stockItemName,
+                Long batchId,
+                int requiredQuantity,
+                int availableQuantity,
+                int shortageQuantity,
+                MeasurementUnit qtyUnit,
+                String reason
+        ) {
+            this.saleItemId = saleItemId;
+            this.saleItemName = saleItemName;
+            this.stockItemId = stockItemId;
+            this.stockItemName = stockItemName;
+            this.batchId = batchId;
+            this.requiredQuantity = requiredQuantity;
+            this.availableQuantity = availableQuantity;
+            this.shortageQuantity = shortageQuantity;
+            this.qtyUnit = qtyUnit;
+            this.reason = reason;
+        }
+    }
+
+    private static final class StockOverrideContext {
+        private final StockOverrideMode mode;
+        private final boolean allowed;
+        private final boolean overrideAvailable;
+        private final String reason;
+
+        private StockOverrideContext(StockOverrideMode mode, boolean allowed, boolean overrideAvailable, String reason) {
+            this.mode = mode;
+            this.allowed = allowed;
+            this.overrideAvailable = overrideAvailable;
+            this.reason = reason;
         }
     }
 }

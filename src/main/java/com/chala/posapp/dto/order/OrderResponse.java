@@ -33,6 +33,10 @@ public class OrderResponse {
 
     private double subTotal;
     private double billDiscount;
+    private double promotionDiscountTotal;
+    private Long billPromotionId;
+    private String billPromotionName;
+    private double billPromotionDiscountAmount;
     private double grandTotal;
     private double paidAmount;
     private double dueAmount;

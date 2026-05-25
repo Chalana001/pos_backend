@@ -18,6 +18,7 @@ import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
@@ -219,7 +220,9 @@ public class PurchaseService {
                         item.getItemType(),
                         item.getDefaultUnit(),
                         itemReq.getQty(),
-                        item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS
+                        QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                                : QuantityConversionUtil.primaryDisplayUnit(item)
                 );
 
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
@@ -235,6 +238,7 @@ public class PurchaseService {
                         .originalQuantity(normalizedQty)
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
+                        .sourceType(StockBatchSourceType.PURCHASE)
                         .batchCode(batchCode)
                         .receivedAt(LocalDateTime.now())
                         .expireDate(expiry)
@@ -248,7 +252,9 @@ public class PurchaseService {
                         .item(item)
                         .qty(normalizedQty)
                         .displayQty(itemReq.getQty().stripTrailingZeros())
-                        .qtyUnit(item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS)
+                        .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                                : QuantityConversionUtil.primaryDisplayUnit(item))
                         .costPrice(itemReq.getCostPrice())
                         .sellingPrice(itemReq.getSellingPrice())
                         .amount(lineTotal)

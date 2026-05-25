@@ -310,7 +310,7 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(1, recipeProfit.size());
         assertEquals("RECIPE", recipeProfit.get(0).path("itemType").asText());
 
-        assertEquals(16, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+        assertEquals(16000, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
         assertEquals(1800, firstBatchFor(fixture.mainBranch().getId(), cheeseItemId).getQuantity());
 
         JsonNode canceledOrder = postJson(
@@ -324,7 +324,7 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
         assertEquals("CANCELED", canceledOrder.path("status").asText());
-        assertEquals(20, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+        assertEquals(20000, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
         assertEquals(2000, firstBatchFor(fixture.mainBranch().getId(), cheeseItemId).getQuantity());
     }
 }

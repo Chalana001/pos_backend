@@ -163,7 +163,7 @@ public class StockAdjustmentService {
                 .type(request.getType())
                 .qtyChange(qtyChange)
                 .displayQtyChange(signedDisplayQty.stripTrailingZeros())
-                .qtyUnit(item.getItemType() == ItemType.WEIGHT
+                .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
                         ? (request.getQtyUnit() == null ? item.getDefaultUnit() : request.getQtyUnit())
                         : item.getDefaultUnit())
                 .reason(request.getReason().trim())

@@ -44,4 +44,11 @@ public class ItemCreateRequest {
     private List<ItemIngredientRequest> ingredients;
 
     private Boolean active;
+
+    private Boolean posVisible;
+
+    private Boolean stockProcessingEnabled;
+
+    @Valid
+    private List<StockProcessingOutputLinkRequest> processingOutputs;
 }

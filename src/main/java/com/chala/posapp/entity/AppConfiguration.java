@@ -38,6 +38,16 @@ public class AppConfiguration extends TenantEntity {
     @Column(nullable = false, columnDefinition = "boolean default true")
     private boolean dineInEnabled;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30, columnDefinition = "varchar(30) default 'MAIN_AND_SUB'")
+    @Builder.Default
+    private CategoryMode categoryMode = CategoryMode.MAIN_AND_SUB;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30, columnDefinition = "varchar(30) default 'MANAGER_OVERRIDE'")
+    @Builder.Default
+    private StockOverrideMode stockOverrideMode = StockOverrideMode.MANAGER_OVERRIDE;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -49,6 +59,12 @@ public class AppConfiguration extends TenantEntity {
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
+        if (categoryMode == null) {
+            categoryMode = CategoryMode.MAIN_AND_SUB;
+        }
+        if (stockOverrideMode == null) {
+            stockOverrideMode = StockOverrideMode.MANAGER_OVERRIDE;
+        }
     }
 
     @PreUpdate

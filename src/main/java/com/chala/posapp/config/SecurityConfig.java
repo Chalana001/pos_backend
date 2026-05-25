@@ -53,7 +53,9 @@ public class SecurityConfig {
                 "https://admin-panel-afzk8r7iw-chalana001s-projects.vercel.app",
                 "https://admin.chalanawijesingha.xyz",
                 "https://*.chalanawijesingha.xyz",
-                "https://chalanawijesingha.xyz" // 🚀 Root Domain එකත් අනිවාර්යයෙන්ම දාගන්න
+                "https://chalanawijesingha.xyz",
+                "android-app://*",
+                "null"
         ));
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));

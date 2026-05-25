@@ -51,6 +51,11 @@ public class StockBatch extends TenantEntity {
     @Column(name = "origin_batch_id")
     private Long originBatchId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false, length = 20, columnDefinition = "varchar(20) default 'PURCHASE'")
+    @Builder.Default
+    private StockBatchSourceType sourceType = StockBatchSourceType.PURCHASE;
+
     @Column(name = "cost_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal costPrice;
 

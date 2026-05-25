@@ -1,12 +1,16 @@
 package com.chala.posapp.controller;
 
+import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.CategorySalesResponse;
 import com.chala.posapp.dto.report.CreditDueResponse;
+import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
+import com.chala.posapp.dto.report.SalesReportResponse;
 import com.chala.posapp.dto.report.SalesSummaryResponse;
 import com.chala.posapp.dto.report.SalesTrendPoint;
+import com.chala.posapp.dto.report.SupplierPerformanceResponse;
 import com.chala.posapp.dto.report.TopCustomerResponse;
 import com.chala.posapp.dto.report.TopSellingItemResponse;
 import com.chala.posapp.dto.report.TopSupplierResponse;
@@ -14,6 +18,8 @@ import com.chala.posapp.dto.stock.LowStockResponse;
 import com.chala.posapp.service.ReportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,8 +41,8 @@ public class ReportController {
     @GetMapping("/sales-summary")
     public ResponseEntity<SalesSummaryResponse> salesSummary(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ResponseEntity.ok(reportService.salesSummary(branchId, from, to));
     }
 
@@ -44,8 +50,8 @@ public class ReportController {
     @GetMapping("/profit-summary")
     public ResponseEntity<ProfitSummaryResponse> profitSummary(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
         return ResponseEntity.ok(reportService.getProfitSummary(branchId, from, to));
     }
 
@@ -53,20 +59,93 @@ public class ReportController {
     @GetMapping("/top-selling")
     public ResponseEntity<List<TopSellingItemResponse>> topSelling(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "itemType", required = false) String itemType,
             @RequestParam(name = "rankBy", defaultValue = "REVENUE") String rankBy,
             @RequestParam(name = "limit", defaultValue = "10") int limit) {
         return ResponseEntity.ok(reportService.topSelling(branchId, from, to, limit, itemType, rankBy));
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/product-performance")
+    public ResponseEntity<PageResponse<TopSellingItemResponse>> productPerformance(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "itemType", required = false) String itemType,
+            @RequestParam(name = "sortBy", defaultValue = "REVENUE") String sortBy,
+            @RequestParam(name = "sortDirection", defaultValue = "DESC") String sortDirection,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        return ResponseEntity.ok(reportService.productPerformance(branchId, from, to, page, size, itemType, sortBy, sortDirection));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/customer-performance")
+    public ResponseEntity<PageResponse<CustomerPerformanceResponse>> customerPerformance(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "sortBy", defaultValue = "TOTAL_SPENT") String sortBy,
+            @RequestParam(name = "sortDirection", defaultValue = "DESC") String sortDirection,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        return ResponseEntity.ok(reportService.customerPerformance(branchId, from, to, page, size, sortBy, sortDirection));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/supplier-performance")
+    public ResponseEntity<PageResponse<SupplierPerformanceResponse>> supplierPerformance(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "sortBy", defaultValue = "TOTAL_PURCHASED") String sortBy,
+            @RequestParam(name = "sortDirection", defaultValue = "DESC") String sortDirection,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        return ResponseEntity.ok(reportService.supplierPerformance(branchId, from, to, page, size, sortBy, sortDirection));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/sales")
+    public ResponseEntity<PageResponse<SalesReportResponse>> salesReport(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "orderType", required = false) String orderType,
+            @RequestParam(name = "sortBy", defaultValue = "DATE") String sortBy,
+            @RequestParam(name = "sortDirection", defaultValue = "DESC") String sortDirection,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size) {
+        return ResponseEntity.ok(reportService.salesReport(branchId, from, to, page, size, orderType, sortBy, sortDirection));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping(value = "/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public ResponseEntity<byte[]> export(
+            @RequestParam(name = "reportType") String reportType,
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "itemType", required = false) String itemType,
+            @RequestParam(name = "orderType", required = false) String orderType,
+            @RequestParam(name = "sortBy", required = false) String sortBy,
+            @RequestParam(name = "sortDirection", defaultValue = "DESC") String sortDirection) {
+        byte[] bytes = reportService.exportPerformanceReport(reportType, branchId, from, to, itemType, orderType, sortBy, sortDirection);
+        String filename = reportType.toLowerCase() + "-report.xlsx";
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(bytes);
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/profit")
     public ResponseEntity<List<ProfitReportResponse>> profit(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "itemType", required = false) String itemType,
             @RequestParam(name = "limit", defaultValue = "50") int limit) {
         return ResponseEntity.ok(reportService.profitReport(branchId, from, to, limit, itemType));
@@ -76,8 +155,8 @@ public class ReportController {
     @GetMapping("/sales-trend")
     public ResponseEntity<List<SalesTrendPoint>> salesTrend(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "type", defaultValue = "DAILY") String type) {
         return ResponseEntity.ok(reportService.salesTrend(branchId, from, to, type));
     }
@@ -86,8 +165,8 @@ public class ReportController {
     @GetMapping("/sales-by-category")
     public ResponseEntity<List<CategorySalesResponse>> salesByCategory(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(name = "itemType", required = false) String itemType) {
         return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to, itemType));
     }
