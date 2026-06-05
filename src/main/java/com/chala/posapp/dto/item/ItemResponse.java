@@ -3,6 +3,7 @@ package com.chala.posapp.dto.item;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.dto.stock.StockBatchResponse;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
 
@@ -40,6 +41,8 @@ public class ItemResponse {
     private boolean active;
     private boolean posVisible;
     private boolean stockProcessingEnabled;
+    private ItemOverheadCostMode overheadCostMode;
+    private BigDecimal overheadCostValue;
     private LocalDateTime createdAt;
     private List<Long> branchIds;
     private List<ItemIngredientResponse> ingredients;

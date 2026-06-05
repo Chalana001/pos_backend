@@ -518,6 +518,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     FROM expenses
     WHERE tenant_id = :tenantId
       AND (:branchId = 0 OR branch_id = :branchId)
+      AND COALESCE(count_in_profit_report, TRUE) = TRUE
       AND created_at BETWEEN :fromDate AND :toDate
 """, nativeQuery = true)
     double getTotalExpenses(@Param("tenantId") String tenantId,

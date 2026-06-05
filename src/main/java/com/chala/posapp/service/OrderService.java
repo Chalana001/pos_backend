@@ -202,14 +202,14 @@ public class OrderService {
         StockOverrideContext stockOverrideContext = buildStockOverrideContext(request, user);
 
         for (OrderItemRequest itemReq : request.getItems()) {
-            validateWarrantySelection(itemReq);
+            validateWarrantySelection(itemReq, user.getRole(), branchId);
             Item item = itemRepository.findById(itemReq.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemReq.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
-            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                 throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
 
@@ -673,7 +673,7 @@ public class OrderService {
 
     private DiningTable resolveDiningTable(User user, Long branchId, SaleMode saleMode, Long tableId) {
         if (saleMode == SaleMode.DINE_IN) {
-            if (!appConfigurationService.isDineInEnabled()) {
+            if (!appConfigurationService.isDineInEnabled(branchId)) {
                 throw new BadRequestException("Dine-in is disabled in app configuration");
             }
 
@@ -758,6 +758,8 @@ public class OrderService {
                 overrides.addAll(ingredientConsumption.overrides);
             }
 
+            lineCost += calculateRecipeOverheadCost(item, normalizedQty, lineCost);
+
             double unitCost = normalizedQty == 0
                     ? 0.0
                     : BigDecimal.valueOf(lineCost)
@@ -771,10 +773,6 @@ public class OrderService {
             double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
             return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of(), List.of());
-        }
-
-        if (itemReq.getBatchId() == null && !allowAutomaticBatchSelection) {
-            throw new BadRequestException("Batch ID is missing for item: " + item.getName());
         }
 
         InventoryConsumptionResult inventoryConsumption = consumeInventoryItem(
@@ -907,18 +905,15 @@ public class OrderService {
     }
 
     private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user) {
-        StockOverrideMode mode = appConfigurationService.getStockOverrideMode();
+        StockOverrideMode mode = appConfigurationService.getStockOverrideMode(request.getBranchId());
         boolean requested = request.isAllowStockOverride();
-        boolean managerAllowed = user.getRole() == Role.SUPER_ADMIN || user.getRole() == Role.ADMIN || user.getRole() == Role.MANAGER;
+        boolean roleAllowed = appConfigurationService.isStockOverrideAllowedForRole(user.getRole(), request.getBranchId());
 
-        if (mode == StockOverrideMode.ALWAYS_ALLOW) {
-            return new StockOverrideContext(mode, true, true, normalizeOverrideReason(request.getStockOverrideReason()));
-        }
-        if (mode == StockOverrideMode.MANAGER_OVERRIDE) {
-            if (requested && !managerAllowed) {
-                throw new BadRequestException("Stock override requires manager or admin permission");
+        if (mode == StockOverrideMode.ALWAYS_ALLOW || mode == StockOverrideMode.MANAGER_OVERRIDE) {
+            if (requested && !roleAllowed) {
+                throw new BadRequestException("Stock override permission denied for this role");
             }
-            return new StockOverrideContext(mode, requested && managerAllowed, managerAllowed, normalizeOverrideReason(request.getStockOverrideReason()));
+            return new StockOverrideContext(mode, requested && roleAllowed, roleAllowed, normalizeOverrideReason(request.getStockOverrideReason()));
         }
         return new StockOverrideContext(StockOverrideMode.BLOCK, false, false, normalizeOverrideReason(request.getStockOverrideReason()));
     }
@@ -1043,6 +1038,27 @@ public class OrderService {
             return fallback;
         }
         return paymentMethod.trim().toUpperCase();
+    }
+
+    private double calculateRecipeOverheadCost(Item item, int normalizedQty, double directLineCost) {
+        if (item.getItemType() != ItemType.RECIPE || normalizedQty <= 0) {
+            return 0.0;
+        }
+
+        ItemOverheadCostMode mode = item.getOverheadCostMode() == null ? ItemOverheadCostMode.NONE : item.getOverheadCostMode();
+        BigDecimal value = item.getOverheadCostValue() == null ? BigDecimal.ZERO : item.getOverheadCostValue();
+        if (mode == ItemOverheadCostMode.NONE || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0.0;
+        }
+
+        if (mode == ItemOverheadCostMode.FIXED) {
+            return value.multiply(BigDecimal.valueOf(normalizedQty)).doubleValue();
+        }
+
+        return BigDecimal.valueOf(directLineCost)
+                .multiply(value)
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                .doubleValue();
     }
 
     private void decrementBatch(StockBatch batch, int normalizedQty, boolean allowNegative) {
@@ -1333,13 +1349,16 @@ public class OrderService {
         };
     }
 
-    private void validateWarrantySelection(OrderItemRequest itemReq) {
+    private void validateWarrantySelection(OrderItemRequest itemReq, Role role, Long branchId) {
         boolean hasLabel = itemReq.getWarrantyLabel() != null && !itemReq.getWarrantyLabel().isBlank();
         boolean hasPeriodValue = itemReq.getWarrantyPeriodValue() != null;
         boolean hasPeriodUnit = itemReq.getWarrantyPeriodUnit() != null;
 
         if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
             throw new BadRequestException("Warranty selection is incomplete");
+        }
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !appConfigurationService.isWarrantyAllowedForRole(role, branchId)) {
+            throw new BadRequestException("Warranty selection is disabled for this role");
         }
     }
 

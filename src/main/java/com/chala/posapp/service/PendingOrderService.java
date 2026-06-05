@@ -80,8 +80,6 @@ public class PendingOrderService {
 
     @Transactional
     public PendingOrderResponse saveForTable(Long tableId, PendingOrderSaveRequest request) {
-        validateDineInEnabled();
-
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Pending order items required");
         }
@@ -89,20 +87,21 @@ public class PendingOrderService {
         User user = getLoggedUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
 
         List<PendingOrderItem> itemsToSave = new ArrayList<>();
         double subTotal = 0.0;
 
         for (OrderItemRequest itemRequest : request.getItems()) {
-            validateWarrantySelection(itemRequest);
+            validateWarrantySelection(itemRequest, user.getRole(), table.getBranchId());
             Item item = itemRepository.findById(itemRequest.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemRequest.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
-            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), table.getBranchId())) {
                 throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
             if (item.getItemType() == ItemType.SERVICE
@@ -169,19 +168,18 @@ public class PendingOrderService {
     }
 
     public PendingOrderResponse getByTable(Long tableId) {
-        validateDineInEnabled();
-
         User user = getLoggedUser();
         PendingOrder pendingOrder = pendingOrderRepository.findByTableId(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pending order not found"));
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
         return buildResponse(pendingOrder, table, pendingOrderItemRepository.findByPendingOrderId(pendingOrder.getId()));
     }
 
     public List<PendingOrderResponse> listByBranch(Long branchId) {
-        validateDineInEnabled();
+        validateDineInEnabled(branchId);
 
         User user = getLoggedUser();
         ensureBranchAccess(user, branchId);
@@ -197,11 +195,10 @@ public class PendingOrderService {
 
     @Transactional
     public void clearTable(Long tableId) {
-        validateDineInEnabled();
-
         User user = getLoggedUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
 
         pendingOrderRepository.findByTableId(tableId).ifPresent(pendingOrder -> {
@@ -299,7 +296,7 @@ public class PendingOrderService {
         return item.getDefaultUnit();
     }
 
-    private void validateWarrantySelection(OrderItemRequest itemRequest) {
+    private void validateWarrantySelection(OrderItemRequest itemRequest, Role role, Long branchId) {
         boolean hasLabel = itemRequest.getWarrantyLabel() != null && !itemRequest.getWarrantyLabel().isBlank();
         boolean hasPeriodValue = itemRequest.getWarrantyPeriodValue() != null;
         boolean hasPeriodUnit = itemRequest.getWarrantyPeriodUnit() != null;
@@ -307,10 +304,13 @@ public class PendingOrderService {
         if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
             throw new BadRequestException("Warranty selection is incomplete");
         }
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !appConfigurationService.isWarrantyAllowedForRole(role, branchId)) {
+            throw new BadRequestException("Warranty selection is disabled for this role");
+        }
     }
 
-    private void validateDineInEnabled() {
-        if (!appConfigurationService.isDineInEnabled()) {
+    private void validateDineInEnabled(Long branchId) {
+        if (!appConfigurationService.isDineInEnabled(branchId)) {
             throw new BadRequestException("Dine-in is disabled in app configuration");
         }
     }

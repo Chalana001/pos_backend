@@ -2,6 +2,7 @@ package com.chala.posapp.dto.stock;
 
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.stock.StockProcessingStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -29,6 +30,11 @@ public class StockProcessingResponse {
     private BigDecimal sourceDisplayQty;
     private MeasurementUnit sourceQtyUnit;
     private BigDecimal sourceCost;
+    private StockProcessingStatus status;
+    private String cancelReason;
+    private Long canceledByUserId;
+    private String canceledByUsername;
+    private LocalDateTime canceledAt;
     private Long processedByUserId;
     private String processedByUsername;
     private LocalDateTime processedAt;

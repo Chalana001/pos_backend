@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final ExpenseTypeRepository expenseTypeRepository;
     private final CashShiftRepository cashShiftRepository;
     private final UserRepository userRepository;
     private final BranchRepository branchRepository;
@@ -38,17 +39,26 @@ public class ExpenseService {
         CashShift activeShift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
                 branchId, user.getId(), ShiftStatus.OPEN).orElse(null);
 
-        if (activeShift == null) {
-            throw new BadRequestException("An open shift is required to record an expense.");
+        boolean requiresOpenShift = request.isFromDrawer() || user.getRole() == Role.CASHIER;
+        if (requiresOpenShift && activeShift == null) {
+            throw new BadRequestException("An open shift is required to record a drawer expense.");
+        }
+
+        ExpenseType expenseType = expenseTypeRepository.findById(request.getExpenseTypeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Expense type not found"));
+        if (!expenseType.isActive()) {
+            throw new BadRequestException("Selected expense type is inactive");
         }
 
         Expense expense = Expense.builder()
                 .amount(request.getAmount())
-                .category(request.getCategory())
+                .expenseTypeId(expenseType.getId())
+                .category(expenseType.getName())
+                .countInProfitReport(expenseType.isCountInProfitReport())
                 .description(request.getDescription().trim())
                 .branchId(branchId)
                 .cashierUserId(user.getId())
-                .shiftId(activeShift.getId())
+                .shiftId(activeShift != null ? activeShift.getId() : null)
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -64,7 +74,7 @@ public class ExpenseService {
     public Page<ExpenseResponse> getFilteredExpenses(
             Long requestedBranchId,
             Long requestedCashierId,
-            ExpenseCategory category,
+            Long expenseTypeId,
             Long shiftId,
             String search,
             LocalDateTime from,
@@ -87,7 +97,7 @@ public class ExpenseService {
         Page<Expense> expenses = expenseRepository.findWithFilters(
                 finalBranchId,
                 cashierUserId,
-                category,
+                expenseTypeId,
                 shiftId,
                 trimmedSearch,
                 from,
@@ -128,7 +138,9 @@ public class ExpenseService {
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())
-                .category(expense.getCategory().name())
+                .expenseTypeId(expense.getExpenseTypeId())
+                .category(expense.getCategory())
+                .countInProfitReport(expense.isCountInProfitReport())
                 .description(expense.getDescription())
                 .branchId(expense.getBranchId())
                 .branchName(branchName)

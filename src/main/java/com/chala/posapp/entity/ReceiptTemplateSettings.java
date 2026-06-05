@@ -99,8 +99,14 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(nullable = false)
     private int logoWidthPercent;
 
+    @Column(nullable = false, columnDefinition = "int default 4")
+    private int logoTopSpacing;
+
     @Column(nullable = false, columnDefinition = "int default 78")
     private int invoiceLogoWidthPercent;
+
+    @Column(name = "receipt_font_family", nullable = false, length = 40, columnDefinition = "varchar(40) default 'COURIER_NEW'")
+    private String receiptFontFamily;
 
     @Column(nullable = false)
     private int paperWidthMm;

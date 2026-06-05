@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
+import com.chala.posapp.dto.stock.CancelStockProcessingRequest;
 import com.chala.posapp.dto.stock.CreateStockProcessingOutputRequest;
 import com.chala.posapp.dto.stock.CreateStockProcessingRequest;
 import com.chala.posapp.dto.stock.StockBatchResponse;
@@ -18,6 +19,7 @@ import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.stock.StockProcessing;
 import com.chala.posapp.entity.stock.StockProcessingOutput;
+import com.chala.posapp.entity.stock.StockProcessingStatus;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -325,6 +327,62 @@ public class StockProcessingService {
         );
     }
 
+    @Transactional
+    public StockProcessingResponse cancel(Long id, CancelStockProcessingRequest request) {
+        User user = getLoggedUser();
+        if (user.getRole() == Role.CASHIER) {
+            throw new BadRequestException("Cashier cannot cancel stock processing");
+        }
+
+        StockProcessing processing = stockProcessingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Stock processing record not found"));
+        enforceBranchAccess(processing.getBranch().getId());
+
+        if (processing.getStatus() == StockProcessingStatus.CANCELED) {
+            throw new BadRequestException("Stock processing already canceled");
+        }
+
+        List<StockProcessingOutput> outputs = stockProcessingOutputRepository.findByProcessingIdOrderByIdAsc(processing.getId());
+        List<StockBatch> batchesToDelete = new ArrayList<>();
+        for (StockProcessingOutput output : outputs) {
+            if (output.isWaste() || output.getCreatedBatchId() == null) {
+                continue;
+            }
+
+            StockBatch createdBatch = stockBatchRepository.findById(output.getCreatedBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Created output batch not found"));
+            Integer currentQty = createdBatch.getQuantity() == null ? 0 : createdBatch.getQuantity();
+            Integer originalQty = createdBatch.getOriginalQuantity() == null ? 0 : createdBatch.getOriginalQuantity();
+            if (!currentQty.equals(originalQty)) {
+                throw new BadRequestException("Cannot cancel stock processing because output stock has already been sold or adjusted");
+            }
+            batchesToDelete.add(createdBatch);
+        }
+
+        StockBatch sourceBatch = stockBatchRepository.findById(processing.getSourceBatchId())
+                .orElseThrow(() -> new ResourceNotFoundException("Source batch not found"));
+        int existingSourceQty = sourceBatch.getQuantity() == null ? 0 : sourceBatch.getQuantity();
+        sourceBatch.setQuantity(existingSourceQty + processing.getSourceQty());
+        stockBatchRepository.save(sourceBatch);
+
+        if (!batchesToDelete.isEmpty()) {
+            stockBatchRepository.deleteAll(batchesToDelete);
+        }
+
+        processing.setStatus(StockProcessingStatus.CANCELED);
+        processing.setCancelReason(request.getReason().trim());
+        processing.setCanceledByUserId(user.getId());
+        processing.setCanceledAt(LocalDateTime.now());
+        StockProcessing saved = stockProcessingRepository.save(processing);
+
+        return mapResponse(
+                saved,
+                outputs,
+                userRepository.findById(saved.getProcessedByUserId()).orElse(null),
+                saved.getBranch()
+        );
+    }
+
     private void validateSourceItem(Item sourceItem) {
         if (!sourceItem.isActive()) {
             throw new BadRequestException("Source item inactive");
@@ -369,6 +427,9 @@ public class StockProcessingService {
     }
 
     private StockProcessingResponse mapResponse(StockProcessing processing, List<StockProcessingOutput> outputs, User user, Branch branch) {
+        User canceledBy = processing.getCanceledByUserId() == null
+                ? null
+                : userRepository.findById(processing.getCanceledByUserId()).orElse(null);
         return StockProcessingResponse.builder()
                 .id(processing.getId())
                 .branchId(branch != null ? branch.getId() : null)
@@ -383,6 +444,11 @@ public class StockProcessingService {
                 .sourceDisplayQty(processing.getSourceDisplayQty())
                 .sourceQtyUnit(processing.getSourceQtyUnit())
                 .sourceCost(processing.getSourceCost())
+                .status(processing.getStatus())
+                .cancelReason(processing.getCancelReason())
+                .canceledByUserId(processing.getCanceledByUserId())
+                .canceledByUsername(canceledBy != null ? canceledBy.getUsername() : null)
+                .canceledAt(processing.getCanceledAt())
                 .processedByUserId(processing.getProcessedByUserId())
                 .processedByUsername(user != null ? user.getUsername() : null)
                 .processedAt(processing.getProcessedAt())

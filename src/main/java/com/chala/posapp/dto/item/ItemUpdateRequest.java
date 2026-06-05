@@ -2,6 +2,7 @@ package com.chala.posapp.dto.item;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
@@ -46,6 +47,11 @@ public class ItemUpdateRequest {
     private Boolean posVisible;
 
     private Boolean stockProcessingEnabled;
+
+    private ItemOverheadCostMode overheadCostMode;
+
+    @PositiveOrZero
+    private BigDecimal overheadCostValue;
 
     @Valid
     private List<StockProcessingOutputLinkRequest> processingOutputs;

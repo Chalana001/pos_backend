@@ -8,6 +8,7 @@ import lombok.Data;
 @Data
 @Builder
 public class AppConfigurationResponse {
+    private Long branchId;
     private boolean recipeItemsEnabled;
     private boolean weightItemsEnabled;
     private boolean servicesEnabled;
@@ -15,4 +16,12 @@ public class AppConfigurationResponse {
     private boolean dineInEnabled;
     private CategoryMode categoryMode;
     private StockOverrideMode stockOverrideMode;
+    private boolean adminStockOverrideAllowed;
+    private boolean managerStockOverrideAllowed;
+    private boolean cashierStockOverrideAllowed;
+    private boolean warrantyEnabled;
+    private boolean kotEnabled;
+    private boolean adminWarrantyAllowed;
+    private boolean managerWarrantyAllowed;
+    private boolean cashierWarrantyAllowed;
 }

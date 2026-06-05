@@ -93,7 +93,7 @@ public class DiningTableService {
 
     public List<DiningTableResponse> listByBranch(Long branchId) {
         User user = getLoggedUser();
-        validateDiningFeatureEnabled();
+        validateDiningFeatureEnabled(branchId);
         ensureBranchAccess(user, branchId);
 
         branchRepository.findById(branchId)
@@ -105,7 +105,7 @@ public class DiningTableService {
     }
 
     private void validateDiningTableFeature(Long branchId) {
-        if (!appConfigurationService.isTableManagementEnabled()) {
+        if (!appConfigurationService.isTableManagementEnabled(branchId)) {
             throw new BadRequestException("Table management is disabled in app configuration");
         }
 
@@ -118,8 +118,8 @@ public class DiningTableService {
         }
     }
 
-    private void validateDiningFeatureEnabled() {
-        if (!appConfigurationService.isTableManagementEnabled()) {
+    private void validateDiningFeatureEnabled(Long branchId) {
+        if (!appConfigurationService.isTableManagementEnabled(branchId)) {
             throw new BadRequestException("Table management is disabled in app configuration");
         }
 

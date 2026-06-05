@@ -1,6 +1,7 @@
 package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
+import com.chala.posapp.dto.stock.CancelStockProcessingRequest;
 import com.chala.posapp.dto.stock.CreateStockProcessingRequest;
 import com.chala.posapp.dto.stock.StockProcessingResponse;
 import com.chala.posapp.dto.stock.StockProcessingSourceResponse;
@@ -62,5 +63,14 @@ public class StockProcessingController {
     @GetMapping("/{id}")
     public ResponseEntity<StockProcessingResponse> get(@PathVariable("id") Long id) {
         return ResponseEntity.ok(stockProcessingService.get(id));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<StockProcessingResponse> cancel(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody CancelStockProcessingRequest request
+    ) {
+        return ResponseEntity.ok(stockProcessingService.cancel(id, request));
     }
 }

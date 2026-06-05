@@ -13,6 +13,7 @@ import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.BranchServiceItem;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
@@ -47,6 +48,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -89,6 +91,8 @@ public class ItemService {
         ItemType itemType = request.getItemType() != null ? request.getItemType() : ItemType.NORMAL;
         validateItemTypeAllowed(itemType);
         MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit());
+        ItemOverheadCostMode overheadCostMode = normalizeOverheadCostMode(itemType, request.getOverheadCostMode());
+        BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, request.getOverheadCostValue());
 
         Item item = Item.builder()
                 .barcode(barcode)
@@ -100,10 +104,12 @@ public class ItemService {
                 .itemType(itemType)
                 .defaultUnit(defaultUnit)
                 .imageUrl(request.getImageUrl())
-                .kotEnabled(Boolean.TRUE.equals(request.getIsKotEnabled()))
+                .kotEnabled(resolveKotEnabled(request.getIsKotEnabled()))
                 .active(request.getActive() == null || request.getActive())
                 .posVisible(request.getPosVisible() == null || request.getPosVisible())
                 .stockProcessingEnabled(Boolean.TRUE.equals(request.getStockProcessingEnabled()))
+                .overheadCostMode(overheadCostMode)
+                .overheadCostValue(overheadCostValue)
                 .build();
 
         Item savedItem = itemRepository.save(item);
@@ -149,6 +155,8 @@ public class ItemService {
                     ItemType itemType = req.getItemType() != null ? req.getItemType() : ItemType.NORMAL;
                     validateItemTypeAllowed(itemType);
                     MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, req.getDefaultUnit());
+                    ItemOverheadCostMode overheadCostMode = normalizeOverheadCostMode(itemType, req.getOverheadCostMode());
+                    BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, req.getOverheadCostValue());
 
                     return Item.builder()
                             .name(req.getName().trim())
@@ -160,10 +168,12 @@ public class ItemService {
                             .itemType(itemType)
                             .defaultUnit(defaultUnit)
                             .imageUrl(req.getImageUrl())
-                            .kotEnabled(Boolean.TRUE.equals(req.getIsKotEnabled()))
+                            .kotEnabled(resolveKotEnabled(req.getIsKotEnabled()))
                             .active(req.getActive() == null || req.getActive())
                             .posVisible(req.getPosVisible() == null || req.getPosVisible())
                             .stockProcessingEnabled(Boolean.TRUE.equals(req.getStockProcessingEnabled()))
+                            .overheadCostMode(overheadCostMode)
+                            .overheadCostValue(overheadCostValue)
                             .build();
                 })
                 .toList();
@@ -255,7 +265,7 @@ public class ItemService {
             throw new ResourceNotFoundException("Item not available in POS");
         }
 
-        if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+        if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
             throw new ResourceNotFoundException("Item type is disabled");
         }
 
@@ -265,14 +275,14 @@ public class ItemService {
         }
 
         if (branchId == null || item.getItemType() == ItemType.RECIPE || item.getItemType() == ItemType.SERVICE) {
-            return mapToResponse(item, null, List.of());
+            return mapToResponse(item, null, List.of(), branchId);
         }
 
         List<StockBatch> batches = branchId == 0L
                 ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
                 : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
 
-        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches));
+        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches), branchId);
     }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
@@ -281,7 +291,7 @@ public class ItemService {
 
         return items.stream()
                 .map(item -> {
-                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                         return null;
                     }
 
@@ -295,7 +305,37 @@ public class ItemService {
                         totalQty = availableQuantity(batches);
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    public List<ItemResponse> searchForPurchase(String name, Long branchId) {
+        String searchTerm = name.trim();
+        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+
+        return items.stream()
+                .map(item -> {
+                    if (!item.isActive() || !isStockTrackedItem(item)) {
+                        return null;
+                    }
+
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
+                        return null;
+                    }
+
+                    List<StockBatch> batches = List.of();
+                    Integer totalQty = null;
+
+                    if (branchId != null) {
+                        batches = branchId == 0L
+                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
+                        totalQty = availableQuantity(batches);
+                    }
+
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -311,7 +351,7 @@ public class ItemService {
                         return null;
                     }
 
-                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                         return null;
                     }
 
@@ -336,7 +376,7 @@ public class ItemService {
                         return null;
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -391,6 +431,15 @@ public class ItemService {
 
         item.setItemType(itemType);
         item.setDefaultUnit(defaultUnit);
+        ItemOverheadCostMode overheadCostMode = request.getOverheadCostMode() != null
+                ? normalizeOverheadCostMode(itemType, request.getOverheadCostMode())
+                : normalizeOverheadCostMode(itemType, item.getOverheadCostMode());
+        BigDecimal requestedOverheadValue = request.getOverheadCostValue() != null
+                ? request.getOverheadCostValue()
+                : item.getOverheadCostValue();
+        BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, requestedOverheadValue);
+        item.setOverheadCostMode(overheadCostMode);
+        item.setOverheadCostValue(overheadCostValue);
 
         if (request.getCostPrice() != null) item.setCostPrice(request.getCostPrice());
         if (request.getSellingPrice() != null) item.setSellingPrice(request.getSellingPrice());
@@ -398,7 +447,7 @@ public class ItemService {
             item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, request.getReorderLevel()));
         }
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
-        if (request.getIsKotEnabled() != null) item.setKotEnabled(request.getIsKotEnabled());
+        if (request.getIsKotEnabled() != null) item.setKotEnabled(resolveKotEnabled(request.getIsKotEnabled()));
         if (request.getActive() != null) item.setActive(request.getActive());
         if (request.getPosVisible() != null) item.setPosVisible(request.getPosVisible());
         if (request.getStockProcessingEnabled() != null) {
@@ -563,6 +612,10 @@ public class ItemService {
     }
 
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches) {
+        return mapToResponse(item, availableBaseQty, batches, null);
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId) {
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
         List<Long> branchIds = item.getItemType() == ItemType.SERVICE
@@ -601,10 +654,12 @@ public class ItemService {
                 .itemType(item.getItemType())
                 .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
-                .kotEnabled(item.isKotEnabled())
+                .kotEnabled(appConfigurationService.isKotEnabled(branchId) && item.isKotEnabled())
                 .active(item.isActive())
                 .posVisible(item.isPosVisible())
                 .stockProcessingEnabled(item.isStockProcessingEnabled())
+                .overheadCostMode(item.getOverheadCostMode())
+                .overheadCostValue(item.getOverheadCostValue())
                 .createdAt(item.getCreatedAt())
                 .branchIds(branchIds)
                 .ingredients(ingredients)
@@ -707,6 +762,33 @@ public class ItemService {
                 && itemType != ItemType.SERVICE) {
             throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT, VOLUME and SERVICE items only");
         }
+    }
+
+    private boolean resolveKotEnabled(Boolean requestedKotEnabled) {
+        if (!Boolean.TRUE.equals(requestedKotEnabled)) {
+            return false;
+        }
+        if (!appConfigurationService.isKotEnabled()) {
+            throw new BadRequestException("KOT is disabled in app configuration");
+        }
+        return true;
+    }
+
+    private ItemOverheadCostMode normalizeOverheadCostMode(ItemType itemType, ItemOverheadCostMode mode) {
+        if (itemType != ItemType.RECIPE) {
+            return ItemOverheadCostMode.NONE;
+        }
+        return mode == null ? ItemOverheadCostMode.NONE : mode;
+    }
+
+    private BigDecimal normalizeOverheadCostValue(ItemType itemType, ItemOverheadCostMode mode, BigDecimal value) {
+        if (itemType != ItemType.RECIPE || mode == null || mode == ItemOverheadCostMode.NONE) {
+            return BigDecimal.ZERO;
+        }
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Recipe overhead value must be greater than zero");
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
     }
 
     private String currentPlanName() {

@@ -6,6 +6,7 @@ import lombok.Data;
 
 @Data
 public class AppConfigurationRequest {
+    private Long branchId;
     private boolean recipeItemsEnabled;
     private boolean weightItemsEnabled;
     private boolean servicesEnabled;
@@ -13,4 +14,12 @@ public class AppConfigurationRequest {
     private boolean dineInEnabled;
     private CategoryMode categoryMode;
     private StockOverrideMode stockOverrideMode;
+    private Boolean adminStockOverrideAllowed;
+    private Boolean managerStockOverrideAllowed;
+    private Boolean cashierStockOverrideAllowed;
+    private Boolean warrantyEnabled;
+    private Boolean kotEnabled;
+    private Boolean adminWarrantyAllowed;
+    private Boolean managerWarrantyAllowed;
+    private Boolean cashierWarrantyAllowed;
 }

@@ -36,7 +36,9 @@ public class ReceiptSettingsResponse {
     private boolean showThanksMessage;
     private boolean showCredits;
     private int logoWidthPercent;
+    private int logoTopSpacing;
     private int invoiceLogoWidthPercent;
+    private String receiptFontFamily;
     private int paperWidthMm;
     private String thanksMessage;
     private String creditsLine1;

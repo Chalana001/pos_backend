@@ -75,6 +75,15 @@ public class Item extends TenantEntity {
     @Builder.Default
     private boolean stockProcessingEnabled = false;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "overhead_cost_mode", nullable = false, length = 20)
+    @Builder.Default
+    private ItemOverheadCostMode overheadCostMode = ItemOverheadCostMode.NONE;
+
+    @Column(name = "overhead_cost_value", nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal overheadCostValue = BigDecimal.ZERO;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

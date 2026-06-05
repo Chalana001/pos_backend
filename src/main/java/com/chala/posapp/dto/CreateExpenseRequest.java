@@ -2,7 +2,6 @@ package com.chala.posapp.dto;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.chala.posapp.entity.ExpenseCategory;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -12,7 +11,7 @@ import lombok.Data;
 public class CreateExpenseRequest {
 
     @NotNull
-    private ExpenseCategory category;
+    private Long expenseTypeId;
 
     @Min(1)
     private double amount;

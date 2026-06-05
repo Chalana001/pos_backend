@@ -21,8 +21,10 @@ public class ReceiptSettingsService {
     private static final String DEFAULT_CREDITS_LINE_1 = "SOFTWARE BY CHALA";
     private static final String DEFAULT_CREDITS_LINE_2 = "Smart Retail Solutions | 0704589764";
     private static final int DEFAULT_LOGO_WIDTH_PERCENT = 78;
+    private static final int DEFAULT_LOGO_TOP_SPACING = 4;
     private static final int DEFAULT_THERMAL_WIDTH_MM = 80;
     private static final int DEFAULT_A4_WIDTH_MM = 210;
+    private static final String DEFAULT_RECEIPT_FONT_FAMILY = "COURIER_NEW";
 
     private final BranchRepository branchRepository;
     private final ReceiptTemplateSettingsRepository receiptTemplateSettingsRepository;
@@ -67,7 +69,9 @@ public class ReceiptSettingsService {
         settings.setShowThanksMessage(request.isShowThanksMessage());
         settings.setShowCredits(true);
         settings.setLogoWidthPercent(request.getLogoWidthPercent());
+        settings.setLogoTopSpacing(request.getLogoTopSpacing());
         settings.setInvoiceLogoWidthPercent(request.getInvoiceLogoWidthPercent());
+        settings.setReceiptFontFamily(normalizeFontFamily(request.getReceiptFontFamily()));
         settings.setPaperWidthMm(request.getPaperWidthMm());
         settings.setThanksMessage(normalizeMessage(request.getThanksMessage(), DEFAULT_THANKS_MESSAGE));
         settings.setCreditsLine1(DEFAULT_CREDITS_LINE_1);
@@ -108,7 +112,9 @@ public class ReceiptSettingsService {
                 .showThanksMessage(true)
                 .showCredits(true)
                 .logoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
+                .logoTopSpacing(DEFAULT_LOGO_TOP_SPACING)
                 .invoiceLogoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
+                .receiptFontFamily(DEFAULT_RECEIPT_FONT_FAMILY)
                 .paperWidthMm(defaultPaperWidth(templateType))
                 .thanksMessage(DEFAULT_THANKS_MESSAGE)
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)
@@ -125,6 +131,17 @@ public class ReceiptSettingsService {
             return defaultValue;
         }
         return value.trim();
+    }
+
+    private String normalizeFontFamily(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_RECEIPT_FONT_FAMILY;
+        }
+
+        return switch (value.trim().toUpperCase()) {
+            case "ARIAL", "VERDANA", "TAHOMA", "COURIER_NEW" -> value.trim().toUpperCase();
+            default -> DEFAULT_RECEIPT_FONT_FAMILY;
+        };
     }
 
     private ReceiptSettingsResponse mapToResponse(ReceiptTemplateSettings settings, Branch branch) {
@@ -154,7 +171,9 @@ public class ReceiptSettingsService {
                 .showThanksMessage(settings.isShowThanksMessage())
                 .showCredits(true)
                 .logoWidthPercent(settings.getLogoWidthPercent())
+                .logoTopSpacing(settings.getLogoTopSpacing())
                 .invoiceLogoWidthPercent(settings.getInvoiceLogoWidthPercent())
+                .receiptFontFamily(normalizeFontFamily(settings.getReceiptFontFamily()))
                 .paperWidthMm(settings.getPaperWidthMm())
                 .thanksMessage(settings.getThanksMessage())
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)

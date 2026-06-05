@@ -157,6 +157,15 @@ public class ItemController {
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/searchForPurchase")
+    public ResponseEntity<List<ItemResponse>> searchForPurchase(
+            @RequestParam(name = "name") String name,
+            @RequestParam(name = "branchId", required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(itemService.searchForPurchase(name, branchId));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/searchForPos")
     public ResponseEntity<List<ItemResponse>> searchForPos(
             @RequestParam(name = "name") String name,

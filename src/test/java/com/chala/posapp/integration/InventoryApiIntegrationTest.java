@@ -493,4 +493,131 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         );
         assertTrue(posSearchAfterDeactivate.isEmpty());
     }
+
+    @Test
+    void supplierDiscountIsAllocatedToBatchCostForProfitReports() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("disc"), 5);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        JsonNode category = postJson(
+                "/categories",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Beverages"
+                }
+                """
+        );
+        JsonNode subCategory = postJson(
+                "/categories/sub-categories",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Soft Drinks",
+                  "categoryId": %d
+                }
+                """.formatted(category.path("id").asLong())
+        );
+        JsonNode supplier = postJson(
+                "/suppliers",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Bottle Supplier",
+                  "phone": "0112223333",
+                  "active": true
+                }
+                """
+        );
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "BOTTLE-DISC-001",
+                  "name": "Bima Bottle",
+                  "subCategoryId": %d,
+                  "costPrice": 92,
+                  "sellingPrice": 100,
+                  "reorderLevel": 5
+                }
+                """.formatted(subCategory.path("id").asLong())
+        );
+        long itemId = item.path("id").asLong();
+
+        JsonNode purchase = postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "FREE-DISC-001",
+                  "discountAmount": 184,
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 12,
+                          "costPrice": 92,
+                          "sellingPrice": 100
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.path("id").asLong(), fixture.mainBranch().getId(), itemId)
+        );
+        assertEquals(920.0, purchase.path("grandTotal").asDouble(), 0.001);
+        assertEquals(184.0, purchase.path("discountAmount").asDouble(), 0.001);
+        assertEquals(76.67, purchase.path("grnList").get(0).path("items").get(0).path("costPrice").asDouble(), 0.001);
+        assertEquals(920.0, purchase.path("grnList").get(0).path("items").get(0).path("lineTotal").asDouble(), 0.001);
+
+        StockBatch batch = firstBatchFor(fixture.mainBranch().getId(), itemId);
+        assertEquals(12000, batch.getQuantity());
+        assertEquals(76.67, batch.getCostPrice().doubleValue(), 0.001);
+
+        JsonNode sale = postJson(
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 1,
+                      "unitPrice": 100,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 100,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), itemId, batch.getId())
+        );
+        assertEquals(100.0, sale.path("grandTotal").asDouble(), 0.001);
+        assertEquals(76.67, orderItemRepository.findByOrderId(sale.path("id").asLong()).get(0).getLineCost(), 0.001);
+
+        String today = java.time.LocalDate.now().toString();
+        JsonNode profitReport = getJson(
+                "/reports/profit?branchId=" + fixture.mainBranch().getId() + "&from=" + today + "&to=" + today + "&limit=10",
+                tenantId,
+                adminToken
+        );
+        assertFalse(profitReport.isEmpty());
+        assertEquals(23.33, profitReport.get(0).path("profit").asDouble(), 0.01);
+    }
 }

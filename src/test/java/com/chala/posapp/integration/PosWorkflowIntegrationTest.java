@@ -4,7 +4,6 @@ import com.chala.posapp.entity.BillingCycle;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.OrderItem;
-import com.chala.posapp.entity.ExpenseCategory;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.SubscriptionPlan;
 import com.chala.posapp.entity.supplier.Supplier;
@@ -275,6 +274,8 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                   "reorderLevel": 0,
                   "itemType": "RECIPE",
                   "posVisible": true,
+                  "overheadCostMode": "FIXED",
+                  "overheadCostValue": 20,
                   "ingredients": [
                     {
                       "ingredientItemId": %d,
@@ -296,6 +297,8 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 """.formatted(subCategory.getId(), drumstickItemId, riceItemId, onionItemId)
         );
         long chickenRiceItemId = chickenRice.path("id").asLong();
+        assertEquals("FIXED", chickenRice.path("overheadCostMode").asText());
+        assertEquals(20.0, chickenRice.path("overheadCostValue").asDouble(), 0.001);
 
         JsonNode recipeSale = postJson(
                 "/orders",
@@ -324,8 +327,8 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(750.0, recipeSale.path("grandTotal").asDouble(), 0.001);
         OrderItem recipeSaleLine = orderItemRepository.findByOrderId(recipeSale.path("id").asLong()).get(0);
         assertEquals(750.0, recipeSaleLine.getLineTotal(), 0.001);
-        assertEquals(1240.0, recipeSaleLine.getLineCost(), 0.001);
-        assertEquals(1240.0, recipeSaleLine.getCostPrice(), 0.001);
+        assertEquals(1260.0, recipeSaleLine.getLineCost(), 0.001);
+        assertEquals(1260.0, recipeSaleLine.getCostPrice(), 0.001);
         assertEquals(0, stockBatchRepository.findById(processedDrumstickBatchId).orElseThrow().getQuantity());
         assertEquals(1000, stockBatchRepository.findById(purchasedDrumstickBatchId).orElseThrow().getQuantity());
         assertEquals(900, firstBatchFor(fixture.mainBranch().getId(), riceItemId).getQuantity());
@@ -468,6 +471,241 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(-1000, totalStock);
         assertEquals(1, stockOverrideAuditRepository.findAll().size());
         assertEquals(1000, stockOverrideAuditRepository.findAll().get(0).getShortageQuantity());
+    }
+
+    @Test
+    void cashierStockOverrideRequiresRolePermissionWhenAllBatchesAreZero() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("cashier-override-deny"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Cashier Override Denied");
+        category.setTenantId(tenantId);
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setTenantId(tenantId);
+        subCategory.setName("Stock");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "COD-001",
+                  "name": "Cashier Denied Coke",
+                  "subCategoryId": %d,
+                  "costPrice": 80,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0
+                }
+                """.formatted(subCategory.getId())
+        );
+        long itemId = item.path("id").asLong();
+
+        StockBatch zeroBatch = StockBatch.builder()
+                .branch(fixture.mainBranch())
+                .item(itemRepository.findById(itemId).orElseThrow())
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(java.math.BigDecimal.valueOf(80))
+                .sellingPrice(java.math.BigDecimal.valueOf(120))
+                .build();
+        zeroBatch.setTenantId(tenantId);
+        stockBatchRepository.save(zeroBatch);
+
+        JsonNode blocked = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "allowStockOverride": true,
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId),
+                400
+        );
+        assertEquals("Stock override permission denied for this role", blocked.path("message").asText());
+        assertEquals(0, stockBatchRepository.getTotalQuantityByItemAndBranch(fixture.mainBranch().getId(), itemId));
+    }
+
+    @Test
+    void cashierStockOverridePermissionAllowsAllZeroBatchesToGoNegative() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("cashier-override-allow"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+
+        putJson(
+                "/app-configuration",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "recipeItemsEnabled": true,
+                  "weightItemsEnabled": true,
+                  "servicesEnabled": true,
+                  "tableManagementEnabled": true,
+                  "dineInEnabled": true,
+                  "categoryMode": "MAIN_AND_SUB",
+                  "stockOverrideMode": "MANAGER_OVERRIDE",
+                  "adminStockOverrideAllowed": true,
+                  "managerStockOverrideAllowed": true,
+                  "cashierStockOverrideAllowed": true
+                }
+                """
+        );
+
+        Category category = new Category();
+        category.setName("Cashier Override Allowed");
+        category.setTenantId(tenantId);
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setTenantId(tenantId);
+        subCategory.setName("Stock");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "COA-001",
+                  "name": "Cashier Allowed Coke",
+                  "subCategoryId": %d,
+                  "costPrice": 80,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0
+                }
+                """.formatted(subCategory.getId())
+        );
+        long itemId = item.path("id").asLong();
+
+        StockBatch zeroBatch = StockBatch.builder()
+                .branch(fixture.mainBranch())
+                .item(itemRepository.findById(itemId).orElseThrow())
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(java.math.BigDecimal.valueOf(80))
+                .sellingPrice(java.math.BigDecimal.valueOf(120))
+                .build();
+        zeroBatch.setTenantId(tenantId);
+        stockBatchRepository.save(zeroBatch);
+        int auditCountBefore = stockOverrideAuditRepository.findAll().size();
+
+        JsonNode needsConfirmation = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId),
+                409
+        );
+        assertEquals("STOCK_OVERRIDE_REQUIRED", needsConfirmation.path("code").asText());
+        assertTrue(needsConfirmation.path("overrideAvailable").asBoolean());
+
+        JsonNode order = postJson(
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "allowStockOverride": true,
+                  "stockOverrideReason": "Cashier confirmed zero stock sale",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId)
+        );
+        assertEquals(120.0, order.path("grandTotal").asDouble(), 0.001);
+        assertEquals(-1000, stockBatchRepository.getTotalQuantityByItemAndBranch(fixture.mainBranch().getId(), itemId));
+        assertEquals(auditCountBefore + 1, stockOverrideAuditRepository.findAll().size());
+        assertEquals(1000, stockOverrideAuditRepository.findAll().get(auditCountBefore).getShortageQuantity());
+    }
+
+    @Test
+    void appConfigurationPersistsStockOverrideRolePermissions() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("override-config"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        JsonNode saved = putJson(
+                "/app-configuration",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "recipeItemsEnabled": true,
+                  "weightItemsEnabled": true,
+                  "servicesEnabled": true,
+                  "tableManagementEnabled": true,
+                  "dineInEnabled": true,
+                  "categoryMode": "MAIN_AND_SUB",
+                  "stockOverrideMode": "MANAGER_OVERRIDE",
+                  "adminStockOverrideAllowed": false,
+                  "managerStockOverrideAllowed": true,
+                  "cashierStockOverrideAllowed": true
+                }
+                """
+        );
+
+        assertFalse(saved.path("adminStockOverrideAllowed").asBoolean());
+        assertTrue(saved.path("managerStockOverrideAllowed").asBoolean());
+        assertTrue(saved.path("cashierStockOverrideAllowed").asBoolean());
+
+        JsonNode reloaded = getJson("/app-configuration", tenantId, adminToken);
+        assertFalse(reloaded.path("adminStockOverrideAllowed").asBoolean());
+        assertTrue(reloaded.path("managerStockOverrideAllowed").asBoolean());
+        assertTrue(reloaded.path("cashierStockOverrideAllowed").asBoolean());
     }
 
     @Test
@@ -859,21 +1097,46 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode salesFilterUsers = getJson("/users/sales-filter?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertTrue(salesFilterUsers.toString().contains(fixture.cashier().getUsername()));
 
+        JsonNode expenseTypes = getJson("/expense-types", tenantId, adminToken);
+        long teaExpenseTypeId = 0L;
+        for (JsonNode expenseType : expenseTypes) {
+            if ("Tea".equalsIgnoreCase(expenseType.path("name").asText())) {
+                teaExpenseTypeId = expenseType.path("id").asLong();
+                break;
+            }
+        }
+        assertTrue(teaExpenseTypeId > 0);
+
+        JsonNode otherExpenseType = postJson(
+                "/expense-types",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Recovered Oil",
+                  "countInProfitReport": false,
+                  "active": true
+                }
+                """
+        );
+        long otherExpenseTypeId = otherExpenseType.path("id").asLong();
+
         JsonNode createdExpense = postJson(
                 "/expenses",
                 tenantId,
                 adminToken,
                 """
                 {
-                  "category": "%s",
+                  "expenseTypeId": %d,
                   "amount": 100,
                   "branchId": %d,
                   "fromDrawer": true,
                   "description": "Tea counter electricity"
                 }
-                """.formatted(ExpenseCategory.TEA.name(), fixture.mainBranch().getId())
+                """.formatted(teaExpenseTypeId, fixture.mainBranch().getId())
         );
         assertEquals(100.0, createdExpense.path("amount").asDouble(), 0.001);
+        assertTrue(createdExpense.path("countInProfitReport").asBoolean());
 
         JsonNode nonDrawerExpense = postJson(
                 "/expenses",
@@ -881,15 +1144,16 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 adminToken,
                 """
                 {
-                  "category": "%s",
+                  "expenseTypeId": %d,
                   "amount": 200,
                   "branchId": %d,
                   "isFromDrawer": false,
                   "description": "200"
                 }
-                """.formatted(ExpenseCategory.OTHER.name(), fixture.mainBranch().getId())
+                """.formatted(otherExpenseTypeId, fixture.mainBranch().getId())
         );
         assertEquals(200.0, nonDrawerExpense.path("amount").asDouble(), 0.001);
+        assertFalse(nonDrawerExpense.path("countInProfitReport").asBoolean());
 
         JsonNode adminShiftAfterExpenses = getJson("/shifts/admin-current?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(100.0, adminShiftAfterExpenses.path("totalExpenses").asDouble(), 0.001);
@@ -924,7 +1188,7 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(2, expensePage.path("content").size());
 
         JsonNode teaExpensePage = getJson(
-                "/expenses?branchId=" + fixture.mainBranch().getId() + "&category=" + ExpenseCategory.TEA.name() + "&page=0&size=10",
+                "/expenses?branchId=" + fixture.mainBranch().getId() + "&expenseTypeId=" + teaExpenseTypeId + "&page=0&size=10",
                 tenantId,
                 adminToken
         );

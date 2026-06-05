@@ -44,13 +44,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -59,6 +62,8 @@ import java.util.stream.Collectors;
 public class PurchaseService {
     private static final DateTimeFormatter PURCHASE_INVOICE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmssSSS");
+    private static final int MONEY_SCALE = 2;
+    private static final int UNIT_COST_SCALE = 6;
 
     private final PurchaseRepository purchaseRepository;
     private final GrnRepository grnRepository;
@@ -176,8 +181,19 @@ public class PurchaseService {
                 .build();
         Purchase savedPurchase = purchaseRepository.save(purchase);
 
-        BigDecimal grandTotal = BigDecimal.ZERO;
+        List<PreparedPurchaseLine> preparedLines = preparePurchaseLines(request);
+        BigDecimal grossTotal = preparedLines.stream()
+                .map(PreparedPurchaseLine::grossLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (discountAmount.compareTo(grossTotal) > 0) {
+            throw new BadRequestException("Discount amount cannot exceed purchase total");
+        }
+        applyDiscountAllocation(preparedLines, grossTotal, discountAmount);
+        Map<GrnItemRequest, PreparedPurchaseLine> preparedLineByRequest = preparedLines.stream()
+                .collect(Collectors.toMap(PreparedPurchaseLine::request, Function.identity()));
+
         List<GrnResponse> grnResponseList = new ArrayList<>();
+        BigDecimal netGrandTotal = BigDecimal.ZERO;
 
         for (BranchPurchaseRequest branchReq : request.getBranches()) {
             Branch branch = branchRepository.findById(branchReq.getBranchId())
@@ -202,28 +218,17 @@ public class PurchaseService {
             int index = 0;
 
             for (GrnItemRequest itemReq : branchReq.getItems()) {
+                PreparedPurchaseLine preparedLine = preparedLineByRequest.get(itemReq);
                 index++;
-                Item item = itemRepository.findById(itemReq.getItemId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+                Item item = preparedLine.item();
+                BigDecimal effectiveCostPrice = preparedLine.effectiveCostPrice();
+                BigDecimal netLineTotal = preparedLine.netLineTotal();
 
-                // ✅ සර්විස් අයිටම් එකක් GRN එකට දාන්න හැදුවොත් Block කරනවා
-                if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
-                    throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
-                }
-
-                item.setCostPrice(itemReq.getCostPrice());
+                item.setCostPrice(effectiveCostPrice);
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
-                // ✅ item.isWeightItem() වෙනුවට item.getItemType() පාවිච්චි කිරීම
-                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
-                        item.getItemType(),
-                        item.getDefaultUnit(),
-                        itemReq.getQty(),
-                        QuantityConversionUtil.isMeasuredItem(item.getItemType())
-                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
-                                : QuantityConversionUtil.primaryDisplayUnit(item)
-                );
+                int normalizedQty = preparedLine.normalizedQty();
 
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
                         ? itemReq.getExpiryDate().atStartOfDay()
@@ -236,7 +241,7 @@ public class PurchaseService {
                         .supplier(supplier)
                         .quantity(normalizedQty)
                         .originalQuantity(normalizedQty)
-                        .costPrice(itemReq.getCostPrice())
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
                         .sourceType(StockBatchSourceType.PURCHASE)
                         .batchCode(batchCode)
@@ -244,8 +249,6 @@ public class PurchaseService {
                         .expireDate(expiry)
                         .build();
                 stockBatchRepository.save(batch);
-
-                BigDecimal lineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
 
                 GrnItem grnItem = GrnItem.builder()
                         .grn(savedGrn)
@@ -255,13 +258,13 @@ public class PurchaseService {
                         .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
                                 ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
                                 : QuantityConversionUtil.primaryDisplayUnit(item))
-                        .costPrice(itemReq.getCostPrice())
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
-                        .amount(lineTotal)
+                        .amount(netLineTotal)
                         .build();
                 grnItems.add(grnItem);
 
-                grnTotal = grnTotal.add(lineTotal);
+                grnTotal = grnTotal.add(netLineTotal);
 
                 itemResponses.add(GrnItemResponse.builder()
                         .itemId(item.getId())
@@ -269,16 +272,16 @@ public class PurchaseService {
                         .barcode(item.getBarcode())
                         .qty(grnItem.getDisplayQty())
                         .qtyUnit(grnItem.getQtyUnit())
-                        .costPrice(itemReq.getCostPrice())
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
-                        .lineTotal(lineTotal)
+                        .lineTotal(netLineTotal)
                         .build());
             }
 
             grnItemRepository.saveAll(grnItems);
             savedGrn.setTotalAmount(grnTotal);
             grnRepository.save(savedGrn);
-            grandTotal = grandTotal.add(grnTotal);
+            netGrandTotal = netGrandTotal.add(grnTotal);
 
             grnResponseList.add(GrnResponse.builder()
                     .id(savedGrn.getId())
@@ -292,17 +295,12 @@ public class PurchaseService {
                     .build());
         }
 
-        savedPurchase.setGrandTotal(grandTotal);
-        if (discountAmount.compareTo(grandTotal) > 0) {
-            throw new BadRequestException("Discount amount cannot exceed purchase total");
-        }
-        BigDecimal netTotal = grandTotal.subtract(discountAmount);
-        if (requestedPaidAmount.compareTo(netTotal) > 0) {
+        if (requestedPaidAmount.compareTo(netGrandTotal) > 0) {
             throw new BadRequestException("Paid amount cannot exceed purchase total");
         }
-        BigDecimal dueAmount = netTotal.subtract(requestedPaidAmount);
+        BigDecimal dueAmount = netGrandTotal.subtract(requestedPaidAmount);
         savedPurchase.setDiscountAmount(discountAmount);
-        savedPurchase.setGrandTotal(netTotal);
+        savedPurchase.setGrandTotal(netGrandTotal);
         savedPurchase.setPaidAmount(requestedPaidAmount);
         savedPurchase.setDueAmount(dueAmount);
         purchaseRepository.save(savedPurchase);
@@ -483,6 +481,123 @@ public class PurchaseService {
 
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private List<PreparedPurchaseLine> preparePurchaseLines(CreatePurchaseRequest request) {
+        List<PreparedPurchaseLine> preparedLines = new ArrayList<>();
+
+        for (BranchPurchaseRequest branchReq : request.getBranches()) {
+            if (branchReq.getItems() == null || branchReq.getItems().isEmpty()) {
+                continue;
+            }
+
+            for (GrnItemRequest itemReq : branchReq.getItems()) {
+                Item item = itemRepository.findById(itemReq.getItemId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+
+                if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+                    throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
+                }
+
+                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
+                        item.getItemType(),
+                        item.getDefaultUnit(),
+                        itemReq.getQty(),
+                        QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                                : QuantityConversionUtil.primaryDisplayUnit(item)
+                );
+                BigDecimal grossLineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
+                preparedLines.add(new PreparedPurchaseLine(itemReq, item, normalizedQty, grossLineTotal));
+            }
+        }
+
+        return preparedLines;
+    }
+
+    private void applyDiscountAllocation(List<PreparedPurchaseLine> preparedLines, BigDecimal grossTotal, BigDecimal discountAmount) {
+        if (preparedLines.isEmpty()) {
+            return;
+        }
+
+        if (discountAmount.compareTo(BigDecimal.ZERO) == 0 || grossTotal.compareTo(BigDecimal.ZERO) == 0) {
+            preparedLines.forEach(line -> line.applyDiscount(BigDecimal.ZERO));
+            return;
+        }
+
+        BigDecimal allocatedDiscount = BigDecimal.ZERO;
+        for (int i = 0; i < preparedLines.size(); i++) {
+            PreparedPurchaseLine line = preparedLines.get(i);
+            BigDecimal lineDiscount = i == preparedLines.size() - 1
+                    ? discountAmount.subtract(allocatedDiscount)
+                    : discountAmount
+                    .multiply(line.grossLineTotal())
+                    .divide(grossTotal, MONEY_SCALE, RoundingMode.HALF_UP);
+
+            if (lineDiscount.compareTo(line.grossLineTotal()) > 0) {
+                lineDiscount = line.grossLineTotal();
+            }
+            allocatedDiscount = allocatedDiscount.add(lineDiscount);
+            line.applyDiscount(lineDiscount);
+        }
+    }
+
+    private static BigDecimal effectiveUnitCost(Item item, BigDecimal netLineTotal, int normalizedQty) {
+        if (normalizedQty <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal baseUnitsPerPrimaryUnit = BigDecimal.valueOf(1000);
+        return netLineTotal
+                .multiply(baseUnitsPerPrimaryUnit)
+                .divide(BigDecimal.valueOf(normalizedQty), UNIT_COST_SCALE, RoundingMode.HALF_UP)
+                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private static final class PreparedPurchaseLine {
+        private final GrnItemRequest request;
+        private final Item item;
+        private final int normalizedQty;
+        private final BigDecimal grossLineTotal;
+        private BigDecimal netLineTotal;
+        private BigDecimal effectiveCostPrice;
+
+        private PreparedPurchaseLine(GrnItemRequest request, Item item, int normalizedQty, BigDecimal grossLineTotal) {
+            this.request = request;
+            this.item = item;
+            this.normalizedQty = normalizedQty;
+            this.grossLineTotal = grossLineTotal;
+            applyDiscount(BigDecimal.ZERO);
+        }
+
+        private GrnItemRequest request() {
+            return request;
+        }
+
+        private Item item() {
+            return item;
+        }
+
+        private int normalizedQty() {
+            return normalizedQty;
+        }
+
+        private BigDecimal grossLineTotal() {
+            return grossLineTotal;
+        }
+
+        private BigDecimal netLineTotal() {
+            return netLineTotal;
+        }
+
+        private BigDecimal effectiveCostPrice() {
+            return effectiveCostPrice;
+        }
+
+        private void applyDiscount(BigDecimal discount) {
+            this.netLineTotal = grossLineTotal.subtract(discount).max(BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            this.effectiveCostPrice = effectiveUnitCost(item, netLineTotal, normalizedQty);
+        }
     }
 
     private String normalizePaymentMethod(String paymentMethod) {

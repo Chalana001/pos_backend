@@ -101,6 +101,7 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
         FROM expenses e
         WHERE e.tenant_id = :tenantId
           AND (:branchId = 0 OR e.branch_id = :branchId)
+          AND COALESCE(e.count_in_profit_report, TRUE) = TRUE
           AND e.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
     double todayExpenses(@Param("tenantId") String tenantId,

@@ -34,9 +34,16 @@ public class ReceiptSettingsRequest {
     @Max(200)
     private int logoWidthPercent;
 
+    @Min(0)
+    @Max(20)
+    private int logoTopSpacing;
+
     @Min(20)
     @Max(200)
     private int invoiceLogoWidthPercent;
+
+    @Size(max = 40)
+    private String receiptFontFamily;
 
     @Min(48)
     @Max(210)

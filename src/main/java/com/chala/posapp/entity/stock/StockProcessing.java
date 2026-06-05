@@ -59,9 +59,30 @@ public class StockProcessing extends TenantEntity {
     @Column(name = "processed_by_user_id", nullable = false)
     private Long processedByUserId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "processing_status", nullable = false, length = 20)
+    @Builder.Default
+    private StockProcessingStatus status = StockProcessingStatus.COMPLETED;
+
+    @Column(name = "cancel_reason", length = 255)
+    private String cancelReason;
+
+    @Column(name = "canceled_by_user_id")
+    private Long canceledByUserId;
+
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
+
     @Column(name = "processed_at", nullable = false)
     private LocalDateTime processedAt;
 
     @Column(length = 500)
     private String note;
+
+    @PrePersist
+    void onCreate() {
+        if (status == null) {
+            status = StockProcessingStatus.COMPLETED;
+        }
+    }
 }
