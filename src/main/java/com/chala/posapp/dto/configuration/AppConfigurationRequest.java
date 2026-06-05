@@ -19,6 +19,7 @@ public class AppConfigurationRequest {
     private Boolean cashierStockOverrideAllowed;
     private Boolean warrantyEnabled;
     private Boolean kotEnabled;
+    private Boolean printReceiptAfterCheckout;
     private Boolean adminWarrantyAllowed;
     private Boolean managerWarrantyAllowed;
     private Boolean cashierWarrantyAllowed;

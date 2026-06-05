@@ -507,35 +507,24 @@ public class ShiftService {
             throw new BadRequestException("Not allowed");
         }
 
+        if (branchId == null || branchId == 0) {
+            throw new BadRequestException("Please select a branch first");
+        }
+
         ensureManagerBranchAccess(user, branchId);
-
-        if (request.getAssignedCashierId() == null) {
-            throw new BadRequestException("Assigned Cashier ID is required");
-        }
-
-        if (request.getAssignedCashierId() == 0) {
-            request.setAssignedCashierId(user.getId());
-        }else {
-            User cashier = userRepository.findById(request.getAssignedCashierId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Cashier not found"));
-
-            if (!branchId.equals(cashier.getBranchId())){
-                throw new ResourceNotFoundException("This cashier is not in this branch");
-            }
-        }
 
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found in the system");
         }
 
-        cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, request.getAssignedCashierId(), ShiftStatus.OPEN)
+        cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, user.getId(), ShiftStatus.OPEN)
                 .ifPresent(s -> {
-                    throw new AlreadyExistsException("This cashier already has an open shift in this branch");
+                    throw new AlreadyExistsException("You already have an open shift in this branch");
                 });
 
         CashShift shift = CashShift.builder()
                 .branchId(branchId)
-                .cashierUserId(request.getAssignedCashierId())
+                .cashierUserId(user.getId())
                 .status(ShiftStatus.OPEN)
                 .openingCash(request.getOpeningCash())
                 .openNote(request.getNote())

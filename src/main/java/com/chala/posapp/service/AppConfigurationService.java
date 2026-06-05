@@ -170,6 +170,9 @@ public class AppConfigurationService {
         if (request.getKotEnabled() != null) {
             configuration.setKotEnabled(request.getKotEnabled());
         }
+        if (request.getPrintReceiptAfterCheckout() != null) {
+            configuration.setPrintReceiptAfterCheckout(request.getPrintReceiptAfterCheckout());
+        }
         if (request.getAdminWarrantyAllowed() != null) {
             configuration.setAdminWarrantyAllowed(request.getAdminWarrantyAllowed());
         }
@@ -285,6 +288,7 @@ public class AppConfigurationService {
                 .cashierStockOverrideAllowed(base != null && source.isCashierStockOverrideAllowed())
                 .warrantyEnabled(base == null || source.isWarrantyEnabled())
                 .kotEnabled(base == null || source.isKotEnabled())
+                .printReceiptAfterCheckout(base == null || source.isPrintReceiptAfterCheckout())
                 .adminWarrantyAllowed(base == null || source.isAdminWarrantyAllowed())
                 .managerWarrantyAllowed(base == null || source.isManagerWarrantyAllowed())
                 .cashierWarrantyAllowed(base != null && source.isCashierWarrantyAllowed())
@@ -310,6 +314,7 @@ public class AppConfigurationService {
                 .cashierStockOverrideAllowed(configuration.isCashierStockOverrideAllowed())
                 .warrantyEnabled(configuration.isWarrantyEnabled())
                 .kotEnabled(configuration.isKotEnabled())
+                .printReceiptAfterCheckout(configuration.isPrintReceiptAfterCheckout())
                 .adminWarrantyAllowed(configuration.isAdminWarrantyAllowed())
                 .managerWarrantyAllowed(configuration.isManagerWarrantyAllowed())
                 .cashierWarrantyAllowed(configuration.isCashierWarrantyAllowed())

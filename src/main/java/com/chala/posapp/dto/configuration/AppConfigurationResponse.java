@@ -21,6 +21,7 @@ public class AppConfigurationResponse {
     private boolean cashierStockOverrideAllowed;
     private boolean warrantyEnabled;
     private boolean kotEnabled;
+    private boolean printReceiptAfterCheckout;
     private boolean adminWarrantyAllowed;
     private boolean managerWarrantyAllowed;
     private boolean cashierWarrantyAllowed;

@@ -5,8 +5,13 @@ import com.chala.posapp.dto.supplier.SupplierPaymentRequest;
 import com.chala.posapp.dto.supplier.SupplierPaymentResponse;
 import com.chala.posapp.dto.supplier.SupplierQuickCreateRequest;
 import com.chala.posapp.dto.supplier.SupplierResponse;
+import com.chala.posapp.entity.CashShift;
+import com.chala.posapp.entity.CashSource;
+import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.entity.supplier.SupplierBankDetails;
@@ -15,6 +20,7 @@ import com.chala.posapp.entity.supplier.SupplierPayment;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.SupplierPaymentRepository;
 import com.chala.posapp.repository.SupplierRepository;
@@ -38,6 +44,7 @@ public class SupplierService {
     private final PurchaseRepository purchaseRepository;
     private final SupplierPaymentRepository supplierPaymentRepository;
     private final UserRepository userRepository;
+    private final CashShiftRepository cashShiftRepository;
 
     @Transactional
     public SupplierResponse create(SupplierCreateRequest req) {
@@ -121,6 +128,8 @@ public class SupplierService {
         }
 
         User user = getLoggedUser();
+        CashSource cashSource = resolveCashSource(request.getCashSource(), paymentAmount);
+        CashShift drawerShift = applyDrawerCashOutIfNeeded(cashSource, paymentAmount, user, request);
         BigDecimal remainingPayment = paymentAmount;
         List<SupplierPayment> payments = new ArrayList<>();
         if (request.getPurchaseId() != null) {
@@ -175,6 +184,15 @@ public class SupplierService {
 
         if (remainingPayment.compareTo(BigDecimal.ZERO) > 0) {
             payments.add(buildPayment(supplier, null, remainingPayment, request, user));
+        }
+
+        for (SupplierPayment payment : payments) {
+            payment.setCashSource(cashSource);
+            if (drawerShift != null) {
+                payment.setCashShiftId(drawerShift.getId());
+                payment.setCashierUserId(user == null ? null : user.getId());
+                payment.setCashSourceBranchId(drawerShift.getBranchId());
+            }
         }
 
         supplier.setDueAmount(currentDue.subtract(paymentAmount));
@@ -254,6 +272,10 @@ public class SupplierService {
                 .invoiceNo(purchase == null ? null : purchase.getInvoiceNo())
                 .amount(normalizeMoney(payment.getAmount()))
                 .paymentMethod(payment.getPaymentMethod())
+                .cashSource(payment.getCashSource())
+                .cashShiftId(payment.getCashShiftId())
+                .cashierUserId(payment.getCashierUserId())
+                .cashSourceBranchId(payment.getCashSourceBranchId())
                 .note(payment.getNote())
                 .paidAt(payment.getPaidAt())
                 .build();
@@ -268,6 +290,60 @@ public class SupplierService {
 
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private CashSource resolveCashSource(CashSource requestedCashSource, BigDecimal paymentAmount) {
+        if (paymentAmount == null || paymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return CashSource.NONE;
+        }
+        return requestedCashSource == null || requestedCashSource == CashSource.NONE
+                ? CashSource.BRANCH_CASH
+                : requestedCashSource;
+    }
+
+    private CashShift applyDrawerCashOutIfNeeded(CashSource cashSource, BigDecimal paymentAmount, User user, SupplierPaymentRequest request) {
+        if (cashSource != CashSource.CASH_DRAWER || paymentAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        Long branchId = resolveDrawerBranchId(user, request);
+
+        CashShift shift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, user.getId(), ShiftStatus.OPEN)
+                .orElseThrow(() -> new BadRequestException("An open shift is required when supplier payment comes from the cash drawer"));
+
+        shift.setTotalExpenses(shift.getTotalExpenses() + paymentAmount.doubleValue());
+        return cashShiftRepository.save(shift);
+    }
+
+    private Long resolveDrawerBranchId(User user, SupplierPaymentRequest request) {
+        if (user == null) {
+            throw new BadRequestException("User is required when supplier payment comes from the cash drawer");
+        }
+        if (user.getRole() != Role.ADMIN && user.getRole() != Role.SUPER_ADMIN) {
+            if (user.getBranchId() == null) {
+                throw new BadRequestException("An assigned branch is required when supplier payment comes from the cash drawer");
+            }
+            return user.getBranchId();
+        }
+
+        if (request.getCashSourceBranchId() != null && request.getCashSourceBranchId() > 0) {
+            return request.getCashSourceBranchId();
+        }
+
+        if (request.getPurchaseId() == null) {
+            throw new BadRequestException("Drawer branch is required when supplier drawer payment is not linked to a purchase");
+        }
+
+        Purchase purchase = purchaseRepository.findById(request.getPurchaseId())
+                .orElseThrow(() -> new ResourceNotFoundException("Purchase not found with id: " + request.getPurchaseId()));
+        List<Long> branchIds = purchase.getGrnList().stream()
+                .map(GRN::getBranch)
+                .map(branch -> branch.getId())
+                .distinct()
+                .toList();
+        if (branchIds.size() == 1) {
+            return branchIds.get(0);
+        }
+        throw new BadRequestException("Drawer branch is required when supplier drawer payment is linked to a multi-branch purchase");
     }
 
     private User getLoggedUser() {

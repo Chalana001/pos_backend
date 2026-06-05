@@ -17,9 +17,11 @@ import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
+import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.StockProcessingOutputLink;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.TenantSubscription;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
@@ -33,6 +35,7 @@ import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.StockProcessingOutputLinkRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
+import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
 import jakarta.persistence.EntityManager;
@@ -42,6 +45,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -71,6 +75,7 @@ public class ItemService {
     private final StockProcessingOutputLinkRepository stockProcessingOutputLinkRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final AppConfigurationService appConfigurationService;
+    private final UserRepository userRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -312,6 +317,7 @@ public class ItemService {
     }
 
     public List<ItemResponse> searchForPurchase(String name, Long branchId) {
+        Long scopedBranchId = resolvePurchaseSearchBranchId(branchId);
         String searchTerm = name.trim();
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
@@ -321,24 +327,43 @@ public class ItemService {
                         return null;
                     }
 
-                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), scopedBranchId)) {
                         return null;
                     }
 
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
 
-                    if (branchId != null) {
-                        batches = branchId == 0L
+                    if (scopedBranchId != null) {
+                        batches = scopedBranchId == 0L
                                 ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
+                                : stockBatchRepository.findAvailableBatchesForScope(scopedBranchId, item.getId());
                         totalQty = availableQuantity(batches);
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), scopedBranchId);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
+    }
+
+    private Long resolvePurchaseSearchBranchId(Long requestedBranchId) {
+        User user = getLoggedUser();
+        if (user != null && (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER)) {
+            if (user.getBranchId() == null) {
+                throw new BadRequestException("User branch not assigned");
+            }
+            return user.getBranchId();
+        }
+        return requestedBranchId;
+    }
+
+    private User getLoggedUser() {
+        if (SecurityContextHolder.getContext().getAuthentication() == null) {
+            return null;
+        }
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username).orElse(null);
     }
 
     public List<ItemResponse> searchForPos(String name, Long branchId) {

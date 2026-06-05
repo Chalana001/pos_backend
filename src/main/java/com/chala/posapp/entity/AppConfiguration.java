@@ -72,6 +72,10 @@ public class AppConfiguration extends TenantEntity {
 
     @Column(nullable = false, columnDefinition = "boolean default true")
     @Builder.Default
+    private boolean printReceiptAfterCheckout = true;
+
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
     private boolean adminWarrantyAllowed = true;
 
     @Column(nullable = false, columnDefinition = "boolean default true")

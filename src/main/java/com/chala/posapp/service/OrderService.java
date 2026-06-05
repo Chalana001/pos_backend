@@ -716,9 +716,6 @@ public class OrderService {
 
         if (item.getItemType() == ItemType.RECIPE) {
             List<RecipeIngredient> recipeIngredients = recipeIngredientRepository.findByParentItemId(item.getId());
-            if (recipeIngredients.isEmpty()) {
-                throw new BadRequestException("Recipe item has no ingredients: " + item.getName());
-            }
 
             Map<Long, Item> ingredientMap = itemRepository.findAllById(
                             recipeIngredients.stream()
@@ -751,7 +748,7 @@ public class OrderService {
                         null,
                         (int) requiredQty,
                         batchesToUpdate,
-                        stockOverrideContext
+                        recipeIngredientStockContext()
                 );
                 usages.addAll(ingredientConsumption.usages);
                 lineCost += ingredientConsumption.lineCost;
@@ -916,6 +913,15 @@ public class OrderService {
             return new StockOverrideContext(mode, requested && roleAllowed, roleAllowed, normalizeOverrideReason(request.getStockOverrideReason()));
         }
         return new StockOverrideContext(StockOverrideMode.BLOCK, false, false, normalizeOverrideReason(request.getStockOverrideReason()));
+    }
+
+    private StockOverrideContext recipeIngredientStockContext() {
+        return new StockOverrideContext(
+                StockOverrideMode.ALWAYS_ALLOW,
+                true,
+                true,
+                "Recipe ingredient negative stock allowed"
+        );
     }
 
     private String normalizeOverrideReason(String reason) {

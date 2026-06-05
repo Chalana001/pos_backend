@@ -8,6 +8,8 @@ import com.chala.posapp.dto.grn.GrnItemRequest;
 import com.chala.posapp.dto.grn.GrnItemResponse;
 import com.chala.posapp.dto.grn.GrnResponse;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.CashShift;
+import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
 import com.chala.posapp.entity.Item;
@@ -16,6 +18,7 @@ import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockBatchSourceType;
@@ -25,6 +28,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.GrnItemRepository;
 import com.chala.posapp.repository.GrnRepository;
 import com.chala.posapp.repository.ItemRepository;
@@ -74,6 +78,7 @@ public class PurchaseService {
     private final SupplierRepository supplierRepository;
     private final GrnNumberService grnNumberService;
     private final UserRepository userRepository;
+    private final CashShiftRepository cashShiftRepository;
 
     private User getLoggedUser() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
@@ -171,10 +176,13 @@ public class PurchaseService {
 
         String invoiceNo = resolveInvoiceNo(request.getInvoiceNo());
 
+        String paymentMethod = normalizePaymentMethod(request.getPaymentMethod());
+
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
                 .invoiceNo(invoiceNo)
-                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
+                .paymentMethod(paymentMethod)
+                .cashSource(resolveCashSource(request.getCashSource(), requestedPaidAmount, paymentMethod))
                 .createdAt(LocalDateTime.now())
                 .grandTotal(BigDecimal.ZERO)
                 .status(PurchaseStatus.COMPLETED)
@@ -286,6 +294,7 @@ public class PurchaseService {
             grnResponseList.add(GrnResponse.builder()
                     .id(savedGrn.getId())
                     .grnNo(savedGrn.getGrnNo())
+                    .branchId(branch.getId())
                     .branchName(branch.getName())
                     .supplierName(supplier.getName())
                     .totalAmount(grnTotal)
@@ -303,6 +312,8 @@ public class PurchaseService {
         savedPurchase.setGrandTotal(netGrandTotal);
         savedPurchase.setPaidAmount(requestedPaidAmount);
         savedPurchase.setDueAmount(dueAmount);
+        savedPurchase.setCashSourceAmount(requestedPaidAmount);
+        applyDrawerCashOutIfNeeded(savedPurchase, requestedPaidAmount, user, request);
         purchaseRepository.save(savedPurchase);
 
         if (dueAmount.compareTo(BigDecimal.ZERO) > 0) {
@@ -319,6 +330,11 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(savedPurchase.getDiscountAmount()))
                 .paidAmount(savedPurchase.getPaidAmount())
                 .paymentMethod(savedPurchase.getPaymentMethod())
+                .cashSource(savedPurchase.getCashSource())
+                .cashShiftId(savedPurchase.getCashShiftId())
+                .cashierUserId(savedPurchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(savedPurchase.getCashSourceAmount()))
+                .cashSourceBranchId(savedPurchase.getCashSourceBranchId())
                 .dueAmount(savedPurchase.getDueAmount())
                 .status(normalizeStatus(savedPurchase))
                 .cancelReason(savedPurchase.getCancelReason())
@@ -371,6 +387,11 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
                 .paymentMethod(purchase.getPaymentMethod())
+                .cashSource(purchase.getCashSource())
+                .cashShiftId(purchase.getCashShiftId())
+                .cashierUserId(purchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(purchase.getCashSourceAmount()))
+                .cashSourceBranchId(purchase.getCashSourceBranchId())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
@@ -407,6 +428,7 @@ public class PurchaseService {
                     return GrnResponse.builder()
                             .id(grn.getId())
                             .grnNo(grn.getGrnNo())
+                            .branchId(grn.getBranch().getId())
                             .branchName(grn.getBranch().getName())
                             .totalAmount(grn.getTotalAmount())
                             .items(itemResponses)
@@ -423,6 +445,11 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
                 .paymentMethod(purchase.getPaymentMethod())
+                .cashSource(purchase.getCashSource())
+                .cashShiftId(purchase.getCashShiftId())
+                .cashierUserId(purchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(purchase.getCashSourceAmount()))
+                .cashSourceBranchId(purchase.getCashSourceBranchId())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
@@ -463,6 +490,7 @@ public class PurchaseService {
         }
 
         stockBatchRepository.deleteAll(batchesToDelete);
+        reverseDrawerCashOutIfOpen(purchase);
         BigDecimal purchaseDue = normalizeMoney(purchase.getDueAmount());
         if (purchaseDue.compareTo(BigDecimal.ZERO) > 0) {
             Supplier supplier = purchase.getSupplier();
@@ -481,6 +509,79 @@ public class PurchaseService {
 
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private CashSource resolveCashSource(CashSource requestedCashSource, BigDecimal paidAmount, String paymentMethod) {
+        if (paidAmount == null || paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return CashSource.NONE;
+        }
+        if (!"CASH".equals(paymentMethod)) {
+            return "BANK".equals(paymentMethod) ? CashSource.BANK : CashSource.NONE;
+        }
+        return requestedCashSource == null || requestedCashSource == CashSource.NONE
+                ? CashSource.BRANCH_CASH
+                : requestedCashSource;
+    }
+
+    private void applyDrawerCashOutIfNeeded(Purchase purchase, BigDecimal paidAmount, User user, CreatePurchaseRequest request) {
+        if (purchase.getCashSource() != CashSource.CASH_DRAWER || paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        Long branchId = resolveDrawerBranchId(user, request);
+        CashShift shift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, user.getId(), ShiftStatus.OPEN)
+                .orElseThrow(() -> new BadRequestException("An open shift is required when purchase payment comes from the cash drawer"));
+
+        double amount = paidAmount.doubleValue();
+        shift.setTotalExpenses(shift.getTotalExpenses() + amount);
+        cashShiftRepository.save(shift);
+        purchase.setCashShiftId(shift.getId());
+        purchase.setCashierUserId(user.getId());
+        purchase.setCashSourceBranchId(branchId);
+    }
+
+    private Long resolveDrawerBranchId(User user, CreatePurchaseRequest request) {
+        if (!isAdminLike(user)) {
+            return requireAssignedBranch(user);
+        }
+
+        List<Long> purchaseBranchIds = request.getBranches().stream()
+                .map(BranchPurchaseRequest::getBranchId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (purchaseBranchIds.isEmpty()) {
+            throw new BadRequestException("Purchase branch is required for cash drawer source");
+        }
+
+        Long requestedBranchId = request.getCashSourceBranchId();
+        if (requestedBranchId == null || requestedBranchId == 0) {
+            if (purchaseBranchIds.size() == 1) {
+                return purchaseBranchIds.get(0);
+            }
+            throw new BadRequestException("Drawer branch is required when a cash drawer purchase is split across multiple branches");
+        }
+
+        if (!purchaseBranchIds.contains(requestedBranchId)) {
+            throw new BadRequestException("Drawer branch must be one of the purchase branches");
+        }
+        return requestedBranchId;
+    }
+
+    private void reverseDrawerCashOutIfOpen(Purchase purchase) {
+        if (purchase.getCashSource() != CashSource.CASH_DRAWER || purchase.getCashShiftId() == null) {
+            return;
+        }
+
+        CashShift shift = cashShiftRepository.findById(purchase.getCashShiftId())
+                .orElseThrow(() -> new ResourceNotFoundException("Linked cash shift not found"));
+        if (shift.getStatus() != ShiftStatus.OPEN) {
+            throw new BadRequestException("Cannot cancel purchase because its drawer payment belongs to a closed shift");
+        }
+
+        double amount = normalizeMoney(purchase.getCashSourceAmount()).doubleValue();
+        shift.setTotalExpenses(Math.max(0, shift.getTotalExpenses() - amount));
+        cashShiftRepository.save(shift);
     }
 
     private List<PreparedPurchaseLine> preparePurchaseLines(CreatePurchaseRequest request) {

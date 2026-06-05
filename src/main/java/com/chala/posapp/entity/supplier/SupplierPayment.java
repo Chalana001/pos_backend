@@ -1,6 +1,7 @@
 package com.chala.posapp.entity.supplier;
 
 import com.chala.posapp.entity.Purchase;
+import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
@@ -41,6 +42,19 @@ public class SupplierPayment extends TenantEntity {
     @Column(name = "payment_method", length = 40)
     private String paymentMethod;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cash_source", nullable = false, length = 40)
+    private CashSource cashSource;
+
+    @Column(name = "cash_shift_id")
+    private Long cashShiftId;
+
+    @Column(name = "cashier_user_id")
+    private Long cashierUserId;
+
+    @Column(name = "cash_source_branch_id")
+    private Long cashSourceBranchId;
+
     @Column(length = 255)
     private String note;
 
@@ -53,5 +67,6 @@ public class SupplierPayment extends TenantEntity {
     void onCreate() {
         if (paidAt == null) paidAt = LocalDateTime.now();
         if (paymentMethod == null || paymentMethod.isBlank()) paymentMethod = "CASH";
+        if (cashSource == null) cashSource = CashSource.BRANCH_CASH;
     }
 }
