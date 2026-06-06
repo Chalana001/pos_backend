@@ -73,6 +73,9 @@ public class ReceiptSettingsService {
         settings.setInvoiceLogoWidthPercent(request.getInvoiceLogoWidthPercent());
         settings.setReceiptFontFamily(normalizeFontFamily(request.getReceiptFontFamily()));
         settings.setPaperWidthMm(request.getPaperWidthMm());
+        settings.setDirectPrintEnabled(request.isDirectPrintEnabled());
+        settings.setPrinterName(normalizeNullableText(request.getPrinterName()));
+        settings.setPrinterCopies(normalizeCopies(request.getPrinterCopies()));
         settings.setThanksMessage(normalizeMessage(request.getThanksMessage(), DEFAULT_THANKS_MESSAGE));
         settings.setCreditsLine1(DEFAULT_CREDITS_LINE_1);
         settings.setCreditsLine2(DEFAULT_CREDITS_LINE_2);
@@ -116,6 +119,9 @@ public class ReceiptSettingsService {
                 .invoiceLogoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
                 .receiptFontFamily(DEFAULT_RECEIPT_FONT_FAMILY)
                 .paperWidthMm(defaultPaperWidth(templateType))
+                .directPrintEnabled(false)
+                .printerName(null)
+                .printerCopies(1)
                 .thanksMessage(DEFAULT_THANKS_MESSAGE)
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)
                 .creditsLine2(DEFAULT_CREDITS_LINE_2)
@@ -142,6 +148,20 @@ public class ReceiptSettingsService {
             case "ARIAL", "VERDANA", "TAHOMA", "COURIER_NEW" -> value.trim().toUpperCase();
             default -> DEFAULT_RECEIPT_FONT_FAMILY;
         };
+    }
+
+    private String normalizeNullableText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private int normalizeCopies(int copies) {
+        if (copies < 1) {
+            return 1;
+        }
+        return Math.min(copies, 10);
     }
 
     private ReceiptSettingsResponse mapToResponse(ReceiptTemplateSettings settings, Branch branch) {
@@ -175,6 +195,9 @@ public class ReceiptSettingsService {
                 .invoiceLogoWidthPercent(settings.getInvoiceLogoWidthPercent())
                 .receiptFontFamily(normalizeFontFamily(settings.getReceiptFontFamily()))
                 .paperWidthMm(settings.getPaperWidthMm())
+                .directPrintEnabled(settings.isDirectPrintEnabled())
+                .printerName(settings.getPrinterName())
+                .printerCopies(normalizeCopies(settings.getPrinterCopies()))
                 .thanksMessage(settings.getThanksMessage())
                 .creditsLine1(DEFAULT_CREDITS_LINE_1)
                 .creditsLine2(DEFAULT_CREDITS_LINE_2)

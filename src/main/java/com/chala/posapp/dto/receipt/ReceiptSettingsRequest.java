@@ -49,6 +49,15 @@ public class ReceiptSettingsRequest {
     @Max(210)
     private int paperWidthMm;
 
+    private boolean directPrintEnabled;
+
+    @Size(max = 160)
+    private String printerName;
+
+    @Min(1)
+    @Max(10)
+    private int printerCopies;
+
     @Size(max = 160)
     private String thanksMessage;
 

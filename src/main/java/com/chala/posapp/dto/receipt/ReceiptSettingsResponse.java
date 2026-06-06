@@ -40,6 +40,9 @@ public class ReceiptSettingsResponse {
     private int invoiceLogoWidthPercent;
     private String receiptFontFamily;
     private int paperWidthMm;
+    private boolean directPrintEnabled;
+    private String printerName;
+    private int printerCopies;
     private String thanksMessage;
     private String creditsLine1;
     private String creditsLine2;

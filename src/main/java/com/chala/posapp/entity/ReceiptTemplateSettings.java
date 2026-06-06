@@ -111,6 +111,15 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(nullable = false)
     private int paperWidthMm;
 
+    @Column(nullable = false, columnDefinition = "boolean default false")
+    private boolean directPrintEnabled;
+
+    @Column(length = 160)
+    private String printerName;
+
+    @Column(nullable = false, columnDefinition = "int default 1")
+    private int printerCopies;
+
     @Column(length = 160)
     private String thanksMessage;
 
