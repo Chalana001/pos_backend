@@ -7,8 +7,8 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,7 +29,7 @@ public class PromotionService {
     private final SubCategoryRepository subCategoryRepository;
     private final BranchRepository branchRepository;
     private final CustomerRepository customerRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
 
     public List<PromotionResponse> list() {
         return promotionRepository.findAllByOrderByActiveDescStartAtDescIdDesc().stream()
@@ -237,7 +237,7 @@ public class PromotionService {
     }
 
     public PromotionPreviewResponse preview(PromotionPreviewRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
         LocalDateTime now = LocalDateTime.now();
         List<Promotion> activePromotions = activePromotionsForBranch(branchId, now);
@@ -466,11 +466,7 @@ public class PromotionService {
         return branchId;
     }
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {

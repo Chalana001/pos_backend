@@ -35,6 +35,7 @@ public interface StockAdjustmentRepository extends JpaRepository<StockAdjustment
                       WHERE i.id = sa.itemId
                         AND (
                             LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%'))
                             OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
                         )
                   )

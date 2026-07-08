@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Table(
         name = "app_configurations",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "branch_id"})
+                @UniqueConstraint(columnNames = {"branch_id"})
         }
 )
 @Getter

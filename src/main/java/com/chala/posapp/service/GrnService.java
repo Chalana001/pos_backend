@@ -42,9 +42,11 @@ public class GrnService {
 
         List<GrnItemResponse> itemResponses = itemsList.stream()
                 .map(item -> GrnItemResponse.builder()
+                        .id(item.getId())
                         .itemId(item.getItem().getId())
                         .barcode(item.getItem().getBarcode())
                         .itemName(item.getItem().getName())
+                        .altName(item.getItem().getAltName())
                         .qty(item.getDisplayQty())
                         .qtyUnit(item.getQtyUnit())
                         .costPrice(item.getCostPrice())

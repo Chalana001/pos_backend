@@ -24,9 +24,8 @@ import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.SupplierPaymentRepository;
 import com.chala.posapp.repository.SupplierRepository;
-import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,7 +42,7 @@ public class SupplierService {
     private final SupplierRepository supplierRepository;
     private final PurchaseRepository purchaseRepository;
     private final SupplierPaymentRepository supplierPaymentRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final CashShiftRepository cashShiftRepository;
 
     @Transactional
@@ -127,7 +126,7 @@ public class SupplierService {
             throw new BadRequestException("Payment amount exceeds the supplier due amount: " + currentDue);
         }
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         CashSource cashSource = resolveCashSource(request.getCashSource(), paymentAmount);
         CashShift drawerShift = applyDrawerCashOutIfNeeded(cashSource, paymentAmount, user, request);
         BigDecimal remainingPayment = paymentAmount;
@@ -346,8 +345,5 @@ public class SupplierService {
         throw new BadRequestException("Drawer branch is required when supplier drawer payment is linked to a multi-branch purchase");
     }
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElse(null);
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 }

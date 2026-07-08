@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
 @Table(
         name = "supplier_payments",
         indexes = {
-                @Index(name = "idx_tenant_supplier_payment_supplier", columnList = "tenant_id, supplier_id"),
-                @Index(name = "idx_tenant_supplier_payment_paid_at", columnList = "tenant_id, paid_at")
+                @Index(name = "idx_supplier_payment_supplier", columnList = "supplier_id"),
+                @Index(name = "idx_supplier_payment_paid_at", columnList = "paid_at")
         }
 )
 @Getter

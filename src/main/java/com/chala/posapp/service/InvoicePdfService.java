@@ -14,6 +14,9 @@ import com.chala.posapp.tenant.TenantContext;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 
@@ -39,16 +42,23 @@ public class InvoicePdfService {
     private final CustomerRepository customerRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final TemplateEngine templateEngine;
+    private final PlatformTransactionManager transactionManager;
 
     public byte[] generateInvoicePdf(String invoiceNo) {
         OrderResponse order = orderService.getOrder(invoiceNo);
         ReceiptSettingsResponse settings = receiptSettingsService.getSettings(order.getBranchId(), PrintTemplateType.A4);
 
         String tenantId = TenantContext.getTenant();
-        String storeName = tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getShopName)
-                .filter(this::hasText)
-                .orElse(DEFAULT_STORE_NAME);
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        String storeName = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getShopName)
+                                .filter(this::hasText)
+                                .orElse(DEFAULT_STORE_NAME)
+                ));
 
         String cashierName = userRepository.findById(order.getCashierUserId())
                 .map(User::getUsername)

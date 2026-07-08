@@ -14,6 +14,7 @@ public class OrderItemResponse {
     private Long itemId;
     private String barcode;
     private String itemName;
+    private String altName;
     private Long batchId;
     private BigDecimal qty;
     private MeasurementUnit qtyUnit;

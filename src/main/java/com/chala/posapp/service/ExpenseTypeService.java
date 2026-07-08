@@ -50,6 +50,7 @@ public class ExpenseTypeService {
     private final ExpenseTypeRepository expenseTypeRepository;
     private final ExpenseRepository expenseRepository;
 
+    @Transactional
     public List<ExpenseTypeResponse> listAll() {
         ensureDefaults();
         return expenseTypeRepository.findAllByOrderByNameAsc().stream()
@@ -57,6 +58,7 @@ public class ExpenseTypeService {
                 .toList();
     }
 
+    @Transactional
     public List<ExpenseTypeResponse> listActive() {
         ensureDefaults();
         return expenseTypeRepository.findByActiveTrueOrderByNameAsc().stream()

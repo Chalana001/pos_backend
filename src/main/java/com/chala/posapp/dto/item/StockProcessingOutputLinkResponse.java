@@ -21,6 +21,6 @@ public class StockProcessingOutputLinkResponse {
     private MeasurementUnit defaultUnit;
     private BigDecimal defaultQty;
     private MeasurementUnit defaultQtyUnit;
-    private BigDecimal defaultSellingPrice;
+    private BigDecimal defaultSellingPrice;  // effective: link-level override, else item selling price
     private boolean waste;
 }

@@ -35,9 +35,9 @@ import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.StockProcessingOutputLinkRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
@@ -45,9 +45,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.http.HttpStatus;
 
@@ -75,7 +77,8 @@ public class ItemService {
     private final StockProcessingOutputLinkRepository stockProcessingOutputLinkRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final AppConfigurationService appConfigurationService;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
+    private final PlatformTransactionManager transactionManager;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -102,6 +105,7 @@ public class ItemService {
         Item item = Item.builder()
                 .barcode(barcode)
                 .name(request.getName().trim())
+                .altName(normalizeAltName(request.getAltName()))
                 .subCategory(subCategory)
                 .costPrice(request.getCostPrice())
                 .sellingPrice(request.getSellingPrice())
@@ -165,6 +169,7 @@ public class ItemService {
 
                     return Item.builder()
                             .name(req.getName().trim())
+                            .altName(normalizeAltName(req.getAltName()))
                             .barcode(req.getBarcode())
                             .subCategory(subCategory)
                             .costPrice(req.getCostPrice())
@@ -319,7 +324,10 @@ public class ItemService {
     public List<ItemResponse> searchForPurchase(String name, Long branchId) {
         Long scopedBranchId = resolvePurchaseSearchBranchId(branchId);
         String searchTerm = name.trim();
-        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+        // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars (fast), fall back to LIKE for short terms
+        List<Item> items = searchTerm.length() >= 3
+                ? itemRepository.searchForPurchaseFt(searchTerm + "*")
+                : itemRepository.searchForPurchase(searchTerm);
 
         return items.stream()
                 .map(item -> {
@@ -335,10 +343,9 @@ public class ItemService {
                     Integer totalQty = null;
 
                     if (scopedBranchId != null) {
-                        batches = scopedBranchId == 0L
-                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findAvailableBatchesForScope(scopedBranchId, item.getId());
-                        totalQty = availableQuantity(batches);
+                        Long scopeId = scopedBranchId == 0L ? null : scopedBranchId;
+                        batches = stockBatchRepository.findAvailableBatchesForScope(scopeId, item.getId());
+                        totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeId, item.getId());
                     }
 
                     return mapToResponse(item, totalQty, batchesToResponse(item, batches), scopedBranchId);
@@ -348,7 +355,7 @@ public class ItemService {
     }
 
     private Long resolvePurchaseSearchBranchId(Long requestedBranchId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getOptionalCurrentUser();
         if (user != null && (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER)) {
             if (user.getBranchId() == null) {
                 throw new BadRequestException("User branch not assigned");
@@ -358,17 +365,15 @@ public class ItemService {
         return requestedBranchId;
     }
 
-    private User getLoggedUser() {
-        if (SecurityContextHolder.getContext().getAuthentication() == null) {
-            return null;
-        }
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username).orElse(null);
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getOptionalCurrentUser() — use SecurityUtils instead
+    // Note: uses getOptionalCurrentUser() because item-search endpoints may be called without auth
 
     public List<ItemResponse> searchForPos(String name, Long branchId) {
         String searchTerm = name.trim();
-        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+        // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars, fall back to LIKE for 1-2 char inputs
+        List<Item> items = searchTerm.length() >= 3
+                ? itemRepository.searchForPosFt(searchTerm + "*")
+                : itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream()
                 .map(item -> {
@@ -387,17 +392,19 @@ public class ItemService {
 
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
+                    boolean everStocked = true;
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
-                        batches = branchId == 0L
-                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
+                        Long scopeBranchId = branchId == 0L ? null : branchId;
+                        batches = stockBatchRepository.findAvailableBatchesForScope(scopeBranchId, item.getId());
                         totalQty = availableQuantity(batches);
+                        everStocked = batches != null && !batches.isEmpty()
+                                || stockBatchRepository.existsBatchForScope(scopeBranchId, item.getId());
                     }
 
                     if (item.getItemType() != ItemType.SERVICE
                             && item.getItemType() != ItemType.RECIPE
-                            && (batches == null || batches.isEmpty())) {
+                            && !everStocked) {
                         return null;
                     }
 
@@ -440,6 +447,10 @@ public class ItemService {
 
         if (request.getName() != null && !request.getName().isBlank()) {
             item.setName(request.getName().trim());
+        }
+
+        if (request.getAltName() != null) {
+            item.setAltName(normalizeAltName(request.getAltName()));
         }
 
         if (request.getSubCategoryId() != null) {
@@ -567,43 +578,35 @@ public class ItemService {
     }
 
     private long countRefs(String tableName, String columnName, Long itemId) {
-        String tenantId = TenantContext.getTenant();
         Number count = (Number) entityManager.createNativeQuery(
-                        "SELECT COUNT(*) FROM " + tableName + " WHERE tenant_id = :tenantId AND " + columnName + " = :itemId")
-                .setParameter("tenantId", tenantId)
+                        "SELECT COUNT(*) FROM " + tableName + " WHERE " + columnName + " = :itemId")
                 .setParameter("itemId", itemId)
                 .getSingleResult();
         return count.longValue();
     }
 
     private long countStockBatchBlockers(Long itemId) {
-        String tenantId = TenantContext.getTenant();
         Number count = (Number) entityManager.createNativeQuery("""
                         SELECT COUNT(*)
                         FROM stock_batches
-                        WHERE tenant_id = :tenantId
-                          AND item_id = :itemId
+                        WHERE item_id = :itemId
                           AND (
                             COALESCE(quantity, 0) <> 0
                             OR COALESCE(original_quantity, 0) <> 0
                             OR COALESCE(source_type, 'PURCHASE') <> 'AUTO'
                           )
                         """)
-                .setParameter("tenantId", tenantId)
                 .setParameter("itemId", itemId)
                 .getSingleResult();
         return count.longValue();
     }
 
     private long countSupplierItemRefs(Long itemId) {
-        String tenantId = TenantContext.getTenant();
         Number count = (Number) entityManager.createNativeQuery("""
                         SELECT COUNT(*)
                         FROM supplier_items
-                        WHERE tenant_id = :tenantId
-                          AND item_id = :itemId
+                        WHERE item_id = :itemId
                         """)
-                .setParameter("tenantId", tenantId)
                 .setParameter("itemId", itemId)
                 .getSingleResult();
         return count.longValue();
@@ -666,6 +669,7 @@ public class ItemService {
                 .id(item.getId())
                 .barcode(item.getBarcode())
                 .name(item.getName())
+                .altName(item.getAltName())
                 .subCategoryId(subCategory != null ? subCategory.getId() : null)
                 .subCategoryName(subCategory != null ? subCategory.getName() : "N/A")
                 .categoryId(category != null ? category.getId() : null)
@@ -759,16 +763,23 @@ public class ItemService {
             return false;
         }
 
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .map(planName -> planName.equals("FREE")
-                        || planName.equals("STANDARD")
-                        || planName.equals("MONTHLY_DEMO")
-                        || planName.equals("MONTHLY_LITE")
-                        || planName.equals("YEARLY_LITE")
-                        || planName.equals("MONTHLY_BASIC"))
-                .orElse(false);
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        Boolean result = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                                .map(planName -> planName.equals("FREE")
+                                        || planName.equals("STANDARD")
+                                        || planName.equals("MONTHLY_DEMO")
+                                        || planName.equals("MONTHLY_LITE")
+                                        || planName.equals("YEARLY_LITE")
+                                        || planName.equals("MONTHLY_BASIC"))
+                                .orElse(false)
+                ));
+        return Boolean.TRUE.equals(result);
     }
 
     private void validateItemTypeAllowed(ItemType itemType) {
@@ -787,6 +798,10 @@ public class ItemService {
                 && itemType != ItemType.SERVICE) {
             throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT, VOLUME and SERVICE items only");
         }
+    }
+
+    private String normalizeAltName(String value) {
+        return (value == null || value.isBlank()) ? null : value.trim();
     }
 
     private boolean resolveKotEnabled(Boolean requestedKotEnabled) {
@@ -821,10 +836,18 @@ public class ItemService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .orElse("");
+        // tenant_subscriptions lives in pos_master — switch context before the transaction opens.
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        String plan = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(p -> p.getName() == null ? "" : p.getName().trim().toUpperCase())
+                                .orElse("")
+                ));
+        return plan == null ? "" : plan;
     }
 
     private boolean isFreePlan(String planName) {
@@ -980,6 +1003,7 @@ public class ItemService {
                     .sourceItemId(item.getId())
                     .outputItemId(outputItem.getId())
                     .defaultQuantity(defaultQuantity)
+                    .defaultSellingPrice(outputRequest.getDefaultSellingPrice())
                     .waste(Boolean.TRUE.equals(outputRequest.getWaste()))
                     .build());
         }
@@ -1006,6 +1030,9 @@ public class ItemService {
                     if (output == null) {
                         throw new ResourceNotFoundException("Processing output item not found: " + link.getOutputItemId());
                     }
+                    BigDecimal effectiveSellingPrice = link.getDefaultSellingPrice() != null
+                            ? link.getDefaultSellingPrice()
+                            : output.getSellingPrice();
                     return StockProcessingOutputLinkResponse.builder()
                             .outputItemId(output.getId())
                             .outputBarcode(output.getBarcode())
@@ -1014,7 +1041,7 @@ public class ItemService {
                             .defaultUnit(output.getDefaultUnit())
                             .defaultQty(QuantityConversionUtil.toDisplayQuantity(output, link.getDefaultQuantity()))
                             .defaultQtyUnit(QuantityConversionUtil.primaryDisplayUnit(output))
-                            .defaultSellingPrice(output.getSellingPrice())
+                            .defaultSellingPrice(effectiveSellingPrice)
                             .waste(link.isWaste())
                             .build();
                 })

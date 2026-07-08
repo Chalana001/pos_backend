@@ -3,15 +3,17 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "stock_processing_output_links",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "source_item_id", "output_item_id"})
+                @UniqueConstraint(columnNames = {"source_item_id", "output_item_id"})
         },
         indexes = {
-                @Index(name = "idx_tenant_processing_link_source", columnList = "tenant_id, source_item_id"),
-                @Index(name = "idx_tenant_processing_link_output", columnList = "tenant_id, output_item_id")
+                @Index(name = "idx_processing_link_source", columnList = "source_item_id"),
+                @Index(name = "idx_processing_link_output", columnList = "output_item_id")
         }
 )
 @Getter
@@ -34,6 +36,9 @@ public class StockProcessingOutputLink extends TenantEntity {
     @Column(name = "default_quantity", nullable = false)
     @Builder.Default
     private Integer defaultQuantity = 1000;
+
+    @Column(name = "default_selling_price", precision = 10, scale = 2)
+    private BigDecimal defaultSellingPrice;
 
     @Column(name = "is_waste", nullable = false)
     @Builder.Default

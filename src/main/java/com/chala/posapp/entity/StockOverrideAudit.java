@@ -9,9 +9,9 @@ import java.time.LocalDateTime;
 @Table(
         name = "stock_override_audits",
         indexes = {
-                @Index(name = "idx_tenant_stock_override_order", columnList = "tenant_id, order_id"),
-                @Index(name = "idx_tenant_stock_override_stock_item", columnList = "tenant_id, stock_item_id"),
-                @Index(name = "idx_tenant_stock_override_created", columnList = "tenant_id, created_at")
+                @Index(name = "idx_stock_override_order", columnList = "order_id"),
+                @Index(name = "idx_stock_override_stock_item", columnList = "stock_item_id"),
+                @Index(name = "idx_stock_override_created", columnList = "created_at")
         }
 )
 @Getter

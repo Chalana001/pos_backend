@@ -20,6 +20,8 @@ import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.entity.stock.StockAdjustment;
+import com.chala.posapp.entity.stock.StockAdjustmentType;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.supplier.Supplier;
@@ -33,17 +35,18 @@ import com.chala.posapp.repository.GrnItemRepository;
 import com.chala.posapp.repository.GrnRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.PurchaseRepository;
+import com.chala.posapp.repository.PurchaseReturnRepository;
+import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SupplierRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,43 +72,32 @@ public class PurchaseService {
     private static final int MONEY_SCALE = 2;
     private static final int UNIT_COST_SCALE = 6;
 
-    private final PurchaseRepository purchaseRepository;
-    private final GrnRepository grnRepository;
-    private final GrnItemRepository grnItemRepository;
-    private final ItemRepository itemRepository;
-    private final StockBatchRepository stockBatchRepository;
+    private final PurchaseRepository       purchaseRepository;
+    private final GrnRepository            grnRepository;
+    private final GrnItemRepository        grnItemRepository;
+    private final ItemRepository           itemRepository;
+    private final StockBatchRepository     stockBatchRepository;
+    private final PurchaseReturnRepository purchaseReturnRepository;
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
     private final GrnNumberService grnNumberService;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final CashShiftRepository cashShiftRepository;
+    private final StockAdjustmentRepository stockAdjustmentRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureCreateAccess(User user, List<BranchPurchaseRequest> branches) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
         if (user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
-        Long branchId = requireAssignedBranch(user);
+        Long branchId = securityUtils.requireAssignedBranch(user);
         boolean invalidBranchFound = branches.stream()
                 .map(BranchPurchaseRequest::getBranchId)
                 .anyMatch(requestBranchId -> !Objects.equals(branchId, requestBranchId));
@@ -115,14 +107,14 @@ public class PurchaseService {
     }
 
     private void ensurePurchaseAccess(User user, Purchase purchase) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
         if (user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
-        Long branchId = requireAssignedBranch(user);
+        Long branchId = securityUtils.requireAssignedBranch(user);
         boolean invalidBranchFound = purchase.getGrnList().stream()
                 .map(grn -> grn.getBranch().getId())
                 .anyMatch(grnBranchId -> !Objects.equals(branchId, grnBranchId));
@@ -132,7 +124,7 @@ public class PurchaseService {
     }
 
     private boolean canAccessPurchase(User user, Purchase purchase) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return true;
         }
         if (user.getRole() != Role.MANAGER || user.getBranchId() == null) {
@@ -160,7 +152,7 @@ public class PurchaseService {
 
     @Transactional
     public PurchaseResponse createPurchase(CreatePurchaseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         ensureCreateAccess(user, request.getBranches());
         BigDecimal requestedPaidAmount = normalizeMoney(request.getPaidAmount());
         if (requestedPaidAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -238,6 +230,10 @@ public class PurchaseService {
 
                 int normalizedQty = preparedLine.normalizedQty();
 
+                if (Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
+                    zeroOutNegativeStock(item, branch, user);
+                }
+
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
                         ? itemReq.getExpiryDate().atStartOfDay()
                         : null;
@@ -275,8 +271,10 @@ public class PurchaseService {
                 grnTotal = grnTotal.add(netLineTotal);
 
                 itemResponses.add(GrnItemResponse.builder()
+                        .id(grnItem.getId())
                         .itemId(item.getId())
                         .itemName(item.getName())
+                        .altName(item.getAltName())
                         .barcode(item.getBarcode())
                         .qty(grnItem.getDisplayQty())
                         .qtyUnit(grnItem.getQtyUnit())
@@ -357,12 +355,12 @@ public class PurchaseService {
             int page,
             int size
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Pageable pageable = PageRequest.of(page, size);
         String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
-        Long managerBranchId = isAdminLike(user) ? null : requireAssignedBranch(user);
+        Long managerBranchId = securityUtils.isAdminLike(user) ? null : securityUtils.requireAssignedBranch(user);
 
         Page<Purchase> purchasePage = purchaseRepository.findHistory(
                 normalizedSearch,
@@ -402,7 +400,7 @@ public class PurchaseService {
     }
 
     public PurchaseResponse getPurchaseById(Long id) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
@@ -414,8 +412,10 @@ public class PurchaseService {
 
                     List<GrnItemResponse> itemResponses = dbItems.stream()
                             .map(item -> GrnItemResponse.builder()
+                                    .id(item.getId())
                                     .itemId(item.getItem().getId())
                                     .itemName(item.getItem().getName())
+                                    .altName(item.getItem().getAltName())
                                     .barcode(item.getItem().getBarcode())
                                     .qty(item.getDisplayQty())
                                     .qtyUnit(item.getQtyUnit())
@@ -435,6 +435,14 @@ public class PurchaseService {
                             .build();
                 })
                 .collect(Collectors.toList());
+
+        // Return summary
+        long returnCount = purchaseReturnRepository.countByPurchaseId(purchase.getId());
+        BigDecimal totalReturnedAmount = purchaseReturnRepository
+                .findByPurchaseIdOrderByCreatedAtDesc(purchase.getId())
+                .stream()
+                .map(r -> r.getTotalReturnAmount() == null ? BigDecimal.ZERO : r.getTotalReturnAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return PurchaseResponse.builder()
                 .purchaseId(purchase.getId())
@@ -456,12 +464,15 @@ public class PurchaseService {
                 .createdAt(purchase.getCreatedAt())
                 .canceledAt(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCanceledAt() : null)
                 .grnList(grnList)
+                .hasReturns(returnCount > 0)
+                .returnCount((int) returnCount)
+                .totalReturnedAmount(totalReturnedAmount)
                 .build();
     }
 
     @Transactional
     public PurchaseResponse cancelPurchase(Long purchaseId, CancelPurchaseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
@@ -541,8 +552,8 @@ public class PurchaseService {
     }
 
     private Long resolveDrawerBranchId(User user, CreatePurchaseRequest request) {
-        if (!isAdminLike(user)) {
-            return requireAssignedBranch(user);
+        if (!securityUtils.isAdminLike(user)) {
+            return securityUtils.requireAssignedBranch(user);
         }
 
         List<Long> purchaseBranchIds = request.getBranches().stream()
@@ -582,6 +593,32 @@ public class PurchaseService {
         double amount = normalizeMoney(purchase.getCashSourceAmount()).doubleValue();
         shift.setTotalExpenses(Math.max(0, shift.getTotalExpenses() - amount));
         cashShiftRepository.save(shift);
+    }
+
+    private void zeroOutNegativeStock(Item item, Branch branch, User user) {
+        List<StockBatch> negativeBatches = stockBatchRepository
+                .findByBranchIdAndItemIdAndQuantityLessThan(branch.getId(), item.getId(), 0);
+
+        for (StockBatch negativeBatch : negativeBatches) {
+            int qtyChange = -negativeBatch.getQuantity();
+            negativeBatch.setQuantity(0);
+            stockBatchRepository.save(negativeBatch);
+
+            StockAdjustment adjustment = StockAdjustment.builder()
+                    .branchId(branch.getId())
+                    .itemId(item.getId())
+                    .type(StockAdjustmentType.MANUAL)
+                    .qtyChange(qtyChange)
+                    .displayQtyChange(QuantityConversionUtil.toDisplayQuantity(item, qtyChange))
+                    .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                            ? QuantityConversionUtil.primaryDisplayUnit(item)
+                            : item.getDefaultUnit())
+                    .reason("Negative stock corrected before purchase")
+                    .userId(user.getId())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            stockAdjustmentRepository.save(adjustment);
+        }
     }
 
     private List<PreparedPurchaseLine> preparePurchaseLines(CreatePurchaseRequest request) {

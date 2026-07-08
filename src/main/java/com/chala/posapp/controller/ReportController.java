@@ -7,11 +7,15 @@ import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
+import com.chala.posapp.dto.report.ReturnReasonBreakdownResponse;
+import com.chala.posapp.dto.report.ReturnTrendPoint;
+import com.chala.posapp.dto.report.ReturnsSummaryResponse;
 import com.chala.posapp.dto.report.SalesReportResponse;
 import com.chala.posapp.dto.report.SalesSummaryResponse;
 import com.chala.posapp.dto.report.SalesTrendPoint;
 import com.chala.posapp.dto.report.SupplierPerformanceResponse;
 import com.chala.posapp.dto.report.TopCustomerResponse;
+import com.chala.posapp.dto.report.TopReturnedItemResponse;
 import com.chala.posapp.dto.report.TopSellingItemResponse;
 import com.chala.posapp.dto.report.TopSupplierResponse;
 import com.chala.posapp.dto.stock.LowStockResponse;
@@ -195,15 +199,59 @@ public class ReportController {
     @GetMapping("/top-customers")
     public ResponseEntity<List<TopCustomerResponse>> topCustomers(
             @RequestParam(name = "branchId", required = false) Long branchId,
-            @RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return ResponseEntity.ok(reportService.topCustomers(branchId, limit));
+            @RequestParam(name = "limit", defaultValue = "10") int limit,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.topCustomers(branchId, limit, from, to));
     }
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/top-suppliers")
     public ResponseEntity<List<TopSupplierResponse>> topSuppliers(
             @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "limit", defaultValue = "10") int limit,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.topSuppliers(branchId, limit, from, to));
+    }
+
+    // ─── Returns Reports ──────────────────────────────────────────────────
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/returns-summary")
+    public ResponseEntity<ReturnsSummaryResponse> returnsSummary(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.getReturnsSummary(branchId, from, to));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/top-returned-items")
+    public ResponseEntity<List<TopReturnedItemResponse>> topReturnedItems(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "type", defaultValue = "SALE") String type,
             @RequestParam(name = "limit", defaultValue = "10") int limit) {
-        return ResponseEntity.ok(reportService.topSuppliers(branchId, limit));
+        return ResponseEntity.ok(reportService.getTopReturnedItems(branchId, from, to, limit, type));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/return-reasons")
+    public ResponseEntity<List<ReturnReasonBreakdownResponse>> returnReasons(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.getReturnReasonBreakdown(branchId, from, to));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/return-trend")
+    public ResponseEntity<List<ReturnTrendPoint>> returnTrend(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.getReturnTrend(branchId, from, to));
     }
 }

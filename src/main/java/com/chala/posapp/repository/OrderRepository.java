@@ -25,14 +25,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("""
         UPDATE Order o
         SET o.createdAt = o.offlineSoldAt
-        WHERE o.tenantId = :tenantId
-          AND o.branchId = :branchId
+        WHERE o.branchId = :branchId
           AND o.offlineImported = true
           AND o.offlineSoldAt IS NOT NULL
           AND o.clientSaleId LIKE 'legacy:%'
     """)
     int repairLegacyImportedCreatedAt(
-            @Param("tenantId") String tenantId,
             @Param("branchId") Long branchId
     );
 

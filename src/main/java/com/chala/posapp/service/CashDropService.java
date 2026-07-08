@@ -9,10 +9,10 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CashDropRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,12 +24,9 @@ import java.time.LocalDateTime;
 public class CashDropService {
 
     private final CashDropRepository cashDropRepository;
+    private final SecurityUtils securityUtils;
     private final UserRepository userRepository;
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     public Page<CashDropResponse> getFilteredCashDrops(
             Long requestedBranchId,
@@ -75,17 +72,17 @@ public class CashDropService {
     }
 
     private CashDropFilterScope resolveScope(Long requestedBranchId, Long requestedShiftId, Long requestedCashierUserId, String search) {
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         Long finalBranchId = requestedBranchId;
         Long finalShiftId = requestedShiftId;
         Long finalCashierUserId = requestedCashierUserId;
         String trimmedSearch = search == null || search.isBlank() ? null : search.trim();
 
         if (currentUser.getRole() == Role.CASHIER) {
-            finalBranchId = requireAssignedBranch(currentUser);
+            finalBranchId = securityUtils.requireAssignedBranch(currentUser);
             finalCashierUserId = currentUser.getId();
         } else if (currentUser.getRole() == Role.MANAGER) {
-            finalBranchId = requireAssignedBranch(currentUser);
+            finalBranchId = securityUtils.requireAssignedBranch(currentUser);
         }
 
         return new CashDropFilterScope(finalBranchId, finalShiftId, finalCashierUserId, trimmedSearch);
@@ -109,12 +106,7 @@ public class CashDropService {
                 .build();
     }
 
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private record CashDropFilterScope(Long branchId, Long shiftId, Long cashierUserId, String search) {
     }

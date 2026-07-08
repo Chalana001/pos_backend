@@ -24,10 +24,9 @@ import com.chala.posapp.repository.DiningTableRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.PendingOrderItemRepository;
 import com.chala.posapp.repository.PendingOrderRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,33 +45,20 @@ public class PendingOrderService {
     private final DiningTableRepository diningTableRepository;
     private final ItemRepository itemRepository;
     private final CustomerRepository customerRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final AppConfigurationService appConfigurationService;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureBranchAccess(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Cannot access another branch");
         }
@@ -84,7 +70,7 @@ public class PendingOrderService {
             throw new BadRequestException("Pending order items required");
         }
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
         validateDineInEnabled(table.getBranchId());
@@ -168,7 +154,7 @@ public class PendingOrderService {
     }
 
     public PendingOrderResponse getByTable(Long tableId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         PendingOrder pendingOrder = pendingOrderRepository.findByTableId(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pending order not found"));
         DiningTable table = diningTableRepository.findById(tableId)
@@ -181,7 +167,7 @@ public class PendingOrderService {
     public List<PendingOrderResponse> listByBranch(Long branchId) {
         validateDineInEnabled(branchId);
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         ensureBranchAccess(user, branchId);
 
         return pendingOrderRepository.findByBranchIdOrderByUpdatedAtDesc(branchId).stream()
@@ -195,7 +181,7 @@ public class PendingOrderService {
 
     @Transactional
     public void clearTable(Long tableId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
         validateDineInEnabled(table.getBranchId());

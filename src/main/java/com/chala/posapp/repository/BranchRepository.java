@@ -11,6 +11,6 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
     boolean existsByCode(String code);
     Optional<Branch> findByCode(String code);
 
-    @Query(value = "SELECT COUNT(*) FROM branches WHERE tenant_id = :tenantId", nativeQuery = true)
-    long countByTenantIdNative(@Param("tenantId") String tenantId);
+    @Query(value = "SELECT COUNT(*) FROM branches", nativeQuery = true)
+    long countAllNative();
 }

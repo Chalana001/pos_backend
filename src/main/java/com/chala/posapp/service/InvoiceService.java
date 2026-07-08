@@ -19,9 +19,7 @@ public class InvoiceService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public String generateInvoiceNo(Long branchId) {
 
-        String tenantId = TenantContext.getTenant();
-
-        BranchSequence seq = sequenceRepository.findByBranchIdAndTenantIdWithLock(branchId, tenantId)
+        BranchSequence seq = sequenceRepository.findByBranchIdWithLock(branchId)
                 .orElseGet(() -> BranchSequence.builder()
                         .branchId(branchId)
                         .nextInvoiceNumber(1L)

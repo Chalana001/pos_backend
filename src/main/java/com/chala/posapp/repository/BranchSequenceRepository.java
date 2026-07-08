@@ -11,6 +11,6 @@ import java.util.Optional;
 
 public interface BranchSequenceRepository extends JpaRepository<BranchSequence, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT b FROM BranchSequence b WHERE b.branchId = :branchId AND b.tenantId = :tenantId")
-    Optional<BranchSequence> findByBranchIdAndTenantIdWithLock(@Param("branchId") Long branchId, @Param("tenantId") String tenantId);
+    @Query("SELECT b FROM BranchSequence b WHERE b.branchId = :branchId")
+    Optional<BranchSequence> findByBranchIdWithLock(@Param("branchId") Long branchId);
 }

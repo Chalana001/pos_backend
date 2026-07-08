@@ -46,18 +46,15 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
         String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
 
         Category category = new Category();
-        category.setTenantId(tenantId);
         category.setName("Offline Category");
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Offline Sub");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Offline Supplier");
         supplier.setPhone("0777777777");
         supplier.setEmail("offline@supplier.local");
@@ -191,18 +188,15 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
         String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
 
         Category category = new Category();
-        category.setTenantId(tenantId);
         category.setName("Bulk Offline Category");
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Bulk Offline Sub");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Bulk Offline Supplier");
         supplier.setPhone("0777777778");
         supplier.setEmail("bulk-offline@supplier.local");

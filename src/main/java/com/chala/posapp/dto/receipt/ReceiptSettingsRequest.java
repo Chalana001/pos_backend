@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.receipt;
 
+import com.chala.posapp.entity.ItemNameSource;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -66,4 +67,13 @@ public class ReceiptSettingsRequest {
 
     @Size(max = 160)
     private String creditsLine2;
+
+    private ItemNameSource itemNameSource;
+
+    // JSON array string for the line-by-line receipt template editor.
+    // When present and non-empty, this drives the receipt layout instead of the boolean toggles.
+    private String templateLines;
+
+    @Size(max = 10)
+    private String currencySymbol;
 }

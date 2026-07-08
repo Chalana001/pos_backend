@@ -7,8 +7,8 @@ import lombok.*;
 @Table(
         name = "order_item_stock_usages",
         indexes = {
-                @Index(name = "idx_tenant_order_item_usage", columnList = "tenant_id, order_item_id"),
-                @Index(name = "idx_tenant_batch_usage", columnList = "tenant_id, batch_id")
+                @Index(name = "idx_order_item_usage", columnList = "order_item_id"),
+                @Index(name = "idx_batch_usage", columnList = "batch_id")
         }
 )
 @Getter

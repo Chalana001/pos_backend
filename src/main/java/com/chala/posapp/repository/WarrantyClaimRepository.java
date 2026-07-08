@@ -28,6 +28,7 @@ public interface WarrantyClaimRepository extends JpaRepository<WarrantyClaim, Lo
             w.invoiceNo,
             w.customerName,
             w.itemName,
+            i.altName,
             w.barcode,
             w.status,
             c.actionType,
@@ -38,6 +39,7 @@ public interface WarrantyClaimRepository extends JpaRepository<WarrantyClaim, Lo
         )
         FROM WarrantyClaim c
         JOIN Warranty w ON w.id = c.warrantyId
+        LEFT JOIN Item i ON i.id = w.itemId
         WHERE (:branchId IS NULL OR c.branchId = :branchId)
           AND (:status IS NULL OR c.status = :status)
           AND (:search IS NULL OR :search = ''
@@ -46,7 +48,8 @@ public interface WarrantyClaimRepository extends JpaRepository<WarrantyClaim, Lo
                OR LOWER(w.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(w.customerName) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(w.itemName) LIKE LOWER(CONCAT('%', :search, '%'))
-               OR LOWER(w.barcode) LIKE LOWER(CONCAT('%', :search, '%')))
+               OR LOWER(w.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%')))
         """)
     Page<WarrantyClaimListResponse> searchQueue(
             @Param("search") String search,

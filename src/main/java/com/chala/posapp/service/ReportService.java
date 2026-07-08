@@ -7,11 +7,15 @@ import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
+import com.chala.posapp.dto.report.ReturnReasonBreakdownResponse;
+import com.chala.posapp.dto.report.ReturnTrendPoint;
+import com.chala.posapp.dto.report.ReturnsSummaryResponse;
 import com.chala.posapp.dto.report.SalesReportResponse;
 import com.chala.posapp.dto.report.SalesSummaryResponse;
 import com.chala.posapp.dto.report.SalesTrendPoint;
 import com.chala.posapp.dto.report.SupplierPerformanceResponse;
 import com.chala.posapp.dto.report.TopCustomerResponse;
+import com.chala.posapp.dto.report.TopReturnedItemResponse;
 import com.chala.posapp.dto.report.TopSellingItemResponse;
 import com.chala.posapp.dto.report.TopSupplierResponse;
 import com.chala.posapp.dto.stock.LowStockResponse;
@@ -22,14 +26,17 @@ import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.SaleMode;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
-import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.ReportRepository;
 import com.chala.posapp.repository.StockBatchRepository;
-import com.chala.posapp.repository.UserRepository;
-import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.config.CacheConfig;
+import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.DateRangeUtils;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.Font;
@@ -37,19 +44,18 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -60,14 +66,9 @@ public class ReportService {
 
     private final ReportRepository reportRepository;
     private final CustomerRepository customerRepository;
-    private final UserRepository userRepository;
     private final StockBatchRepository stockBatchRepository;
-
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07 FIX: securityUtils.getCurrentUser() removed — use SecurityUtils.getCurrentUser() instead
+    private final SecurityUtils securityUtils;
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) {
@@ -83,17 +84,46 @@ public class ReportService {
         return branchId == null ? 0L : branchId;
     }
 
+    // MISS-04 FIX: Guard against unbounded date ranges that would force full-table scans.
+    // Max 366 days for standard reports, 1095 days (3 years) for trend/summary views.
+    private static final long MAX_REPORT_DAYS  = 366;
+    private static final long MAX_TREND_DAYS   = 1095;
+
+    private void validateDateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) return;
+        long days = java.time.temporal.ChronoUnit.DAYS.between(from, to);
+        if (days < 0) throw new BadRequestException("'from' date must not be after 'to' date");
+        if (days > MAX_REPORT_DAYS) {
+            throw new BadRequestException(
+                "Date range exceeds maximum of " + MAX_REPORT_DAYS + " days for this report. " +
+                "Use the trend endpoint for multi-year views.");
+        }
+    }
+
+    private void validateTrendDateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) return;
+        long days = java.time.temporal.ChronoUnit.DAYS.between(from, to);
+        if (days < 0) throw new BadRequestException("'from' date must not be after 'to' date");
+        if (days > MAX_TREND_DAYS) {
+            throw new BadRequestException(
+                "Date range exceeds maximum of " + MAX_TREND_DAYS + " days for trend reports.");
+        }
+    }
+
+    // MISS-01: Cache sales summary per branch+date range for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_SALES_SUMMARY,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
     public SalesSummaryResponse salesSummary(Long requestedBranchId, LocalDate from, LocalDate to) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         Long queryBranchId = toQueryBranchId(branchId);
-        double total = reportRepository.totalSales(tenantId, queryBranchId, range.from(), range.to());
-        double cash = reportRepository.cashSales(tenantId, queryBranchId, range.from(), range.to());
-        double credit = reportRepository.creditSales(tenantId, queryBranchId, range.from(), range.to());
-        double discount = reportRepository.totalDiscount(tenantId, queryBranchId, range.from(), range.to());
-        long orders = reportRepository.totalOrders(tenantId, queryBranchId, range.from(), range.to());
+        double total = reportRepository.totalSales(queryBranchId, range.from(), range.to());
+        double cash = reportRepository.cashSales(queryBranchId, range.from(), range.to());
+        double credit = reportRepository.creditSales(queryBranchId, range.from(), range.to());
+        double discount = reportRepository.totalDiscount(queryBranchId, range.from(), range.to());
+        long orders = reportRepository.totalOrders(queryBranchId, range.from(), range.to());
 
         return SalesSummaryResponse.builder()
                 .totalSales(total)
@@ -105,10 +135,6 @@ public class ReportService {
     }
 
     public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
-
         return topSelling(requestedBranchId, from, to, limit, null, "REVENUE");
     }
 
@@ -116,25 +142,34 @@ public class ReportService {
         return topSelling(requestedBranchId, from, to, limit, itemType, "REVENUE");
     }
 
+    // MISS-01: Cache top-selling per branch+date+params for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_TOP_SELLING,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #limit, #itemType, #rankBy)")
     public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType, String rankBy) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
+        // BUG-06 FIX: topSellingRaw removed (duplicate SQL). Delegate to the unified
+        // productPerformanceRaw with offset=0 and DESC direction for top-N queries.
         String normalizedRankBy = normalizeRankBy(rankBy);
 
-        return reportRepository.topSellingRaw(tenantId, toQueryBranchId(branchId), normalizedItemType, normalizedRankBy, range.from(), range.to(), limit).stream()
+        return reportRepository.productPerformanceRaw(
+                        toQueryBranchId(branchId), normalizedItemType,
+                        normalizedRankBy, "DESC",
+                        range.from(), range.to(), limit, 0)
+                .stream()
                 .map(r -> {
-                    double revenue = ((Number) r[5]).doubleValue();
-                    double profit = ((Number) r[7]).doubleValue();
+                    double revenue = toDouble(r[5]);
+                    double profit  = toDouble(r[7]);
                     return TopSellingItemResponse.builder()
-                            .itemId(((Number) r[0]).longValue())
+                            .itemId(toLong(r[0]))
                             .itemName((String) r[1])
                             .itemType(parseItemType(r[2]))
-                            .qtyUnit(r[3] != null ? r[3].toString() : null)
-                            .qtySold(((Number) r[4]).doubleValue())
+                            .qtyUnit(toStr(r[3]))
+                            .qtySold(toDouble(r[4]))
                             .revenue(revenue)
-                            .cost(((Number) r[6]).doubleValue())
+                            .cost(toDouble(r[6]))
                             .profit(profit)
                             .marginPercent(revenue == 0 ? 0 : (profit / revenue) * 100)
                             .build();
@@ -152,8 +187,8 @@ public class ReportService {
             String sortBy,
             String sortDirection
     ) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
         String normalizedSortBy = normalizeProductSortBy(sortBy);
@@ -163,7 +198,6 @@ public class ReportService {
         Long queryBranchId = toQueryBranchId(branchId);
 
         List<TopSellingItemResponse> items = reportRepository.productPerformanceRaw(
-                        tenantId,
                         queryBranchId,
                         normalizedItemType,
                         normalizedSortBy,
@@ -175,7 +209,7 @@ public class ReportService {
                 ).stream()
                 .map(this::mapProductPerformance)
                 .toList();
-        long total = reportRepository.countProductPerformance(tenantId, queryBranchId, normalizedItemType, range.from(), range.to());
+        long total = reportRepository.countProductPerformance(queryBranchId, normalizedItemType, range.from(), range.to());
         return pageResponse(items, normalizedPage, normalizedSize, total);
     }
 
@@ -188,8 +222,8 @@ public class ReportService {
             String sortBy,
             String sortDirection
     ) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedSortBy = normalizeCustomerSortBy(sortBy);
         String normalizedSortDirection = normalizeSortDirection(sortDirection);
@@ -198,7 +232,6 @@ public class ReportService {
         Long queryBranchId = toQueryBranchId(branchId);
 
         List<CustomerPerformanceResponse> items = reportRepository.customerPerformanceRaw(
-                        tenantId,
                         queryBranchId,
                         normalizedSortBy,
                         normalizedSortDirection,
@@ -208,18 +241,18 @@ public class ReportService {
                         normalizedPage * normalizedSize
                 ).stream()
                 .map(r -> CustomerPerformanceResponse.builder()
-                        .customerId(((Number) r[0]).longValue())
+                        .customerId(toLong(r[0]))
                         .customerName((String) r[1])
                         .phone((String) r[2])
-                        .orderCount(((Number) r[3]).longValue())
-                        .totalSpent(((Number) r[4]).doubleValue())
-                        .totalPaid(((Number) r[5]).doubleValue())
-                        .totalDue(((Number) r[6]).doubleValue())
-                        .averageOrderValue(((Number) r[7]).doubleValue())
+                        .orderCount(toLong(r[3]))
+                        .totalSpent(toDouble(r[4]))
+                        .totalPaid(toDouble(r[5]))
+                        .totalDue(toDouble(r[6]))
+                        .averageOrderValue(toDouble(r[7]))
                         .lastOrderAt(toLocalDateTime(r[8]))
                         .build())
                 .toList();
-        long total = reportRepository.countCustomerPerformance(tenantId, queryBranchId, range.from(), range.to());
+        long total = reportRepository.countCustomerPerformance(queryBranchId, range.from(), range.to());
         return pageResponse(items, normalizedPage, normalizedSize, total);
     }
 
@@ -232,8 +265,8 @@ public class ReportService {
             String sortBy,
             String sortDirection
     ) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedSortBy = normalizeSupplierSortBy(sortBy);
         String normalizedSortDirection = normalizeSortDirection(sortDirection);
@@ -242,7 +275,6 @@ public class ReportService {
         Long queryBranchId = toQueryBranchId(branchId);
 
         List<SupplierPerformanceResponse> items = reportRepository.supplierPerformanceRaw(
-                        tenantId,
                         queryBranchId,
                         normalizedSortBy,
                         normalizedSortDirection,
@@ -252,18 +284,18 @@ public class ReportService {
                         normalizedPage * normalizedSize
                 ).stream()
                 .map(r -> SupplierPerformanceResponse.builder()
-                        .supplierId(((Number) r[0]).longValue())
+                        .supplierId(toLong(r[0]))
                         .supplierName((String) r[1])
                         .contactNo((String) r[2])
-                        .purchaseCount(((Number) r[3]).longValue())
-                        .totalPurchased(((Number) r[4]).doubleValue())
-                        .totalPaid(((Number) r[5]).doubleValue())
-                        .totalDue(((Number) r[6]).doubleValue())
-                        .averagePurchaseValue(((Number) r[7]).doubleValue())
+                        .purchaseCount(toLong(r[3]))
+                        .totalPurchased(toDouble(r[4]))
+                        .totalPaid(toDouble(r[5]))
+                        .totalDue(toDouble(r[6]))
+                        .averagePurchaseValue(toDouble(r[7]))
                         .lastPurchaseAt(toLocalDateTime(r[8]))
                         .build())
                 .toList();
-        long total = reportRepository.countSupplierPerformance(tenantId, queryBranchId, range.from(), range.to());
+        long total = reportRepository.countSupplierPerformance(queryBranchId, range.from(), range.to());
         return pageResponse(items, normalizedPage, normalizedSize, total);
     }
 
@@ -277,8 +309,8 @@ public class ReportService {
             String sortBy,
             String sortDirection
     ) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedOrderType = normalizeOrderType(orderType);
         String normalizedSortBy = normalizeSalesSortBy(sortBy);
@@ -288,7 +320,6 @@ public class ReportService {
         Long queryBranchId = toQueryBranchId(branchId);
 
         List<SalesReportResponse> items = reportRepository.salesReportRaw(
-                        tenantId,
                         queryBranchId,
                         normalizedOrderType,
                         normalizedSortBy,
@@ -299,28 +330,28 @@ public class ReportService {
                         normalizedPage * normalizedSize
                 ).stream()
                 .map(r -> SalesReportResponse.builder()
-                        .orderId(((Number) r[0]).longValue())
+                        .orderId(toLong(r[0]))
                         .invoiceNo((String) r[1])
-                        .branchId(((Number) r[2]).longValue())
+                        .branchId(toLong(r[2]))
                         .branchName((String) r[3])
-                        .customerId(r[4] == null ? null : ((Number) r[4]).longValue())
+                        .customerId(r[4] == null ? null : toLong(r[4]))
                         .customerName((String) r[5])
                         .customerPhone((String) r[6])
-                        .cashierUserId(((Number) r[7]).longValue())
+                        .cashierUserId(toLong(r[7]))
                         .cashierName((String) r[8])
                         .orderType(parseOrderTypeValue(r[9]))
                         .paymentMethod((String) r[10])
                         .saleMode(parseSaleMode(r[11]))
                         .status(parseOrderStatus(r[12]))
-                        .subTotal(((Number) r[13]).doubleValue())
-                        .discount(((Number) r[14]).doubleValue())
-                        .grandTotal(((Number) r[15]).doubleValue())
-                        .paidAmount(((Number) r[16]).doubleValue())
-                        .dueAmount(((Number) r[17]).doubleValue())
+                        .subTotal(toDouble(r[13]))
+                        .discount(toDouble(r[14]))
+                        .grandTotal(toDouble(r[15]))
+                        .paidAmount(toDouble(r[16]))
+                        .dueAmount(toDouble(r[17]))
                         .createdAt(toLocalDateTime(r[18]))
                         .build())
                 .toList();
-        long total = reportRepository.countSalesReport(tenantId, queryBranchId, normalizedOrderType, range.from(), range.to());
+        long total = reportRepository.countSalesReport(queryBranchId, normalizedOrderType, range.from(), range.to());
         return pageResponse(items, normalizedPage, normalizedSize, total);
     }
 
@@ -486,54 +517,54 @@ public class ReportService {
     }
 
     public List<ProfitReportResponse> profitReport(Long requestedBranchId, LocalDate from, LocalDate to, int limit) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
-
         return profitReport(requestedBranchId, from, to, limit, null);
     }
 
+    // MISS-01: Cache profit report results for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_PROFIT,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #limit, #itemType)")
     public List<ProfitReportResponse> profitReport(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
 
-        return reportRepository.profitReportRaw(tenantId, toQueryBranchId(branchId), normalizedItemType, range.from(), range.to(), limit).stream()
+        return reportRepository.profitReportRaw(toQueryBranchId(branchId), normalizedItemType, range.from(), range.to(), limit).stream()
                 .map(r -> ProfitReportResponse.builder()
-                        .itemId(((Number) r[0]).longValue())
+                        .itemId(toLong(r[0]))
                         .itemName((String) r[1])
                         .itemType(parseItemType(r[2]))
-                        .qtySold(((Number) r[3]).doubleValue())
-                        .revenue(((Number) r[4]).doubleValue())
-                        .cost(((Number) r[5]).doubleValue())
-                        .profit(((Number) r[6]).doubleValue())
+                        .qtySold(toDouble(r[3]))
+                        .revenue(toDouble(r[4]))
+                        .cost(toDouble(r[5]))
+                        .profit(toDouble(r[6]))
                         .build())
                 .toList();
     }
 
+    // MISS-01: Cache sales trend for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_SALES_TREND,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #type)")
     public List<SalesTrendPoint> salesTrend(Long requestedBranchId, LocalDate from, LocalDate to, String type) {
-        String tenantId = TenantContext.getTenant();
-        User user = getLoggedUser();
+        validateTrendDateRange(from, to);
+        User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
         Long effectiveBranchId = (branchId == null) ? 0L : branchId;
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         if ("MONTHLY".equalsIgnoreCase(type)) {
-            Map<YearMonth, Double> monthlyTotals = new LinkedHashMap<>();
-
-            for (Object[] row : reportRepository.dailySalesRaw(tenantId, effectiveBranchId, range.from(), range.to())) {
-                YearMonth month = YearMonth.parse(row[0].toString().substring(0, 7));
-                double amount = ((Number) row[1]).doubleValue();
-                monthlyTotals.merge(month, amount, Double::sum);
-            }
-
-            return monthlyTotals.entrySet().stream()
-                    .map(entry -> new SalesTrendPoint(entry.getKey().atDay(1), entry.getValue(), 0))
+            // BUG-04 FIX: use monthlySalesRaw() SQL aggregation instead of loading
+            // all daily rows into memory and grouping in Java per YearMonth
+            return reportRepository.monthlySalesRaw(effectiveBranchId, range.from(), range.to()).stream()
+                    .map(r -> {
+                        // monthlySalesRaw returns 'YYYY-MM' — parse to first day of month
+                        LocalDate monthStart = YearMonth.parse(r[0].toString()).atDay(1);
+                        return new SalesTrendPoint(monthStart, toDouble(r[1]), 0);
+                    })
                     .toList();
         }
 
-        List<Object[]> rows = reportRepository.dailySalesRaw(tenantId, effectiveBranchId, range.from(), range.to());
+        List<Object[]> rows = reportRepository.dailySalesRaw(effectiveBranchId, range.from(), range.to());
 
         return rows.stream().map(r -> {
             LocalDate date;
@@ -542,8 +573,7 @@ public class ReportService {
             } else {
                 date = LocalDate.parse(r[0].toString());
             }
-            double amount = ((Number) r[1]).doubleValue();
-            return new SalesTrendPoint(date, amount, 0);
+            return new SalesTrendPoint(date, toDouble(r[1]), 0);
         }).toList();
     }
 
@@ -551,98 +581,114 @@ public class ReportService {
         return salesByCategory(requestedBranchId, from, to, null);
     }
 
+    // MISS-01: Cache sales-by-category for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_SALES_CATEGORY,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #itemType)")
     public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to, String itemType) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
 
-        List<Object[]> rows = reportRepository.salesByCategoryRaw(tenantId, toQueryBranchId(branchId), normalizedItemType, range.from(), range.to());
+        List<Object[]> rows = reportRepository.salesByCategoryRaw(toQueryBranchId(branchId), normalizedItemType, range.from(), range.to());
 
         return rows.stream().map(r -> new CategorySalesResponse(
                 (String) r[0],
-                ((Number) r[1]).doubleValue()
+                toDouble(r[1])
         )).toList();
     }
 
     public List<RecentOrderResponse> recentOrders(Long requestedBranchId) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
-        List<Object[]> rows = reportRepository.recentOrdersRaw(tenantId, toQueryBranchId(branchId));
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        List<Object[]> rows = reportRepository.recentOrdersRaw(toQueryBranchId(branchId));
 
         return rows.stream().map(r -> new RecentOrderResponse(
-                ((Number) r[0]).longValue(),
+                toLong(r[0]),
                 (String) r[1],
-                ((Number) r[2]).doubleValue(),
+                toDouble(r[2]),
                 (String) r[3],
                 toLocalDateTime(r[4])
         )).toList();
     }
 
+    // MISS-01: Cache low stock list for 5 minutes
+    @Cacheable(value = CacheConfig.CACHE_LOW_STOCK,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId)")
     public List<LowStockResponse> lowStock(Long requestedBranchId) {
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         return stockBatchRepository.findLowStockItems(branchId);
     }
 
     public List<CreditDueResponse> creditDueList() {
-        String tenantId = TenantContext.getTenant();
-        return customerRepository.creditDueRaw(tenantId).stream()
+        return customerRepository.creditDueRaw().stream()
                 .map(r -> CreditDueResponse.builder()
-                        .customerId(((Number) r[0]).longValue())
+                        .customerId(toLong(r[0]))
                         .customerName((String) r[1])
-                        .dueAmount(((Number) r[2]).doubleValue())
+                        .dueAmount(toDouble(r[2]))
                         .build())
                 .toList();
     }
 
-    public List<TopCustomerResponse> topCustomers(Long requestedBranchId, int limit) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+    // PERF-06/07 FIX: Added from/to date range params — previously scanned ALL historical data.
+    // Defaults to last 30 days when no range specified (sensible default for a dashboard widget).
+    // MISS-01: Cache top-customers for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #limit, #from, #to)")
+    public List<TopCustomerResponse> topCustomers(Long requestedBranchId, int limit, LocalDate from, LocalDate to) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(30);
+        LocalDate resolvedTo   = to   != null ? to   : LocalDate.now();
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(resolvedFrom, resolvedTo);
 
-        return reportRepository.topCustomersRaw(tenantId, toQueryBranchId(branchId), limit).stream()
+        return reportRepository.topCustomersRaw(toQueryBranchId(branchId), range.from(), range.to(), limit).stream()
                 .map(r -> TopCustomerResponse.builder()
-                        .customerId(((Number) r[0]).longValue())
+                        .customerId(toLong(r[0]))
                         .customerName((String) r[1])
                         .phone((String) r[2])
-                        .orderCount(((Number) r[3]).longValue())
-                        .totalSpent(((Number) r[4]).doubleValue())
+                        .orderCount(toLong(r[3]))
+                        .totalSpent(toDouble(r[4]))
                         .build())
                 .toList();
     }
 
-    public List<TopSupplierResponse> topSuppliers(Long requestedBranchId, int limit) {
-        String tenantId = TenantContext.getTenant();
+    // MISS-01: Cache top-suppliers for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_TOP_SUPPLIERS,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #limit, #from, #to)")
+    public List<TopSupplierResponse> topSuppliers(Long requestedBranchId, int limit, LocalDate from, LocalDate to) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(30);
+        LocalDate resolvedTo   = to   != null ? to   : LocalDate.now();
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(resolvedFrom, resolvedTo);
 
-        return reportRepository.topSuppliersRaw(tenantId, limit).stream()
+        return reportRepository.topSuppliersRaw(toQueryBranchId(branchId), range.from(), range.to(), limit).stream()
                 .map(r -> TopSupplierResponse.builder()
-                        .supplierId(((Number) r[0]).longValue())
+                        .supplierId(toLong(r[0]))
                         .supplierName((String) r[1])
                         .contactNo((String) r[2])
-                        .purchaseCount(((Number) r[3]).longValue())
-                        .totalPurchased(((Number) r[4]).doubleValue())
+                        .purchaseCount(toLong(r[3]))
+                        .totalPurchased(toDouble(r[4]))
                         .build())
                 .toList();
     }
 
+    // MISS-01: Cache profit summary for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
     public ProfitSummaryResponse getProfitSummary(Long requestedBranchId, LocalDate from, LocalDate to) {
-        String tenantId = TenantContext.getTenant();
-        Long branchId = resolveBranchId(getLoggedUser(), requestedBranchId);
+        validateDateRange(from, to);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         Long queryBranchId = toQueryBranchId(branchId);
-        List<Object[]> rawData = reportRepository.profitReportRaw(tenantId, queryBranchId, null, range.from(), range.to(), 1000000);
 
-        double totalRevenue = 0;
-        double totalCost = 0;
-        double grossProfit = 0;
+        // BUG-05 FIX: single-row SQL aggregate instead of loading up to 1,000,000 rows
+        // into a Java List and summing them in a for-loop
+        Object[] summary = reportRepository.profitSummaryRaw(queryBranchId, range.from(), range.to());
+        double totalRevenue = toDouble(summary[0]);
+        double totalCost    = toDouble(summary[1]);
+        double grossProfit  = toDouble(summary[2]);
 
-        for (Object[] row : rawData) {
-            totalRevenue += ((Number) row[4]).doubleValue();
-            totalCost += ((Number) row[5]).doubleValue();
-            grossProfit += ((Number) row[6]).doubleValue();
-        }
-
-        double totalExpenses = reportRepository.getTotalExpenses(tenantId, queryBranchId, range.from(), range.to());
+        double totalExpenses = reportRepository.getTotalExpenses(queryBranchId, range.from(), range.to());
         double netProfit = grossProfit - totalExpenses;
 
         return ProfitSummaryResponse.builder()
@@ -668,16 +714,16 @@ public class ReportService {
     }
 
     private TopSellingItemResponse mapProductPerformance(Object[] r) {
-        double revenue = ((Number) r[5]).doubleValue();
-        double profit = ((Number) r[7]).doubleValue();
+        double revenue = toDouble(r[5]);
+        double profit  = toDouble(r[7]);
         return TopSellingItemResponse.builder()
-                .itemId(((Number) r[0]).longValue())
+                .itemId(toLong(r[0]))
                 .itemName((String) r[1])
                 .itemType(parseItemType(r[2]))
-                .qtyUnit(r[3] != null ? r[3].toString() : null)
-                .qtySold(((Number) r[4]).doubleValue())
+                .qtyUnit(toStr(r[3]))
+                .qtySold(toDouble(r[4]))
                 .revenue(revenue)
-                .cost(((Number) r[6]).doubleValue())
+                .cost(toDouble(r[6]))
                 .profit(profit)
                 .marginPercent(revenue == 0 ? 0 : (profit / revenue) * 100)
                 .build();
@@ -725,6 +771,20 @@ public class ReportService {
 
     private Object safe(Object value) {
         return value == null ? "" : value;
+    }
+
+    // DUP-06 FIX: Centralised Object[] row extraction helpers — eliminate the
+    // ((Number) r[N]).doubleValue() / .longValue() cast pattern repeated 40+ times.
+    private static double toDouble(Object val) {
+        return val instanceof Number n ? n.doubleValue() : 0.0;
+    }
+
+    private static long toLong(Object val) {
+        return val instanceof Number n ? n.longValue() : 0L;
+    }
+
+    private static String toStr(Object val) {
+        return val == null ? null : val.toString();
     }
 
     private <T> PageResponse<T> pageResponse(List<T> items, int page, int size, long totalElements) {
@@ -865,5 +925,149 @@ public class ReportService {
             return null;
         }
         return OrderStatus.valueOf(value.toString());
+    }
+
+    // ─── Returns Reports ─────────────────────────────────────────────────
+
+    // MISS-01: Cache returns summary for 1 hour
+    @Cacheable(value = CacheConfig.CACHE_RPT_RETURNS_SUMMARY,
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId, #from, #to)")
+    public ReturnsSummaryResponse getReturnsSummary(Long branchId, LocalDate from, LocalDate to) {
+        validateDateRange(from, to);
+        User user = securityUtils.getCurrentUser();
+        Long resolvedBranch = resolveBranchId(user, branchId == null ? 0L : branchId);
+
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        LocalDateTime fromDt = range.from();
+        LocalDateTime toDt   = range.to();
+
+        long   saleRetCount  = reportRepository.saleReturnCount(resolvedBranch, fromDt, toDt);
+        double saleRetTotal  = reportRepository.saleReturnTotal(resolvedBranch, fromDt, toDt);
+        long   saleRetItems  = reportRepository.saleReturnItemCount(resolvedBranch, fromDt, toDt);
+
+        long   purRetCount   = reportRepository.purchaseReturnCount(resolvedBranch, fromDt, toDt);
+        double purRetTotal   = reportRepository.purchaseReturnTotal(resolvedBranch, fromDt, toDt);
+        long   purRetItems   = reportRepository.purchaseReturnItemCount(resolvedBranch, fromDt, toDt);
+
+        double grossSales    = reportRepository.totalSales(resolvedBranch, fromDt, toDt);
+        long   totalOrders   = reportRepository.totalOrders(resolvedBranch, fromDt, toDt);
+
+        BigDecimal saleRetBD = BigDecimal.valueOf(saleRetTotal);
+        BigDecimal purRetBD  = BigDecimal.valueOf(purRetTotal);
+        BigDecimal grossBD   = BigDecimal.valueOf(grossSales);
+        BigDecimal netRev    = grossBD.subtract(saleRetBD);
+        double returnRate    = totalOrders > 0 ? (saleRetCount * 100.0 / totalOrders) : 0.0;
+
+        return ReturnsSummaryResponse.builder()
+                .saleReturnCount(saleRetCount)
+                .saleReturnTotal(saleRetBD)
+                .saleReturnItemCount(saleRetItems)
+                .purchaseReturnCount(purRetCount)
+                .purchaseReturnTotal(purRetBD)
+                .purchaseReturnItemCount(purRetItems)
+                .totalReturnAmount(saleRetBD.add(purRetBD))
+                .grossSales(grossBD)
+                .netRevenue(netRev)
+                .returnRate(Math.round(returnRate * 100.0) / 100.0)
+                .build();
+    }
+
+    public List<TopReturnedItemResponse> getTopReturnedItems(Long branchId, LocalDate from, LocalDate to, int limit, String type) {
+        User user = securityUtils.getCurrentUser();
+        Long resolvedBranch = resolveBranchId(user, branchId == null ? 0L : branchId);
+
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        LocalDateTime fromDt = range.from();
+        LocalDateTime toDt   = range.to();
+
+        List<TopReturnedItemResponse> result = new ArrayList<>();
+
+        if ("PURCHASE".equalsIgnoreCase(type)) {
+            List<Object[]> rows = reportRepository.topReturnedPurchaseItemsRaw(resolvedBranch, fromDt, toDt, limit);
+            for (Object[] r : rows) {
+                result.add(TopReturnedItemResponse.builder()
+                        .itemId(r[0] != null ? toLong(r[0]) : null)
+                        .itemName(r[1] != null ? r[1].toString() : "")
+                        .barcode(r[2] != null ? r[2].toString() : null)
+                        .returnCount(toLong(r[3]))
+                        .totalReturnedQty(toLong(r[4]))
+                        .totalReturnAmount(r[5] != null ? new BigDecimal(r[5].toString()) : BigDecimal.ZERO)
+                        .build());
+            }
+        } else {
+            List<Object[]> rows = reportRepository.topReturnedSaleItemsRaw(resolvedBranch, fromDt, toDt, limit);
+            for (Object[] r : rows) {
+                result.add(TopReturnedItemResponse.builder()
+                        .itemId(r[0] != null ? toLong(r[0]) : null)
+                        .itemName(r[1] != null ? r[1].toString() : "")
+                        .barcode(r[2] != null ? r[2].toString() : null)
+                        .returnCount(toLong(r[3]))
+                        .totalReturnedQty(toLong(r[4]))
+                        .totalReturnAmount(r[5] != null ? new BigDecimal(r[5].toString()) : BigDecimal.ZERO)
+                        .build());
+            }
+        }
+        return result;
+    }
+
+    public List<ReturnReasonBreakdownResponse> getReturnReasonBreakdown(Long branchId, LocalDate from, LocalDate to) {
+        User user = securityUtils.getCurrentUser();
+        Long resolvedBranch = resolveBranchId(user, branchId == null ? 0L : branchId);
+
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        LocalDateTime fromDt = range.from();
+        LocalDateTime toDt   = range.to();
+
+        List<ReturnReasonBreakdownResponse> result = new ArrayList<>();
+
+        List<Object[]> saleRows = reportRepository.saleReturnReasonBreakdownRaw(resolvedBranch, fromDt, toDt);
+        for (Object[] r : saleRows) {
+            result.add(ReturnReasonBreakdownResponse.builder()
+                    .reason(r[0] != null ? r[0].toString() : "")
+                    .count(toLong(r[1]))
+                    .totalAmount(r[2] != null ? new BigDecimal(r[2].toString()) : BigDecimal.ZERO)
+                    .type("SALE")
+                    .build());
+        }
+
+        List<Object[]> purRows = reportRepository.purchaseReturnReasonBreakdownRaw(resolvedBranch, fromDt, toDt);
+        for (Object[] r : purRows) {
+            result.add(ReturnReasonBreakdownResponse.builder()
+                    .reason(r[0] != null ? r[0].toString() : "")
+                    .count(toLong(r[1]))
+                    .totalAmount(r[2] != null ? new BigDecimal(r[2].toString()) : BigDecimal.ZERO)
+                    .type("PURCHASE")
+                    .build());
+        }
+
+        return result;
+    }
+
+    public List<ReturnTrendPoint> getReturnTrend(Long branchId, LocalDate from, LocalDate to) {
+        User user = securityUtils.getCurrentUser();
+        Long resolvedBranch = resolveBranchId(user, branchId == null ? 0L : branchId);
+
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        LocalDateTime fromDt = range.from();
+        LocalDateTime toDt   = range.to();
+
+        // Use daily trend for ≤ 62 days, monthly otherwise
+        long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(fromDt.toLocalDate(), toDt.toLocalDate());
+        List<Object[]> rows = daysBetween <= 62
+                ? reportRepository.dailyReturnTrendRaw(resolvedBranch, fromDt, toDt)
+                : reportRepository.monthlyReturnTrendRaw(resolvedBranch, fromDt, toDt);
+
+        List<ReturnTrendPoint> result = new ArrayList<>();
+        for (Object[] r : rows) {
+            BigDecimal sale = r[1] != null ? new BigDecimal(r[1].toString()) : BigDecimal.ZERO;
+            BigDecimal pur  = r[2] != null ? new BigDecimal(r[2].toString()) : BigDecimal.ZERO;
+            result.add(ReturnTrendPoint.builder()
+                    .label(r[0] != null ? r[0].toString() : "")
+                    .saleReturns(sale)
+                    .purchaseReturns(pur)
+                    .total(sale.add(pur))
+                    .build());
+        }
+        return result;
     }
 }

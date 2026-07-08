@@ -5,12 +5,37 @@ import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.SubscriptionPlan;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 class SaasApiIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("pos_master")
+            .withUsername("posapp")
+            .withPassword("posapp");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () ->
+                "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
+                + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
 
     @Test
     void superAdminAndSubscriptionApisWork() throws Exception {
@@ -177,7 +202,7 @@ class SaasApiIntegrationTest extends ApiIntegrationTestSupport {
         String masterAdminToken = loginViaApiAlias("MASTER", "master-ops-admin", "Pass@123");
         assertFalse(masterAdminToken.isBlank());
 
-        assertTrue(userRepository.findByUsernameAndTenantId("master-ops-admin", "MASTER")
+        assertTrue(userRepository.findByUsername("master-ops-admin")
                 .map(user -> user.getRole() == Role.ADMIN)
                 .orElse(false));
     }

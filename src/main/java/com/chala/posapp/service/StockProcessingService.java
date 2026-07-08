@@ -31,10 +31,10 @@ import com.chala.posapp.repository.StockProcessingOutputRepository;
 import com.chala.posapp.repository.StockProcessingRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,37 +62,15 @@ public class StockProcessingService {
     private final StockBatchRepository stockBatchRepository;
     private final ItemRepository itemRepository;
     private final BranchRepository branchRepository;
+    private final SecurityUtils securityUtils;
     private final UserRepository userRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long enforceBranchAccess(Long requestedBranchId) {
-        User user = getLoggedUser();
-        if (isAdminLike(user)) {
-            return requestedBranchId;
-        }
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        if (requestedBranchId == null || requestedBranchId == 0L) {
-            return user.getBranchId();
-        }
-        if (!user.getBranchId().equals(requestedBranchId)) {
-            throw new BadRequestException("Cannot access another branch");
-        }
-        return requestedBranchId;
-    }
+    // DUP-05 FIX: securityUtils.enforceBranchAccess() centralised in SecurityUtils
 
     public List<StockProcessingSourceResponse> listSources(Long branchId) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         List<Item> sources = itemRepository.findByStockProcessingEnabledTrueAndActiveTrueOrderByNameAsc().stream()
                 .filter(this::isStockTrackedItem)
                 .toList();
@@ -137,6 +115,9 @@ public class StockProcessingService {
                     if (output == null) {
                         throw new ResourceNotFoundException("Processing output item not found: " + link.getOutputItemId());
                     }
+                    BigDecimal effectiveSellingPrice = link.getDefaultSellingPrice() != null
+                            ? link.getDefaultSellingPrice()
+                            : output.getSellingPrice();
                     return StockProcessingOutputLinkResponse.builder()
                             .outputItemId(output.getId())
                             .outputBarcode(output.getBarcode())
@@ -145,7 +126,7 @@ public class StockProcessingService {
                             .defaultUnit(output.getDefaultUnit())
                             .defaultQty(QuantityConversionUtil.toDisplayQuantity(output, link.getDefaultQuantity()))
                             .defaultQtyUnit(QuantityConversionUtil.primaryDisplayUnit(output))
-                            .defaultSellingPrice(output.getSellingPrice())
+                            .defaultSellingPrice(effectiveSellingPrice)
                             .waste(link.isWaste())
                             .build();
                 })
@@ -154,12 +135,12 @@ public class StockProcessingService {
 
     @Transactional
     public StockProcessingResponse create(CreateStockProcessingRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot process stock");
         }
 
-        Long branchId = enforceBranchAccess(request.getBranchId());
+        Long branchId = securityUtils.enforceBranchAccess(request.getBranchId());
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         if (!branch.isActive()) {
@@ -216,9 +197,15 @@ public class StockProcessingService {
                     ? QuantityConversionUtil.primaryDisplayUnit(outputItem)
                     : outputRequest.getQtyUnit();
             int outputBaseQty = QuantityConversionUtil.normalizeQuantity(outputItem, outputRequest.getQty(), outputUnit);
-            BigDecimal sellingPrice = outputRequest.getSellingPrice() == null
-                    ? outputItem.getSellingPrice()
-                    : outputRequest.getSellingPrice().stripTrailingZeros();
+            // Selling price priority: request override → link default → item selling price
+            BigDecimal sellingPrice;
+            if (outputRequest.getSellingPrice() != null) {
+                sellingPrice = outputRequest.getSellingPrice().stripTrailingZeros();
+            } else if (link.getDefaultSellingPrice() != null) {
+                sellingPrice = link.getDefaultSellingPrice();
+            } else {
+                sellingPrice = outputItem.getSellingPrice();
+            }
             preparedOutputs.add(new PreparedOutput(outputItem, outputBaseQty, outputRequest.getQty().stripTrailingZeros(), outputUnit, sellingPrice, link.isWaste()));
         }
 
@@ -231,6 +218,23 @@ public class StockProcessingService {
         }
 
         BigDecimal sourceCost = QuantityConversionUtil.calculateActualAmount(sourceItem, sourceBatch.getCostPrice(), sourceBaseQty);
+
+        // Sales Value Method: allocate source cost proportional to expected revenue (qty × sellingPrice)
+        BigDecimal totalExpectedRevenue = BigDecimal.ZERO;
+        for (PreparedOutput po : preparedOutputs) {
+            if (po.waste()) continue;
+            totalExpectedRevenue = totalExpectedRevenue.add(po.displayQty().multiply(po.sellingPrice()));
+        }
+        final boolean useSalesValue = totalExpectedRevenue.signum() > 0;
+
+        // Find index of last non-waste output (absorbs rounding drift)
+        int lastNonWasteIdx = -1;
+        for (int i = preparedOutputs.size() - 1; i >= 0; i--) {
+            if (!preparedOutputs.get(i).waste()) {
+                lastNonWasteIdx = i;
+                break;
+            }
+        }
 
         sourceBatch.setQuantity(sourceBatch.getQuantity() - sourceBaseQty);
         stockBatchRepository.save(sourceBatch);
@@ -250,12 +254,26 @@ public class StockProcessingService {
                 .build());
 
         List<StockProcessingOutput> savedOutputs = new ArrayList<>();
+        BigDecimal runningAllocated = BigDecimal.ZERO;
         int index = 1;
-        for (PreparedOutput preparedOutput : preparedOutputs) {
-            BigDecimal allocatedCost = preparedOutput.waste()
-                    ? BigDecimal.ZERO
-                    : sourceCost.multiply(BigDecimal.valueOf(preparedOutput.baseQty()))
-                    .divide(BigDecimal.valueOf(usableBaseQty), 2, RoundingMode.HALF_UP);
+        for (int i = 0; i < preparedOutputs.size(); i++) {
+            PreparedOutput preparedOutput = preparedOutputs.get(i);
+            BigDecimal allocatedCost;
+            if (preparedOutput.waste()) {
+                allocatedCost = BigDecimal.ZERO;
+            } else if (i == lastNonWasteIdx) {
+                // Last non-waste row absorbs any rounding drift so Σ == sourceCost
+                allocatedCost = sourceCost.subtract(runningAllocated).max(BigDecimal.ZERO);
+            } else if (useSalesValue) {
+                BigDecimal lineRevenue = preparedOutput.displayQty().multiply(preparedOutput.sellingPrice());
+                allocatedCost = sourceCost.multiply(lineRevenue)
+                        .divide(totalExpectedRevenue, 2, RoundingMode.HALF_UP);
+            } else {
+                // Fallback: physical qty ratio (all selling prices are zero)
+                allocatedCost = sourceCost.multiply(BigDecimal.valueOf(preparedOutput.baseQty()))
+                        .divide(BigDecimal.valueOf(usableBaseQty), 2, RoundingMode.HALF_UP);
+            }
+            runningAllocated = runningAllocated.add(allocatedCost);
 
             Long createdBatchId = null;
             if (!preparedOutput.waste()) {
@@ -297,7 +315,7 @@ public class StockProcessingService {
     }
 
     public Page<StockProcessingResponse> history(Long branchId, Long sourceItemId, LocalDate from, LocalDate to, int page, int size) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         LocalDateTime fromDateTime = from == null ? null : from.atStartOfDay();
         LocalDateTime toDateTime = to == null ? null : to.atTime(LocalTime.MAX);
 
@@ -318,7 +336,7 @@ public class StockProcessingService {
     public StockProcessingResponse get(Long id) {
         StockProcessing processing = stockProcessingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Stock processing record not found"));
-        enforceBranchAccess(processing.getBranch().getId());
+        securityUtils.enforceBranchAccess(processing.getBranch().getId());
         return mapResponse(
                 processing,
                 stockProcessingOutputRepository.findByProcessingIdOrderByIdAsc(processing.getId()),
@@ -329,14 +347,14 @@ public class StockProcessingService {
 
     @Transactional
     public StockProcessingResponse cancel(Long id, CancelStockProcessingRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot cancel stock processing");
         }
 
         StockProcessing processing = stockProcessingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Stock processing record not found"));
-        enforceBranchAccess(processing.getBranch().getId());
+        securityUtils.enforceBranchAccess(processing.getBranch().getId());
 
         if (processing.getStatus() == StockProcessingStatus.CANCELED) {
             throw new BadRequestException("Stock processing already canceled");

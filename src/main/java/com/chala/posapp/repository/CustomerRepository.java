@@ -18,14 +18,25 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     List<Customer> findByNameContainingIgnoreCase(String name);
 
+    // PERF-08 FIX: FULLTEXT search for POS customer lookup (search length >= 3).
+    // Requires V11 migration: ALTER TABLE customers ADD FULLTEXT INDEX ft_customers_name_phone (name, phone).
+    // Falls back to findByNameContainingIgnoreCase() in CustomerService for short (<3 char) inputs.
+    @Query(value = """
+        SELECT * FROM customers c
+        WHERE MATCH(c.name, c.phone) AGAINST (:search IN BOOLEAN MODE)
+          AND c.active = true
+        ORDER BY MATCH(c.name, c.phone) AGAINST (:search IN BOOLEAN MODE) DESC
+        LIMIT 30
+        """, nativeQuery = true)
+    List<Customer> searchFt(@Param("search") String search);
+
     @Query(value = """
     SELECT id, name, due_amount
     FROM customers
-    WHERE tenant_id = :tenantId
-      AND due_amount > 0
+    WHERE due_amount > 0
     ORDER BY due_amount DESC
 """, nativeQuery = true)
-    List<Object[]> creditDueRaw(@Param("tenantId") String tenantId);
+    List<Object[]> creditDueRaw();
 
     @Query("""
         SELECT c

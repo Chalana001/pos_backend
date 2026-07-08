@@ -19,6 +19,9 @@ public class ItemCreateRequest {
     @NotBlank
     private String name;
 
+    @Size(max = 160)
+    private String altName;
+
     @NotNull(message = "Sub category is required")
     private Long subCategoryId;
 

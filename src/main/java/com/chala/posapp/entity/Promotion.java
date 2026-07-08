@@ -11,8 +11,8 @@ import java.util.List;
 @Table(
         name = "promotions",
         indexes = {
-                @Index(name = "idx_tenant_promotion_active_dates", columnList = "tenant_id, active, start_at, end_at"),
-                @Index(name = "idx_tenant_promotion_branch", columnList = "tenant_id, branch_id")
+                @Index(name = "idx_promotion_active_dates", columnList = "active, start_at, end_at"),
+                @Index(name = "idx_promotion_branch", columnList = "branch_id")
         }
 )
 @Getter

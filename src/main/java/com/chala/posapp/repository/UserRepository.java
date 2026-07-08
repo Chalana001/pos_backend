@@ -15,10 +15,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findAllByBranchId(Long branchId);
     long countByRoleAndEnabledTrue(Role role);
 
-    Optional<User> findByUsernameAndTenantId(String superAdminUsername, String superAdminTenant);
-
-    @Query(value = "SELECT * FROM users WHERE tenant_id = :tenantId AND role = 'ADMIN' ORDER BY id ASC LIMIT 1", nativeQuery = true)
-    Optional<User> findFirstAdminByTenantIdNative(@Param("tenantId") String tenantId);
+    @Query(value = "SELECT * FROM users WHERE role = 'ADMIN' ORDER BY id ASC LIMIT 1", nativeQuery = true)
+    Optional<User> findFirstAdminNative();
 
     @Query("""
         SELECT u

@@ -9,11 +9,11 @@ import java.time.LocalDateTime;
 @Table(
         name = "expense_types",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "name"})
+                @UniqueConstraint(columnNames = {"name"})
         },
         indexes = {
-                @Index(name = "idx_tenant_expense_type_name", columnList = "tenant_id, name"),
-                @Index(name = "idx_tenant_expense_type_active", columnList = "tenant_id, active")
+                @Index(name = "idx_expense_type_name", columnList = "name"),
+                @Index(name = "idx_expense_type_active", columnList = "active")
         }
 )
 @Getter

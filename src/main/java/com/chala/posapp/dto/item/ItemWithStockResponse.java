@@ -12,6 +12,7 @@ public class ItemWithStockResponse {
     private Long id;
     private String barcode;
     private String name;
+    private String altName;
 
     private String categoryName;
     private String subCategoryName;

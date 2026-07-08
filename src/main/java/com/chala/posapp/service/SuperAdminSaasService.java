@@ -16,7 +16,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -36,6 +39,8 @@ public class SuperAdminSaasService {
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthService authService;
+    private final TenantProvisioningService tenantProvisioningService;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional(readOnly = true)
     public SuperAdminDashboardResponse getDashboard() {
@@ -92,7 +97,7 @@ public class SuperAdminSaasService {
 
         Page<TenantSubscription> subscriptions = tenantSubscriptionRepository.findAll(specification, pageable);
         List<ShopSummaryResponse> items = subscriptions.getContent().stream()
-                .map(subscription -> mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId())))
+                .map(subscription -> mapShop(subscription, countBranches(subscription.getTenantId())))
                 .toList();
 
         return PageResponse.<ShopSummaryResponse>builder()
@@ -135,6 +140,7 @@ public class SuperAdminSaasService {
                 .notes(trimToNull(request.getNote()))
                 .build();
         tenantSubscriptionRepository.save(subscription);
+        tenantProvisioningService.provisionTenantDatabase(tenantId);
 
         runInTenant(tenantId, () -> {
             if (userRepository.existsByUsername(adminUsername)) {
@@ -181,14 +187,14 @@ public class SuperAdminSaasService {
         subscription.setBlocked(request.isBlocked());
         subscription.setNotes(trimToNull(request.getReason()));
 
-        return mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId()));
+        return mapShop(subscription, countBranches(subscription.getTenantId()));
     }
 
     @Transactional(readOnly = true)
     public ShopDetailsResponse getShopDetails(String tenantId) {
         ensureSuperAdmin();
         TenantSubscription subscription = getSubscriptionOrThrow(tenantId);
-        long branchCount = branchRepository.countByTenantIdNative(subscription.getTenantId());
+        long branchCount = countBranches(subscription.getTenantId());
 
         Branch mainBranch = runInTenant(subscription.getTenantId(), () ->
                 branchRepository.findAll().stream()
@@ -244,8 +250,8 @@ public class SuperAdminSaasService {
         TenantSubscription subscription = getSubscriptionOrThrow(tenantId);
 
         runInTenant(subscription.getTenantId(), () -> {
-            User adminUser = userRepository.findByUsernameAndTenantId(subscription.getAdminUsername(), subscription.getTenantId())
-                    .orElseGet(() -> userRepository.findFirstAdminByTenantIdNative(subscription.getTenantId())
+            User adminUser = userRepository.findByUsername(subscription.getAdminUsername())
+                    .orElseGet(() -> userRepository.findFirstAdminNative()
                             .orElseThrow(() -> new ResourceNotFoundException("Tenant admin not found")));
 
             adminUser.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
@@ -253,7 +259,7 @@ public class SuperAdminSaasService {
             return null;
         });
 
-        return mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId()));
+        return mapShop(subscription, countBranches(subscription.getTenantId()));
     }
 
     @Transactional
@@ -273,7 +279,7 @@ public class SuperAdminSaasService {
                 : subscription.getPlan().getRenewalPrice() * request.getCycles();
         recordBilling(subscription.getTenantId(), subscription.getShopName(), BillingActionType.RENEWAL, amount, request.getNote(), superAdmin.getUsername());
 
-        return mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId()));
+        return mapShop(subscription, countBranches(subscription.getTenantId()));
     }
 
     @Transactional
@@ -294,7 +300,7 @@ public class SuperAdminSaasService {
         double amount = request.getAmountPaid() != null ? request.getAmountPaid() : newPlan.getInitialPrice();
         recordBilling(subscription.getTenantId(), subscription.getShopName(), BillingActionType.PLAN_CHANGE, amount, request.getNote(), superAdmin.getUsername());
 
-        return mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId()));
+        return mapShop(subscription, countBranches(subscription.getTenantId()));
     }
 
     @Transactional
@@ -308,7 +314,7 @@ public class SuperAdminSaasService {
         double amount = request.getAmountPaid() != null ? request.getAmountPaid() : 0.0;
         recordBilling(subscription.getTenantId(), subscription.getShopName(), BillingActionType.EXTRA_BRANCHES, amount, request.getNote(), superAdmin.getUsername());
 
-        return mapShop(subscription, branchRepository.countByTenantIdNative(subscription.getTenantId()));
+        return mapShop(subscription, countBranches(subscription.getTenantId()));
     }
 
     private User ensureSuperAdmin() {
@@ -335,6 +341,10 @@ public class SuperAdminSaasService {
                 .build());
     }
 
+    private long countBranches(String tenantId) {
+        return runInTenant(tenantId, () -> branchRepository.countAllNative());
+    }
+
     private ShopSummaryResponse mapShop(TenantSubscription subscription, long branchCount) {
         int baseBranches = subscription.getPlan() != null ? subscription.getPlan().getMaxBranches() : 0;
         int allowedBranches = baseBranches + subscription.getExtraBranches();
@@ -359,7 +369,7 @@ public class SuperAdminSaasService {
     private String resolveAdminUsername(TenantSubscription subscription) {
         String adminUsername = subscription.getAdminUsername();
         if (adminUsername == null || adminUsername.isBlank()) {
-            adminUsername = userRepository.findFirstAdminByTenantIdNative(subscription.getTenantId())
+            adminUsername = userRepository.findFirstAdminNative()
                     .map(User::getUsername)
                     .orElse("N/A");
         }
@@ -399,16 +409,12 @@ public class SuperAdminSaasService {
     }
 
     private <T> T runInTenant(String tenantId, Supplier<T> supplier) {
-        String previousTenant = TenantContext.getTenant();
-        TenantContext.setTenant(tenantId);
-        try {
-            return supplier.get();
-        } finally {
-            if (previousTenant == null) {
-                TenantContext.clear();
-            } else {
-                TenantContext.setTenant(previousTenant);
-            }
-        }
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        // TenantContext must be set BEFORE the transaction begins so Hibernate opens
+        // the session with the correct catalog. Wrapping execute() inside callWith()
+        // ensures resolveCurrentTenantIdentifier() sees the right tenant at session-open time.
+        return TenantContext.callWith(tenantId,
+                () -> transactionTemplate.execute(status -> supplier.get()));
     }
 }

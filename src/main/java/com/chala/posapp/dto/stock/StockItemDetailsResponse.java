@@ -18,6 +18,7 @@ public class StockItemDetailsResponse {
     private Long itemId;
     private String barcode;
     private String itemName;
+    private String altName;
     private ItemType itemType;
     private MeasurementUnit defaultUnit;
     private Integer reorderLevel;

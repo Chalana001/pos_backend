@@ -22,6 +22,7 @@ public class ItemImportRowData {
     private String importKey;
     private String barcode;
     private String name;
+    private String altName;
     private String enteredMainCategory;
     private Long categoryId;
     private String categoryName;

@@ -22,6 +22,7 @@ public class WarrantyResponse {
     private String customerName;
     private Long itemId;
     private String itemName;
+    private String altName;
     private String barcode;
     private String warrantyLabel;
     private int periodValue;

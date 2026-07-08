@@ -9,13 +9,13 @@ import java.time.LocalDateTime;
 @Table(
         name = "orders",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "invoice_no"}),
-                @UniqueConstraint(columnNames = {"tenant_id", "client_sale_id"})
+                @UniqueConstraint(columnNames = {"invoice_no"}),
+                @UniqueConstraint(columnNames = {"client_sale_id"})
         },
         indexes = {
-                @Index(name = "idx_tenant_invoice", columnList = "tenant_id, invoice_no"),
-                @Index(name = "idx_tenant_branch_order", columnList = "tenant_id, branch_id"),
-                @Index(name = "idx_tenant_client_sale", columnList = "tenant_id, client_sale_id")
+                @Index(name = "idx_invoice", columnList = "invoice_no"),
+                @Index(name = "idx_branch_order", columnList = "branch_id"),
+                @Index(name = "idx_client_sale", columnList = "client_sale_id")
         }
 )
 @Getter @Setter

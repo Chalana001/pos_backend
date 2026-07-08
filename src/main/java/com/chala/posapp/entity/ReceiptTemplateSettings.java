@@ -9,10 +9,10 @@ import java.time.LocalDateTime;
 @Table(
         name = "receipt_template_settings",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "branch_id", "template_type"})
+                @UniqueConstraint(columnNames = {"branch_id", "template_type"})
         },
         indexes = {
-                @Index(name = "idx_tenant_branch_receipt_template", columnList = "tenant_id, branch_id, template_type")
+                @Index(name = "idx_branch_receipt_template", columnList = "branch_id, template_type")
         }
 )
 @Getter
@@ -108,6 +108,11 @@ public class ReceiptTemplateSettings extends TenantEntity {
     @Column(name = "receipt_font_family", nullable = false, length = 40, columnDefinition = "varchar(40) default 'COURIER_NEW'")
     private String receiptFontFamily;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "item_name_source", nullable = false, length = 20, columnDefinition = "varchar(20) default 'PRIMARY'")
+    @Builder.Default
+    private ItemNameSource itemNameSource = ItemNameSource.PRIMARY;
+
     @Column(nullable = false)
     private int paperWidthMm;
 
@@ -128,6 +133,13 @@ public class ReceiptTemplateSettings extends TenantEntity {
 
     @Column(length = 160)
     private String creditsLine2;
+
+    @Lob
+    @Column(name = "template_lines", columnDefinition = "LONGTEXT")
+    private String templateLines;
+
+    @Column(name = "currency_symbol", length = 10, columnDefinition = "varchar(10) default 'LKR'")
+    private String currencySymbol;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

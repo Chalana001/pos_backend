@@ -16,12 +16,16 @@ import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.audit.Audited;
+import com.chala.posapp.util.SecurityUtils;
 import org.jspecify.annotations.Nullable;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Optional;
@@ -36,13 +40,13 @@ public class UserManagementService {
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final PlatformTransactionManager transactionManager;
+    private final SecurityUtils securityUtils;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
+    @Audited(entity = "USER", action = "CREATE",
+             summaryExpression = "'username=' + #request.username + ' role=' + #request.role")
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
         String username = request.getUsername().trim();
@@ -122,6 +126,9 @@ public class UserManagementService {
         return "User status updated";
     }
 
+    @Audited(entity = "USER", action = "RESET_PASSWORD",
+             idExpression = "#userId",
+             summaryExpression = "'userId=' + #userId")
     @Transactional
     public String resetPassword(Long userId, ResetPasswordRequest request) {
         User user = userRepository.findById(userId)
@@ -142,14 +149,12 @@ public class UserManagementService {
                 .build();
     }
 
+    // MISS-07: Removed debug System.out.println — use structured logging if needed
     public @Nullable List<UserResponse> getCashiersInBranch(Long branchId) {
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found in the system");
         }
-        List<User> cashiers = userRepository.findAllByBranchId(branchId);
-
-        System.out.println(cashiers);
-        return cashiers.stream()
+        return userRepository.findAllByBranchId(branchId).stream()
                 .map(this::map)
                 .collect(Collectors.toList());
     }
@@ -170,10 +175,17 @@ public class UserManagementService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .orElse("");
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        String plan = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(p -> p.getName() == null ? "" : p.getName().trim().toUpperCase())
+                                .orElse("")
+                ));
+        return plan == null ? "" : plan;
     }
 
     private boolean isFreePlan(String planName) {
@@ -188,7 +200,7 @@ public class UserManagementService {
     }
 
     public List<UserResponse> getSalesFilterUsers(Long branchId) {
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         Long effectiveBranchId = branchId != null && branchId > 0 ? branchId : null;
 
         if (currentUser.getRole() == Role.MANAGER) {

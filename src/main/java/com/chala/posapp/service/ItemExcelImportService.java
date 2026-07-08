@@ -70,6 +70,7 @@ public class ItemExcelImportService {
             "importKey",
             "barcode",
             "name",
+            "altName",
             "subCategoryId",
             "costPrice",
             "sellingPrice",
@@ -592,6 +593,7 @@ public class ItemExcelImportService {
                 .recipeIngredientOnly(true)
                 .barcode(recipeItem.getBarcode())
                 .name(recipeItem.getName())
+                .altName(recipeItem.getAltName())
                 .categoryId(category == null ? null : category.getId())
                 .categoryName(category == null ? null : category.getName())
                 .subCategoryId(subCategory == null ? null : subCategory.getId())
@@ -663,6 +665,7 @@ public class ItemExcelImportService {
                 .importKey(normalizeBlankToNull(readCell(row, headers.get("importKey"), formatter)))
                 .barcode(normalizeBlankToNull(readCell(row, headers.get("barcode"), formatter)))
                 .name(normalizeBlankToNull(readCell(row, headers.get("name"), formatter)))
+                .altName(normalizeBlankToNull(readCell(row, headers.get("altName"), formatter)))
                 .enteredMainCategory(normalizeBlankToNull(readCell(row, headers.get("mainCategory"), formatter)))
                 .enteredSubCategory(normalizeBlankToNull(rawSubCategory.isBlank() ? subCategoryNameFromIdColumn : rawSubCategory))
                 .subCategoryId(parsedSubCategoryId)
@@ -694,6 +697,7 @@ public class ItemExcelImportService {
                 .importKey(normalizeBlankToNull(inputRow.getImportKey()))
                 .barcode(normalizeBlankToNull(inputRow.getBarcode()))
                 .name(normalizeBlankToNull(inputRow.getName()))
+                .altName(normalizeBlankToNull(inputRow.getAltName()))
                 .enteredMainCategory(normalizeBlankToNull(inputRow.getEnteredMainCategory()))
                 .enteredSubCategory(normalizeBlankToNull(inputRow.getEnteredSubCategory()))
                 .costPrice(inputRow.getCostPrice())
@@ -792,6 +796,7 @@ public class ItemExcelImportService {
         ItemCreateRequest request = new ItemCreateRequest();
         request.setBarcode(row.getBarcode());
         request.setName(row.getName());
+        request.setAltName(row.getAltName());
         request.setSubCategoryId(row.getSubCategoryId());
         request.setCostPrice(row.getCostPrice());
         request.setSellingPrice(row.getSellingPrice());
@@ -1100,6 +1105,7 @@ public class ItemExcelImportService {
                 .importKey(row.getImportKey())
                 .barcode(row.getBarcode())
                 .name(row.getName())
+                .altName(row.getAltName())
                 .enteredMainCategory(row.getEnteredMainCategory())
                 .categoryId(row.getCategoryId())
                 .categoryName(row.getCategoryName())
@@ -1292,65 +1298,72 @@ public class ItemExcelImportService {
     }
 
     private void createSampleRows(Sheet sheet) {
+        // Columns: importKey(0), barcode(1), name(2), altName(3), subCategoryId(4),
+        //          costPrice(5), sellingPrice(6), reorderLevel(7), itemType(8), defaultUnit(9),
+        //          active(10), posVisible(11), kotEnabled(12), branchIds(13)
         Row normalRow = sheet.createRow(1);
         normalRow.createCell(0).setCellValue("N001");
         normalRow.createCell(1).setCellValue("");
         normalRow.createCell(2).setCellValue("Sample Ingredient");
-        normalRow.createCell(3).setCellValue(1);
-        normalRow.createCell(4).setCellValue(100);
-        normalRow.createCell(5).setCellValue(150);
-        normalRow.createCell(6).setCellValue(5);
-        normalRow.createCell(7).setCellValue("NORMAL");
-        normalRow.createCell(8).setCellValue("PCS");
-        normalRow.createCell(9).setCellValue("true");
+        normalRow.createCell(3).setCellValue("");
+        normalRow.createCell(4).setCellValue(1);
+        normalRow.createCell(5).setCellValue(100);
+        normalRow.createCell(6).setCellValue(150);
+        normalRow.createCell(7).setCellValue(5);
+        normalRow.createCell(8).setCellValue("NORMAL");
+        normalRow.createCell(9).setCellValue("PCS");
         normalRow.createCell(10).setCellValue("true");
-        normalRow.createCell(11).setCellValue("false");
-        normalRow.createCell(12).setCellValue("");
+        normalRow.createCell(11).setCellValue("true");
+        normalRow.createCell(12).setCellValue("false");
+        normalRow.createCell(13).setCellValue("");
 
         Row serviceRow = sheet.createRow(2);
         serviceRow.createCell(0).setCellValue("S001");
         serviceRow.createCell(1).setCellValue("");
         serviceRow.createCell(2).setCellValue("Delivery Fee");
-        serviceRow.createCell(3).setCellValue(9);
-        serviceRow.createCell(4).setCellValue(0);
-        serviceRow.createCell(5).setCellValue(300);
-        serviceRow.createCell(6).setCellValue(0);
-        serviceRow.createCell(7).setCellValue("SERVICE");
+        serviceRow.createCell(3).setCellValue("");
+        serviceRow.createCell(4).setCellValue(9);
+        serviceRow.createCell(5).setCellValue(0);
+        serviceRow.createCell(6).setCellValue(300);
+        serviceRow.createCell(7).setCellValue(0);
         serviceRow.createCell(8).setCellValue("SERVICE");
-        serviceRow.createCell(9).setCellValue("true");
+        serviceRow.createCell(9).setCellValue("SERVICE");
         serviceRow.createCell(10).setCellValue("true");
-        serviceRow.createCell(11).setCellValue("false");
-        serviceRow.createCell(12).setCellValue("1,2");
+        serviceRow.createCell(11).setCellValue("true");
+        serviceRow.createCell(12).setCellValue("false");
+        serviceRow.createCell(13).setCellValue("1,2");
 
         Row volumeRow = sheet.createRow(3);
         volumeRow.createCell(0).setCellValue("V001");
         volumeRow.createCell(1).setCellValue("");
         volumeRow.createCell(2).setCellValue("Coconut Oil");
-        volumeRow.createCell(3).setCellValue(1);
-        volumeRow.createCell(4).setCellValue(900);
-        volumeRow.createCell(5).setCellValue(1200);
-        volumeRow.createCell(6).setCellValue(2);
-        volumeRow.createCell(7).setCellValue("VOLUME");
-        volumeRow.createCell(8).setCellValue("L");
-        volumeRow.createCell(9).setCellValue("true");
+        volumeRow.createCell(3).setCellValue("");
+        volumeRow.createCell(4).setCellValue(1);
+        volumeRow.createCell(5).setCellValue(900);
+        volumeRow.createCell(6).setCellValue(1200);
+        volumeRow.createCell(7).setCellValue(2);
+        volumeRow.createCell(8).setCellValue("VOLUME");
+        volumeRow.createCell(9).setCellValue("L");
         volumeRow.createCell(10).setCellValue("true");
-        volumeRow.createCell(11).setCellValue("false");
-        volumeRow.createCell(12).setCellValue("");
+        volumeRow.createCell(11).setCellValue("true");
+        volumeRow.createCell(12).setCellValue("false");
+        volumeRow.createCell(13).setCellValue("");
 
         Row recipeRow = sheet.createRow(4);
         recipeRow.createCell(0).setCellValue("R001");
         recipeRow.createCell(1).setCellValue("");
         recipeRow.createCell(2).setCellValue("Sample Recipe");
-        recipeRow.createCell(3).setCellValue(3);
-        recipeRow.createCell(4).setCellValue(250);
-        recipeRow.createCell(5).setCellValue(450);
-        recipeRow.createCell(6).setCellValue(0);
-        recipeRow.createCell(7).setCellValue("RECIPE");
-        recipeRow.createCell(8).setCellValue("PCS");
-        recipeRow.createCell(9).setCellValue("true");
+        recipeRow.createCell(3).setCellValue("");
+        recipeRow.createCell(4).setCellValue(3);
+        recipeRow.createCell(5).setCellValue(250);
+        recipeRow.createCell(6).setCellValue(450);
+        recipeRow.createCell(7).setCellValue(0);
+        recipeRow.createCell(8).setCellValue("RECIPE");
+        recipeRow.createCell(9).setCellValue("PCS");
         recipeRow.createCell(10).setCellValue("true");
         recipeRow.createCell(11).setCellValue("true");
-        recipeRow.createCell(12).setCellValue("");
+        recipeRow.createCell(12).setCellValue("true");
+        recipeRow.createCell(13).setCellValue("");
     }
 
     private void createRecipeIngredientTemplateSheet(Workbook workbook, boolean ingredientsOnly) {

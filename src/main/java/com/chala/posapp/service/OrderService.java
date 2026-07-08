@@ -20,15 +20,23 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.exception.StockOverrideRequiredException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.audit.Audited;
+import com.chala.posapp.config.CacheConfig;
+import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -46,7 +54,7 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final OrderItemStockUsageRepository orderItemStockUsageRepository;
     private final ItemRepository itemRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final InvoiceService invoiceService;
     private final CustomerRepository customerRepository;
     private final CashShiftRepository cashShiftRepository;
@@ -63,43 +71,51 @@ public class OrderService {
     private final AppConfigurationService appConfigurationService;
     private final PromotionService promotionService;
     private final StockOverrideAuditRepository stockOverrideAuditRepository;
+    private final PlatformTransactionManager transactionManager;
+    private final UserRepository userRepository;
+    private final OrderReturnRepository orderReturnRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureBranchAccess(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Cannot access another branch");
         }
     }
 
+    // MISS-01: Evict all dashboard + report caches whenever a new order is placed.
+    // branchId comes from the request so we key-evict the right tenant+branch bucket.
+    // MISS-03: Audit every sale creation
+    @Audited(entity = "ORDER", action = "CREATE",
+             summaryExpression = "'Branch ' + #request.branchId + ' | items=' + #request.items.size()")
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_DAILY_SALES,      key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_MONTHLY_SALES,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_SUMMARY, allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_SELLING,  allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT,       allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY,allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_TREND,  allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_CATEGORY,allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_LOW_STOCK,        allEntries = true)
+    })
     public OrderResponse createOrder(CreateOrderRequest request) {
         return createOrderInternal(request, null);
     }
 
     @Transactional
     public OfflineSaleImportResponse importOfflineSale(OfflineSaleImportRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER && user.getRole() != Role.CASHIER) {
             throw new BadRequestException("Not allowed");
         }
@@ -166,11 +182,11 @@ public class OrderService {
     }
 
     private OrderResponse createOrderInternal(CreateOrderRequest request, OfflineOrderMetadata offlineOrderMetadata) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Long branchId;
         if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
-            branchId = requireAssignedBranch(user);
+            branchId = securityUtils.requireAssignedBranch(user);
             if (request.getBranchId() != null && !branchId.equals(request.getBranchId())) {
                 throw new BadRequestException("Cannot create orders for another branch");
             }
@@ -249,6 +265,7 @@ public class OrderService {
                     .batchId(consumption.primaryBatchId)
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
+                    .altName(item.getAltName())
                     .itemType(item.getItemType())
                     .qty(normalizedQty)
                     .displayQty(itemReq.getQty().stripTrailingZeros())
@@ -440,9 +457,11 @@ public class OrderService {
         return buildOrderResponse(savedOrder, savedOrderItems);
     }
 
+    @Audited(entity = "ORDER", action = "CANCEL",
+             summaryExpression = "'Invoice=' + #invoiceNo")
     @Transactional
     public OrderResponse cancelOrder(String invoiceNo, CancelOrderRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
@@ -471,7 +490,7 @@ public class OrderService {
             warranties.forEach(warranty -> warranty.setStatus(WarrantyStatus.VOID));
             warrantyRepository.saveAll(warranties);
         }
-        order.setCanceledAt(LocalDateTime.now());
+        // FIX: removed duplicate setCanceledAt() call that was here
         Order saved = orderRepository.save(order);
         reverseCashSaleFromOpenShift(saved);
 
@@ -492,7 +511,7 @@ public class OrderService {
     }
 
     public OrderResponse getOrder(String invoiceNo) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
@@ -502,7 +521,7 @@ public class OrderService {
 
     @Transactional
     public OrderResponse recordPayment(String invoiceNo, OrderPaymentRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
@@ -574,9 +593,9 @@ public class OrderService {
             String totalOperator,
             Double totalAmount
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Access denied: Only Admin or Manager can perform this action.");
         }
 
@@ -596,8 +615,8 @@ public class OrderService {
                     .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         }
 
-        if (!isAdminLike(user)) {
-            Long userBranchId = requireAssignedBranch(user);
+        if (!securityUtils.isAdminLike(user)) {
+            Long userBranchId = securityUtils.requireAssignedBranch(user);
             if (branchId == 0L) {
                 branchId = userBranchId;
             } else if (!userBranchId.equals(branchId)) {
@@ -1021,11 +1040,20 @@ public class OrderService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return false;
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .map(planName -> planName.equals("FREE") || planName.equals("MONTHLY_DEMO"))
-                .orElse(false);
+        // tenant_subscriptions lives in pos_master, not the tenant DB —
+        // switch context before the transaction opens the Hibernate session.
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        Boolean result = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                                .map(planName -> planName.equals("FREE") || planName.equals("MONTHLY_DEMO"))
+                                .orElse(false)
+                ));
+        return Boolean.TRUE.equals(result);
     }
 
     private boolean isFreePlanWithoutCustomerCredit() {
@@ -1230,6 +1258,7 @@ public class OrderService {
                         .itemId(orderItem.getItemId())
                         .barcode(orderItem.getBarcode())
                         .itemName(orderItem.getItemName())
+                        .altName(orderItem.getAltName())
                         .batchId(orderItem.getBatchId())
                         .qty(orderItem.getDisplayQty())
                         .qtyUnit(orderItem.getQtyUnit())
@@ -1263,6 +1292,14 @@ public class OrderService {
             }
         }
 
+        // Return summary — cheaply computed for every order response
+        long returnCount = orderReturnRepository.countByOriginalOrderId(order.getId());
+        double totalReturnedAmount = orderReturnRepository
+                .findByOriginalOrderIdOrderByCreatedAtDesc(order.getId())
+                .stream()
+                .mapToDouble(r -> r.getTotalRefundAmount())
+                .sum();
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .invoiceNo(order.getInvoiceNo())
@@ -1293,6 +1330,9 @@ public class OrderService {
                 .note(order.getNote())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
+                .hasReturns(returnCount > 0)
+                .returnCount((int) returnCount)
+                .totalReturnedAmount(totalReturnedAmount)
                 .build();
     }
 

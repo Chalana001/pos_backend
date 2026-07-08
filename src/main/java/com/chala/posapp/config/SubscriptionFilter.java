@@ -10,6 +10,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -23,6 +26,7 @@ import java.util.Optional;
 public class SubscriptionFilter extends OncePerRequestFilter {
 
     private final TenantSubscriptionRepository subscriptionRepository;
+    private final PlatformTransactionManager transactionManager;
     private static final Set<String> STANDARD_BLOCKED_PREFIXES = Set.of(
             "/reports",
             "/purchases",
@@ -64,7 +68,7 @@ public class SubscriptionFilter extends OncePerRequestFilter {
             return;
         }
 
-        Optional<TenantSubscription> subscriptionOpt = subscriptionRepository.findByTenantId(tenantId);
+        Optional<TenantSubscription> subscriptionOpt = findSubscriptionInMaster(tenantId);
 
         if (subscriptionOpt.isEmpty() ||
                 !subscriptionOpt.get().isActive() ||
@@ -106,6 +110,14 @@ public class SubscriptionFilter extends OncePerRequestFilter {
                     || isSharedLowerTierBlock(path, method);
         }
         return false;
+    }
+
+    private Optional<TenantSubscription> findSubscriptionInMaster(String tenantId) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        return TenantContext.callWith("MASTER",
+                () -> tx.execute(status -> subscriptionRepository.findByTenantId(tenantId)));
     }
 
     private String normalizeFeaturePath(String path) {

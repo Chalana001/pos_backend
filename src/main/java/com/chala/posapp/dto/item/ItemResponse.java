@@ -19,6 +19,7 @@ public class ItemResponse {
     private Long id;
     private String barcode;
     private String name;
+    private String altName;
 
     private Long categoryId;
     private String categoryName;

@@ -1,12 +1,13 @@
 package com.chala.posapp.dto.saas;
 
+import com.chala.posapp.util.validation.PasswordComplexity;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class ResetShopAdminPasswordRequest {
+    // MISS-08: enforce password complexity
     @NotBlank
-    @Size(min = 6, max = 100)
+    @PasswordComplexity
     private String newPassword;
 }

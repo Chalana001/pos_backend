@@ -29,6 +29,7 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final TenantFilter tenantFilter;
     private final SubscriptionFilter subscriptionFilter;
+    private final RateLimitFilter rateLimitFilter; // MISS-02
 
     @Bean
     public PasswordEncoder passwordEncoder(){
@@ -54,13 +55,18 @@ public class SecurityConfig {
                 "https://admin.chalanawijesingha.xyz",
                 "https://*.chalanawijesingha.xyz",
                 "https://chalanawijesingha.xyz",
-                "android-app://*",
-                "null"
+                "android-app://*"
+                // SECURITY FIX: removed "null" — it allows file:// and sandboxed iframes to call the API
         ));
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 
-        config.setAllowedHeaders(Arrays.asList("*"));
+        // SECURITY FIX: enumerate allowed headers instead of wildcard "*"
+        config.setAllowedHeaders(Arrays.asList(
+                "Authorization", "Content-Type", "X-Tenant-ID",
+                "X-Requested-With", "Accept", "Origin"
+        ));
+        config.setExposedHeaders(Arrays.asList("X-Total-Count", "Content-Disposition"));
 
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -76,15 +82,25 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // SECURITY FIX: add security headers
+                .headers(headers -> headers
+                        .contentTypeOptions(contentType -> {})
+                        .frameOptions(frame -> frame.deny())
+                        .xssProtection(xss -> {})
+                )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/login").permitAll()
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/saas/plans").permitAll()
                         .requestMatchers("/health").permitAll()
+                        // MISS-09: Swagger UI / OpenAPI spec — allow in non-prod only
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
 
+                // MISS-02: rate limiter runs first, before auth, so bots can't saturate auth
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(subscriptionFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

@@ -3,21 +3,25 @@ package com.chala.posapp.entity.supplier;
 import com.chala.posapp.entity.TenantEntity;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+// MISS-06: Auto-filter deleted suppliers from all JPA queries
+@SQLRestriction("deleted_at IS NULL")
 @Entity
 @Table(
         name = "suppliers",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "phone"}),
-                @UniqueConstraint(columnNames = {"tenant_id", "email"})
+                @UniqueConstraint(columnNames = {"phone"}),
+                @UniqueConstraint(columnNames = {"email"})
         },
         indexes = {
-                @Index(name = "idx_tenant_supplier_phone", columnList = "tenant_id, phone"),
-                @Index(name = "idx_tenant_supplier_email", columnList = "tenant_id, email")
+                @Index(name = "idx_supplier_phone", columnList = "phone"),
+                @Index(name = "idx_supplier_email", columnList = "email")
         }
 )
 @Getter
@@ -44,6 +48,10 @@ public class Supplier extends TenantEntity {
     private BigDecimal dueAmount = BigDecimal.ZERO;
 
     private Boolean active = true;
+
+    /** MISS-06: Soft-delete timestamp — null means not deleted. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SupplierContact> contacts = new ArrayList<>();

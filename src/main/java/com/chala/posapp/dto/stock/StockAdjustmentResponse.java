@@ -19,6 +19,7 @@ public class StockAdjustmentResponse {
     private Long itemId;
     private String itemBarcode;
     private String itemName;
+    private String altName;
     private StockAdjustmentType type;
     private int qtyChange;
     private BigDecimal displayQtyChange;

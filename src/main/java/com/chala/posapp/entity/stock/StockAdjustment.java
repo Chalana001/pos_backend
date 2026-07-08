@@ -13,8 +13,8 @@ import java.time.LocalDateTime;
         name = "stock_adjustments",
         indexes = {
                 // Tenant, Branch සහ Item අනුව Filter කරද්දී වේගය වැඩි කිරීමට
-                @Index(name = "idx_tenant_branch_item_adj", columnList = "tenant_id, branch_id, item_id"),
-                @Index(name = "idx_tenant_created_at_adj", columnList = "tenant_id, created_at")
+                @Index(name = "idx_branch_item_adj", columnList = "branch_id, item_id"),
+                @Index(name = "idx_created_at_adj", columnList = "created_at")
         }
 )
 @Getter @Setter

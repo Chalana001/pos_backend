@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 @Table(
         name = "pending_order_items",
         indexes = {
-                @Index(name = "idx_tenant_pending_order_items", columnList = "tenant_id, pending_order_id")
+                @Index(name = "idx_pending_order_items", columnList = "pending_order_id")
         }
 )
 @Getter

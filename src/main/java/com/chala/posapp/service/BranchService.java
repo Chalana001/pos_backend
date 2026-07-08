@@ -13,7 +13,10 @@ import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -24,6 +27,7 @@ public class BranchService {
 
     private final BranchRepository branchRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional
     public BranchResponse createBranch(BranchCreateRequest request) {
@@ -53,8 +57,14 @@ public class BranchService {
             return;
         }
 
-        TenantSubscription subscription = tenantSubscriptionRepository.findByTenantId(tenantId)
-                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found for tenant"));
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        TenantSubscription subscription = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .orElseThrow(() -> new ResourceNotFoundException("Subscription not found for tenant"))
+                ));
 
         int allowedBranches = subscription.getPlan().getMaxBranches() + subscription.getExtraBranches();
         long currentBranches = branchRepository.count();

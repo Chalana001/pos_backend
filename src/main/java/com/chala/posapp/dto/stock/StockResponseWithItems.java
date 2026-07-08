@@ -15,6 +15,7 @@ public class StockResponseWithItems {
     private Long itemId;
     private String barcode;
     private String itemName;
+    private String altName;
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
     private Long totalQuantity;
@@ -31,6 +32,7 @@ public class StockResponseWithItems {
             Long itemId,
             String barcode,
             String itemName,
+            String altName,
             BigDecimal costPrice,
             BigDecimal sellingPrice,
             Long totalQuantity,
@@ -45,6 +47,7 @@ public class StockResponseWithItems {
         this.itemId = itemId;
         this.barcode = barcode;
         this.itemName = itemName;
+        this.altName = altName;
         this.costPrice = costPrice;
         this.sellingPrice = sellingPrice;
         this.totalQuantity = totalQuantity;

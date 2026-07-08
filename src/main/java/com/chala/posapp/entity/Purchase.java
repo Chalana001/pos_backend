@@ -13,7 +13,7 @@ import java.util.List;
 @Table(
         name = "purchase",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "supplier_id", "invoice_no"})
+                @UniqueConstraint(columnNames = {"supplier_id", "invoice_no"})
         }
 )
 @Getter @Setter

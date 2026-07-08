@@ -21,29 +21,24 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
         String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
 
         Category groceryCategory = new Category();
-        groceryCategory.setTenantId(tenantId);
         groceryCategory.setName("Groceries");
         groceryCategory = categoryRepository.save(groceryCategory);
 
         SubCategory grocerySubCategory = new SubCategory();
-        grocerySubCategory.setTenantId(tenantId);
         grocerySubCategory.setName("Kitchen Stock");
         grocerySubCategory.setCategory(groceryCategory);
         grocerySubCategory = subCategoryRepository.save(grocerySubCategory);
 
         Category foodCategory = new Category();
-        foodCategory.setTenantId(tenantId);
         foodCategory.setName("Foods");
         foodCategory = categoryRepository.save(foodCategory);
 
         SubCategory foodSubCategory = new SubCategory();
-        foodSubCategory.setTenantId(tenantId);
         foodSubCategory.setName("Short Eats");
         foodSubCategory.setCategory(foodCategory);
         foodSubCategory = subCategoryRepository.save(foodSubCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Kitchen Supplier");
         supplier.setPhone("0712345678");
         supplier.setAddress("Supplier address");

@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.util.Optional;
 
 @Slf4j
 @Component
+@Order(2)
 @RequiredArgsConstructor
 public class AdminSeeder implements CommandLineRunner {
 
@@ -36,10 +38,8 @@ public class AdminSeeder implements CommandLineRunner {
             return;
         }
 
-        TenantContext.setTenant(superAdminTenant);
-
-        try {
-            Optional<User> existingAdmin = userRepository.findByUsernameAndTenantId(superAdminUsername, superAdminTenant);
+        TenantContext.runWith(superAdminTenant, () -> {
+            Optional<User> existingAdmin = userRepository.findByUsername(superAdminUsername);
 
             if (existingAdmin.isEmpty()) {
                 log.info("Creating Super Admin account...");
@@ -57,8 +57,6 @@ public class AdminSeeder implements CommandLineRunner {
             } else {
                 log.info("👍 Super Admin account already exists. Skipping creation.");
             }
-        } finally {
-            TenantContext.clear();
-        }
+        });
     }
 }

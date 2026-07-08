@@ -31,4 +31,9 @@ public class PurchaseResponse {
     private LocalDateTime createdAt;
     private LocalDateTime canceledAt;
     private List<GrnResponse> grnList;
+
+    // Return summary — populated on detail fetch
+    private boolean hasReturns;
+    private int returnCount;
+    private BigDecimal totalReturnedAmount;
 }

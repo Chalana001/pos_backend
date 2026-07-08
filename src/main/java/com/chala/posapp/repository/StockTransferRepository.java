@@ -41,10 +41,12 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
                   OR EXISTS (
                       SELECT 1
                       FROM StockTransferItem sti
+                      LEFT JOIN Item i ON i.id = sti.itemId
                       WHERE sti.transferId = st.id
                         AND (
                             LOWER(sti.itemName) LIKE LOWER(CONCAT('%', :search, '%'))
                             OR LOWER(sti.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%'))
                         )
                   )
               )
@@ -74,10 +76,12 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
                   OR EXISTS (
                       SELECT 1
                       FROM StockTransferItem sti
+                      LEFT JOIN Item i ON i.id = sti.itemId
                       WHERE sti.transferId = st.id
                         AND (
                             LOWER(sti.itemName) LIKE LOWER(CONCAT('%', :search, '%'))
                             OR LOWER(sti.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
+                            OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%'))
                         )
                   )
               )
@@ -91,4 +95,21 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
             @Param("toDateTime") LocalDateTime toDateTime,
             Pageable pageable
     );
+
+    // RPT-10: Stock transfer report — all transfers for a date range
+    @Query("""
+        SELECT st FROM StockTransfer st
+        WHERE (:fromBranchId IS NULL OR st.fromBranchId = :fromBranchId)
+          AND (:toBranchId   IS NULL OR st.toBranchId   = :toBranchId)
+          AND (:status       IS NULL OR st.status        = :status)
+          AND st.requestedAt BETWEEN :fromDate AND :toDate
+        ORDER BY st.requestedAt DESC
+        """)
+    Page<StockTransfer> findForReport(
+            @Param("fromBranchId") Long fromBranchId,
+            @Param("toBranchId")   Long toBranchId,
+            @Param("status")       StockTransferStatus status,
+            @Param("fromDate")     LocalDateTime fromDate,
+            @Param("toDate")       LocalDateTime toDate,
+            Pageable pageable);
 }

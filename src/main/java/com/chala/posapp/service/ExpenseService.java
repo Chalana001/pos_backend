@@ -7,10 +7,15 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.audit.Audited;
+import com.chala.posapp.config.CacheConfig;
+import com.chala.posapp.util.CacheKeyUtils;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,12 +29,22 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final ExpenseTypeRepository expenseTypeRepository;
     private final CashShiftRepository cashShiftRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
+    private final UserRepository userRepository;
 
+    // MISS-01: Evict dashboard KPIs + profit caches when a new expense is recorded
+    // MISS-03: Audit expense creation
+    @Audited(entity = "EXPENSE", action = "CREATE",
+             summaryExpression = "'Branch=' + #request.branchId + ' amount=' + #request.amount")
     @Transactional
+    @Caching(evict = {
+        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY, allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT,        allEntries = true)
+    })
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
 
         if (!branchRepository.existsById(branchId)) {
@@ -82,7 +97,7 @@ public class ExpenseService {
             Pageable pageable
     ) {
 
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         Long finalBranchId = requestedBranchId;
         Long cashierUserId = requestedCashierId;
 
@@ -109,7 +124,7 @@ public class ExpenseService {
     }
 
     public Page<ExpenseResponse> getShiftExpenses(Long shiftId, Pageable pageable) {
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         CashShift shift = cashShiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
@@ -151,11 +166,7 @@ public class ExpenseService {
                 .build();
     }
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {

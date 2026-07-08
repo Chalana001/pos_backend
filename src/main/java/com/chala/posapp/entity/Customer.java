@@ -2,17 +2,22 @@ package com.chala.posapp.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.time.LocalDateTime;
 
+// MISS-06: Auto-filter deleted customers from all JPA queries
+@SQLRestriction("deleted_at IS NULL")
 @Entity
 @Table(
         name = "customers",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "phone"})
+                @UniqueConstraint(columnNames = {"phone"})
         },
         indexes = {
-                @Index(name = "idx_tenant_customer_phone", columnList = "tenant_id, phone")
+                @Index(name = "idx_customer_phone", columnList = "phone"),
+                @Index(name = "idx_customer_active", columnList = "active"),
+                @Index(name = "idx_customer_due", columnList = "due_amount")
         }
 )
 @Getter @Setter
@@ -23,6 +28,13 @@ public class Customer extends TenantEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /**
+     * Optimistic locking — prevents two concurrent credit payments from both
+     * reading the same dueAmount and causing it to go negative (lost-update bug).
+     */
+    @Version
+    private Long version;
+
     @Column(nullable = false, length = 120)
     private String name;
 
@@ -32,7 +44,7 @@ public class Customer extends TenantEntity {
     @Column(length = 255)
     private String address;
 
-    @Column(nullable = false)
+    @Column(name = "due_amount", nullable = false)
     private double dueAmount;
 
     private Double creditLimit;
@@ -42,10 +54,14 @@ public class Customer extends TenantEntity {
 
     private LocalDateTime createdAt;
 
+    /** MISS-06: Soft-delete timestamp — null means not deleted. */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @PrePersist
     void onCreate() {
         createdAt = LocalDateTime.now();
-        active = true; // මෙතන පොඩි logic එකක් දැම්මා
-        if (dueAmount == 0) dueAmount = 0; // Default 0
+        active = true;
+        if (dueAmount == 0) dueAmount = 0;
     }
 }

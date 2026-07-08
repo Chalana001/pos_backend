@@ -7,11 +7,11 @@ import lombok.*;
 @Table(
         name = "promotion_targets",
         indexes = {
-                @Index(name = "idx_tenant_promotion_target_promotion", columnList = "tenant_id, promotion_id"),
-                @Index(name = "idx_tenant_promotion_target_item", columnList = "tenant_id, item_id"),
-                @Index(name = "idx_tenant_promotion_target_category", columnList = "tenant_id, category_id"),
-                @Index(name = "idx_tenant_promotion_target_subcategory", columnList = "tenant_id, sub_category_id"),
-                @Index(name = "idx_tenant_promotion_target_customer", columnList = "tenant_id, customer_id")
+                @Index(name = "idx_promotion_target_promotion", columnList = "promotion_id"),
+                @Index(name = "idx_promotion_target_item", columnList = "item_id"),
+                @Index(name = "idx_promotion_target_category", columnList = "category_id"),
+                @Index(name = "idx_promotion_target_subcategory", columnList = "sub_category_id"),
+                @Index(name = "idx_promotion_target_customer", columnList = "customer_id")
         }
 )
 @Getter

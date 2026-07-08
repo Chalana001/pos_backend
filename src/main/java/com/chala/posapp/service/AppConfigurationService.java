@@ -17,7 +17,10 @@ import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +31,7 @@ public class AppConfigurationService {
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final BranchRepository branchRepository;
     private final AuthService authService;
+    private final PlatformTransactionManager transactionManager;
 
     public AppConfigurationResponse getConfiguration(Long requestedBranchId) {
         Long branchId = resolveRequestedBranchId(requestedBranchId, false);
@@ -38,8 +42,8 @@ public class AppConfigurationService {
     public AppConfigurationResponse updateConfiguration(Long requestedBranchId, AppConfigurationRequest request) {
         Long branchId = resolveRequestedBranchId(requestedBranchId != null ? requestedBranchId : request.getBranchId(), true);
         AppConfiguration configuration = branchId == null
-                ? appConfigurationRepository.findByTenantIdAndBranchIdIsNull(currentTenantId()).orElseGet(this::buildDefaultConfiguration)
-                : appConfigurationRepository.findByTenantIdAndBranchId(currentTenantId(), branchId)
+                ? appConfigurationRepository.findByBranchIdIsNull().orElseGet(this::buildDefaultConfiguration)
+                : appConfigurationRepository.findByBranchId(branchId)
                 .orElseGet(() -> buildScopedConfiguration(branchId, getOrDefault(null)));
 
         configuration.setBranchId(branchId);
@@ -187,11 +191,11 @@ public class AppConfigurationService {
     private AppConfiguration getOrDefault(Long branchId) {
         Long normalizedBranchId = normalizeBranchId(branchId);
         if (normalizedBranchId != null) {
-            return appConfigurationRepository.findByTenantIdAndBranchId(currentTenantId(), normalizedBranchId)
+            return appConfigurationRepository.findByBranchId(normalizedBranchId)
                     .orElseGet(() -> getOrDefault(null));
         }
 
-        return appConfigurationRepository.findByTenantIdAndBranchIdIsNull(currentTenantId())
+        return appConfigurationRepository.findByBranchIdIsNull()
                 .orElseGet(this::buildDefaultConfiguration);
     }
 
@@ -346,10 +350,15 @@ public class AppConfigurationService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(subscription -> subscription.getPlan().getName())
-                .map(planName -> planName == null ? "" : planName.trim().toUpperCase())
-                .orElse("");
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        return TenantContext.callWith("MASTER", () -> tx.execute(status ->
+                tenantSubscriptionRepository.findByTenantId(tenantId)
+                        .map(sub -> sub.getPlan() != null && sub.getPlan().getName() != null
+                                ? sub.getPlan().getName().trim().toUpperCase()
+                                : "")
+                        .orElse("")));
     }
 
     private boolean isStandardPlan(String planName) {

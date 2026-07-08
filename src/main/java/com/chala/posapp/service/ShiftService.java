@@ -11,13 +11,13 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.util.SecurityUtils;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,35 +35,23 @@ public class ShiftService {
     private final CashShiftRepository cashShiftRepository;
     private final ExpenseRepository expenseRepository;
     private final CashDropRepository cashDropRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final OrderRepository orderRepository;
     private final AuthService authService;
     private final BranchRepository branchRepository;
     private final CustomerRepository customerRepository;
+    private final UserRepository userRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureManagerBranchAccess(User user, Long branchId) {
         if (user.getRole() != Role.MANAGER) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Manager can only access their branch");
         }
@@ -83,12 +71,12 @@ public class ShiftService {
 
     @Transactional
     public ShiftResponse openShift(OpenShiftRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         if (user.getBranchId() == null)
             throw new NotAssignedException("User branch not assigned");
 
-        if (user.getRole() != Role.CASHIER && user.getRole() != Role.MANAGER && !isAdminLike(user))
+        if (user.getRole() != Role.CASHIER && user.getRole() != Role.MANAGER && !securityUtils.isAdminLike(user))
             throw new BadRequestException("Not allowed");
 
         cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(user.getBranchId(), user.getId(), ShiftStatus.OPEN)
@@ -108,8 +96,14 @@ public class ShiftService {
     }
 
     public ShiftResponse getMyCurrentShift() {
-        User user = getLoggedUser();
-        if (user.getRole() != Role.ADMIN && user.getBranchId() == null)
+        User user = securityUtils.getCurrentUser();
+        // FIX (Bug #17): Admin with no branch assigned would cause NPE when branchId is null
+        // and is passed to findByBranchIdAndCashierUserIdAndStatus.
+        // Admins should use getAdminShift(branchId) instead.
+        if (securityUtils.isAdminLike(user)) {
+            throw new BadRequestException("Admin users should use the branch-scoped shift endpoint. Use /api/shifts/admin?branchId=<id>");
+        }
+        if (user.getBranchId() == null)
             throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
@@ -123,9 +117,9 @@ public class ShiftService {
 
     @Transactional(readOnly = true)
     public ShiftResponse getAdminShift(Long branchId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed: Only Admins/Managers can use this method");
         }
         if (branchId == null || branchId == 0) {
@@ -142,7 +136,7 @@ public class ShiftService {
 
 //    @Transactional
 //    public ShiftResponse addExpense(CreateExpenseRequest request) {
-//        User user = getLoggedUser();
+//        User user = securityUtils.getCurrentUser();
 //        if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
 //
 //        CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
@@ -166,7 +160,7 @@ public class ShiftService {
 
     @Transactional
     public ShiftResponse addCashDrop(CreateCashDropRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getBranchId() == null) throw new NotAssignedException("User branch not assigned");
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
@@ -193,9 +187,9 @@ public class ShiftService {
             throw new BadRequestException("Shift ID cannot be null");
         }
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
@@ -237,7 +231,7 @@ public class ShiftService {
 
     @Transactional
     public ShiftResponse closeShift(CloseShiftRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getBranchId() == null)
             throw new NotAssignedException("User branch not assigned");
 
@@ -273,7 +267,7 @@ public class ShiftService {
 
 //    @Transactional
 //    public ShiftResponse closeShift(CloseShiftRequest request) {
-//        User user = getLoggedUser();
+//        User user = securityUtils.getCurrentUser();
 //        if (user.getBranchId() == null)
 //            throw new NotAssignedException("User branch not assigned");
 //
@@ -326,15 +320,15 @@ public class ShiftService {
 //    }
 
     public List<ShiftResponse> getAllActiveShiftsByBranch(Long branchId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
         if (branchId == null || branchId == 0) {
             if (user.getRole() == Role.MANAGER) {
-                branchId = requireAssignedBranch(user);
+                branchId = securityUtils.requireAssignedBranch(user);
             } else {
             List<CashShift> allActiveShifts = cashShiftRepository.findAllByStatus(ShiftStatus.OPEN);
 
@@ -358,14 +352,14 @@ public class ShiftService {
     }
 
     public Page<ShiftResponse> getAllShifts(Long branchId, Long cashierId, LocalDateTime start, LocalDateTime end, ShiftStatus status, int page, int size) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
         if (user.getRole() == Role.MANAGER) {
-            Long userBranchId = requireAssignedBranch(user);
+            Long userBranchId = securityUtils.requireAssignedBranch(user);
             if (branchId == null) {
                 branchId = userBranchId;
             } else if (!userBranchId.equals(branchId)) {
@@ -392,13 +386,13 @@ public class ShiftService {
     }
 
     public ShiftResponse getShift(Long shiftId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         CashShift shift = getShiftForAdminOrManager(shiftId, user);
         return map(shift);
     }
 
     public Page<OrderResponse> getShiftOrders(Long shiftId, int page, int size) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         CashShift shift = getShiftForAdminOrManager(shiftId, user);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return orderRepository.findShiftOrders(
@@ -412,14 +406,14 @@ public class ShiftService {
     }
 
     public Page<ExpenseResponse> getShiftExpenses(Long shiftId, int page, int size) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         CashShift shift = getShiftForAdminOrManager(shiftId, user);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return expenseRepository.findByShiftId(shift.getId(), pageable).map(this::mapExpenseSummary);
     }
 
     private CashShift getShiftForAdminOrManager(Long shiftId, User user) {
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
@@ -460,7 +454,7 @@ public class ShiftService {
 //            throw new BadRequestException("Shift ID cannot be null");
 //        }
 //
-//        User user = getLoggedUser();
+//        User user = securityUtils.getCurrentUser();
 //
 //        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
 //            throw new RuntimeException("Not allowed");
@@ -501,9 +495,9 @@ public class ShiftService {
     @Transactional
     public ShiftResponse openShiftByBranch(Long branchId, OpenShiftRequest request) {
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
@@ -540,7 +534,7 @@ public class ShiftService {
 //            throw new BadRequestException("Shift ID cannot be null");
 //        }
 //
-//        User user = getLoggedUser();
+//        User user = securityUtils.getCurrentUser();
 //        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
 //            throw new RuntimeException("Not allowed");
 //
@@ -572,8 +566,8 @@ public class ShiftService {
         if (shiftId == null) {
             throw new BadRequestException("Shift ID cannot be null");
         }
-        User user = getLoggedUser();
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER)
+        User user = securityUtils.getCurrentUser();
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER)
             throw new BadRequestException("Not allowed");
 
         CashShift shift = cashShiftRepository.findById(shiftId)

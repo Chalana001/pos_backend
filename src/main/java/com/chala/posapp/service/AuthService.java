@@ -14,13 +14,17 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.security.JwtService;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.*;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 
@@ -34,6 +38,7 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional
     public void registerAdmin(RegisterRequest request) {
@@ -64,12 +69,10 @@ public class AuthService {
         String token = jwtService.generateToken(
                 user.getUsername(),
                 user.getRole().name(),
-                user.getTenantId()
+                TenantContext.getTenant()
         );
 
-        String shopName = tenantSubscriptionRepository.findByTenantId(user.getTenantId())
-                .map(subscription -> subscription.getShopName())
-                .orElse(null);
+        String shopName = resolveShopName(user);
 
         return new AuthResponse(
                 user.getId(),
@@ -92,9 +95,7 @@ public class AuthService {
 
     public CurrentUserResponse getCurrentUser() {
         User user = getLoggedUser();
-        String shopName = tenantSubscriptionRepository.findByTenantId(user.getTenantId())
-                .map(subscription -> subscription.getShopName())
-                .orElse(null);
+        String shopName = resolveShopName(user);
 
         return CurrentUserResponse.builder()
                 .userId(user.getId())
@@ -131,5 +132,20 @@ public class AuthService {
 
     private boolean hasOfflinePin(User user) {
         return user.getOfflinePinHash() != null && !user.getOfflinePinHash().isBlank();
+    }
+
+    private String resolveShopName(User user) {
+        String tenantId = TenantContext.getTenant();
+        if (tenantId == null || "MASTER".equalsIgnoreCase(tenantId)) {
+            return null;
+        }
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        return TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(sub -> sub.getShopName())
+                                .orElse(null)));
     }
 }

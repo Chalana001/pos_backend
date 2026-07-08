@@ -26,59 +26,41 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(String name, String barcode);
 
+    @Query("SELECT i FROM Item i WHERE LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
+            "OR (i.altName IS NOT NULL AND LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+            "OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%'))")
+    List<Item> searchForPurchase(@Param("search") String search);
+
+    // PERF-08 FIX: FULLTEXT search for POS product lookup (search length >= 3).
+    // Requires V11 migration: ALTER TABLE items ADD FULLTEXT INDEX ft_items_name_barcode (name, barcode, alt_name).
+    // Falls back to LIKE in ItemService for short (<3 char) searches such as single-digit barcodes.
+    @Query(value = """
+        SELECT * FROM items i
+        WHERE MATCH(i.name, i.barcode) AGAINST (:search IN BOOLEAN MODE)
+          AND i.active = true
+        ORDER BY MATCH(i.name, i.barcode) AGAINST (:search IN BOOLEAN MODE) DESC
+        LIMIT 50
+        """, nativeQuery = true)
+    List<Item> searchForPosFt(@Param("search") String search);
+
+    // PERF-08 FIX: FULLTEXT search for purchase item lookup (search length >= 3).
+    @Query(value = """
+        SELECT * FROM items i
+        WHERE MATCH(i.name, i.barcode) AGAINST (:search IN BOOLEAN MODE)
+        ORDER BY MATCH(i.name, i.barcode) AGAINST (:search IN BOOLEAN MODE) DESC
+        LIMIT 50
+        """, nativeQuery = true)
+    List<Item> searchForPurchaseFt(@Param("search") String search);
+
     List<Item> findByStockProcessingEnabledTrueAndActiveTrueOrderByNameAsc();
 
-    @Query(value = """
-            SELECT 
-                i.id,                       -- [0]
-                i.barcode,                  -- [1]
-                i.name,                     -- [2]
-                c.name AS cat_name,         -- [3] Category Name
-                sc.name AS sub_cat_name,    -- [4] Sub Category Name
-                i.cost_price,               -- [5]
-                i.selling_price,            -- [6]
-                i.reorder_level,            -- [7]
-                i.active,                   -- [8]
-                i.created_at,               -- [9]
-                COALESCE(SUM(sb.quantity), 0) AS qty -- [10]
-            FROM items i
-            LEFT JOIN sub_categories sc ON i.sub_category_id = sc.id
-            LEFT JOIN categories c ON sc.category_id = c.id
-            LEFT JOIN stock_batches sb 
-                ON sb.item_id = i.id AND sb.branch_id = :branchId
-            GROUP BY i.id, i.barcode, i.name, c.name, sc.name, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
-            ORDER BY i.id DESC
-            """, nativeQuery = true)
-    List<Object[]> itemsWithBranchStockRaw(@Param("branchId") Long branchId);
+    // PERF-01 FIX: itemsWithBranchStockRaw() and itemsWithTotalStockRaw() removed —
+    // both returned List<Object[]> with no LIMIT/OFFSET (10,000 items = 10,000 rows
+    // loaded on every stock page). Zero callers confirmed: stock listing is served
+    // by StockBatchRepository.getStockSummary() which already has proper pagination.
 
-    @Query(value = """
-            SELECT 
-                i.id,                       -- [0]
-                i.barcode,                  -- [1]
-                i.name,                     -- [2]
-                c.name AS cat_name,         -- [3] Category Name
-                sc.name AS sub_cat_name,    -- [4] Sub Category Name
-                i.cost_price,               -- [5]
-                i.selling_price,            -- [6]
-                i.reorder_level,            -- [7]
-                i.active,                   -- [8]
-                i.created_at,               -- [9]
-                COALESCE(SUM(sb.quantity), 0) AS qty -- [10]
-            FROM items i
-            LEFT JOIN sub_categories sc ON i.sub_category_id = sc.id
-            LEFT JOIN categories c ON sc.category_id = c.id
-            LEFT JOIN stock_batches sb ON sb.item_id = i.id
-            GROUP BY i.id, i.barcode, i.name, c.name, sc.name, i.cost_price, i.selling_price, i.reorder_level, i.active, i.created_at
-            ORDER BY i.id DESC
-            """, nativeQuery = true)
-    List<Object[]> itemsWithTotalStockRaw();
-
-    @Query("SELECT i FROM Item i LEFT JOIN i.subCategory sc LEFT JOIN sc.category c " +
-            "WHERE LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
-            "OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%')) " +
-            "OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
-            "OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))")
-    Page<Item> searchItems(@Param("search") String search, Pageable pageable);
+    // BUG-09 FIX: Removed redundant searchItems() — it had no callers and duplicated
+    // the simpler version of searchItemsWithFilters() below (which is the canonical method).
 
     @Query("""
             SELECT i FROM Item i
@@ -86,6 +68,7 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             LEFT JOIN sc.category c
             WHERE (:search IS NULL OR :search = ''
                 OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR (i.altName IS NOT NULL AND LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%')))
                 OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
                 OR LOWER(sc.name) LIKE LOWER(CONCAT('%', :search, '%'))
                 OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))

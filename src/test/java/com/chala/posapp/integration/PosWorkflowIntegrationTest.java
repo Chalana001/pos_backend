@@ -34,17 +34,14 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Processing Grocery");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Kitchen Prep");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Processing Supplier");
         supplier.setPhone("0713333333");
         supplier.setAddress("Supplier address");
@@ -350,17 +347,14 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Override Grocery");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Override Stock");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Override Supplier");
         supplier.setPhone("0711111111");
         supplier.setAddress("Supplier address");
@@ -482,11 +476,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Cashier Override Denied");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Stock");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -516,7 +508,6 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 .costPrice(java.math.BigDecimal.valueOf(80))
                 .sellingPrice(java.math.BigDecimal.valueOf(120))
                 .build();
-        zeroBatch.setTenantId(tenantId);
         stockBatchRepository.save(zeroBatch);
 
         JsonNode blocked = jsonRequest(
@@ -577,11 +568,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Cashier Override Allowed");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Stock");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -611,7 +600,6 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 .costPrice(java.math.BigDecimal.valueOf(80))
                 .sellingPrice(java.math.BigDecimal.valueOf(120))
                 .build();
-        zeroBatch.setTenantId(tenantId);
         stockBatchRepository.save(zeroBatch);
         int auditCountBefore = stockOverrideAuditRepository.findAll().size();
 
@@ -716,17 +704,14 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Half PCS");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Kitchen");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Half Supplier");
         supplier.setPhone("0712222222");
         supplier.setAddress("Supplier address");
@@ -867,7 +852,6 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         tenantSubscriptionRepository.save(fixture.subscription());
 
         Branch secondBranch = new Branch();
-        secondBranch.setTenantId(tenantId);
         secondBranch.setCode("B2");
         secondBranch.setName("Branch 2");
         secondBranch.setActive(true);
@@ -877,11 +861,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Grocery");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Dry Goods");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -922,17 +904,14 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Beverages");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Tea");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Ops Supplier");
         supplier.setPhone("0111111111");
         supplier.setEmail("ops@supplier.local");
@@ -1481,11 +1460,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Services");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Repairs");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -1621,11 +1598,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Services");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Delivery");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);

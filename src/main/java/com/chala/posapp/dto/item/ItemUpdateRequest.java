@@ -17,6 +17,9 @@ public class ItemUpdateRequest {
     @Size(min = 2, max = 160)
     private String name;
 
+    @Size(max = 160)
+    private String altName;
+
     private Long subCategoryId;
 
     @PositiveOrZero

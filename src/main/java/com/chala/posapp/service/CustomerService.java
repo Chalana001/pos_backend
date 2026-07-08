@@ -15,13 +15,12 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.OrderRepository;
-import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,13 +36,9 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
     private final CreditPaymentRepository creditPaymentRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     @Transactional
     public CustomerResponse create(CustomerCreateRequest request) {
@@ -98,8 +93,12 @@ public class CustomerService {
     }
 
     public List<CustomerResponse> search(String name) {
-        return customerRepository.findByNameContainingIgnoreCase(name.trim())
-                .stream().map(this::map).toList();
+        String term = name.trim();
+        // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars (fast), LIKE for short inputs
+        List<Customer> customers = term.length() >= 3
+                ? customerRepository.searchFt(term + "*")
+                : customerRepository.findByNameContainingIgnoreCase(term);
+        return customers.stream().map(this::map).toList();
     }
 
     @Transactional
@@ -123,7 +122,7 @@ public class CustomerService {
 
     @Transactional
     public CustomerResponse recordPayment(Long customerId, CustomerPaymentRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Customer customer = customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found with ID: " + customerId));

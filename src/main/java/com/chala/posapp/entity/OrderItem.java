@@ -9,8 +9,8 @@ import java.math.BigDecimal;
 @Table(
         name = "order_items",
         indexes = {
-                @Index(name = "idx_tenant_order_items_lookup", columnList = "tenant_id, order_id"),
-                @Index(name = "idx_tenant_item_sales_lookup", columnList = "tenant_id, item_id")
+                @Index(name = "idx_order_items_lookup", columnList = "order_id"),
+                @Index(name = "idx_item_sales_lookup", columnList = "item_id")
         }
 )
 @Getter @Setter
@@ -35,6 +35,9 @@ public class OrderItem extends TenantEntity {
 
     @Column(nullable = false, length = 160)
     private String itemName;
+
+    @Column(name = "alt_name", length = 160)
+    private String altName;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "item_type", length = 20)

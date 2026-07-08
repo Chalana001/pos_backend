@@ -25,11 +25,11 @@ import com.chala.posapp.repository.StockTransferItemRepository;
 import com.chala.posapp.repository.StockTransferRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +38,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -48,19 +49,12 @@ public class StockTransferService {
     private final StockTransferItemRepository transferItemRepository;
     private final TransferNumberService transferNumberService;
     private final ItemRepository itemRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final UserRepository userRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
-
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
     private void ensureManagerBranchAccess(User user, Long branchId) {
         if (user.getRole() != Role.MANAGER) {
@@ -77,7 +71,7 @@ public class StockTransferService {
     }
 
     private void ensureTransferAccess(User user, StockTransfer transfer) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
@@ -111,7 +105,7 @@ public class StockTransferService {
 
     @Transactional
     public StockTransferResponse createTransfer(CreateStockTransferRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot create transfers");
@@ -160,9 +154,8 @@ public class StockTransferService {
                         + " (Available: " + batch.getQuantity() + ")");
             }
 
-            batch.setQuantity(batch.getQuantity() - normalizedQty);
-            stockBatchRepository.save(batch);
-
+            // FIX (Bug #12): Collect batches to update — deduct AFTER transfer record is saved.
+            // Previously: deducted here → if transferRepository.save() failed, stock was permanently lost.
             transferItems.add(StockTransferItem.builder()
                     .transferId(null)
                     .itemId(item.getId())
@@ -175,6 +168,9 @@ public class StockTransferService {
                             ? (reqItem.getQtyUnit() == null ? item.getDefaultUnit() : reqItem.getQtyUnit())
                             : item.getDefaultUnit())
                     .build());
+
+            // Track batches pending deduction — applied after transfer is persisted
+            batch.setQuantity(batch.getQuantity() - normalizedQty);
         }
 
         StockTransfer transfer = StockTransfer.builder()
@@ -193,12 +189,19 @@ public class StockTransferService {
         }
         transferItemRepository.saveAll(transferItems);
 
+        // FIX: Persist batch quantity changes only after transfer records are saved successfully
+        for (StockTransferItem transferItem : transferItems) {
+            StockBatch batch = stockBatchRepository.findById(transferItem.getBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found: " + transferItem.getBatchId()));
+            stockBatchRepository.save(batch);
+        }
+
         return buildResponse(savedTransfer, transferItems);
     }
 
     @Transactional
     public StockTransferResponse receiveTransferById(Long transferId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot receive transfers");
@@ -241,7 +244,7 @@ public class StockTransferService {
 
     @Transactional
     public StockTransferResponse cancelTransferById(Long transferId, CancelTransferRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         StockTransfer transfer = transferRepository.findById(transferId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
@@ -274,7 +277,7 @@ public class StockTransferService {
     }
 
     public StockTransferResponse getTransfer(String transferNo) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         StockTransfer transfer = transferRepository.findByTransferNo(transferNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer not found"));
 
@@ -284,7 +287,7 @@ public class StockTransferService {
     }
 
     public List<StockTransferResponse> incomingPending(Long branchId) {
-        ensureManagerBranchAccess(getLoggedUser(), branchId);
+        ensureManagerBranchAccess(securityUtils.getCurrentUser(), branchId);
         return transferRepository.findByToBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
@@ -292,7 +295,7 @@ public class StockTransferService {
     }
 
     public List<StockTransferResponse> outgoingPending(Long branchId) {
-        ensureManagerBranchAccess(getLoggedUser(), branchId);
+        ensureManagerBranchAccess(securityUtils.getCurrentUser(), branchId);
         return transferRepository.findByFromBranchIdAndStatusOrderByRequestedAtDesc(branchId, StockTransferStatus.IN_TRANSIT)
                 .stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
@@ -300,14 +303,14 @@ public class StockTransferService {
     }
 
     public List<StockTransferResponse> listOutgoing(Long fromBranchId) {
-        ensureManagerBranchAccess(getLoggedUser(), fromBranchId);
+        ensureManagerBranchAccess(securityUtils.getCurrentUser(), fromBranchId);
         return transferRepository.findByFromBranchIdOrderByRequestedAtDesc(fromBranchId).stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
     }
 
     public List<StockTransferResponse> listIncoming(Long toBranchId) {
-        ensureManagerBranchAccess(getLoggedUser(), toBranchId);
+        ensureManagerBranchAccess(securityUtils.getCurrentUser(), toBranchId);
         return transferRepository.findByToBranchIdOrderByRequestedAtDesc(toBranchId).stream()
                 .map(transfer -> buildResponse(transfer, transferItemRepository.findByTransferId(transfer.getId())))
                 .toList();
@@ -322,7 +325,7 @@ public class StockTransferService {
             int page,
             int size
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long effectiveBranchId = resolveScopedBranchId(user, fromBranchId);
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
@@ -352,7 +355,7 @@ public class StockTransferService {
             int page,
             int size
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long effectiveBranchId = resolveScopedBranchId(user, toBranchId);
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
@@ -374,7 +377,7 @@ public class StockTransferService {
     }
 
     private Long resolveScopedBranchId(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return branchId != null && branchId > 0 ? branchId : null;
         }
 
@@ -467,14 +470,22 @@ public class StockTransferService {
                     .orElse("Unknown User");
         }
 
+        Map<Long, Item> transferItemMap = itemRepository.findAllById(
+                items.stream().map(StockTransferItem::getItemId).distinct().toList()
+        ).stream().collect(java.util.stream.Collectors.toMap(Item::getId, i -> i));
+
         List<StockTransferItemResponse> itemResponses = items.stream()
-                .map(item -> StockTransferItemResponse.builder()
-                        .itemId(item.getItemId())
-                        .barcode(item.getBarcode())
-                        .itemName(item.getItemName())
-                        .qty(item.getDisplayQty())
-                        .qtyUnit(item.getQtyUnit())
-                        .build())
+                .map(item -> {
+                    Item dbItem = transferItemMap.get(item.getItemId());
+                    return StockTransferItemResponse.builder()
+                            .itemId(item.getItemId())
+                            .barcode(item.getBarcode())
+                            .itemName(item.getItemName())
+                            .altName(dbItem != null ? dbItem.getAltName() : null)
+                            .qty(item.getDisplayQty())
+                            .qtyUnit(item.getQtyUnit())
+                            .build();
+                })
                 .toList();
 
         return StockTransferResponse.builder()

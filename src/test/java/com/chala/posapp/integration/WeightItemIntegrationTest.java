@@ -20,18 +20,15 @@ class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
         String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
 
         Category category = new Category();
-        category.setTenantId(tenantId);
         category.setName("Groceries");
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Spices");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Weight Supplier");
         supplier.setPhone("0711111111");
         supplier.setAddress("Supplier address");
@@ -39,7 +36,6 @@ class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
         supplier = supplierRepository.save(supplier);
 
         Supplier backupSupplier = new Supplier();
-        backupSupplier.setTenantId(tenantId);
         backupSupplier.setName("Backup Weight Supplier");
         backupSupplier.setPhone("0722222222");
         backupSupplier.setAddress("Backup supplier address");

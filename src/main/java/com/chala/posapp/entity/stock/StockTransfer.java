@@ -12,14 +12,12 @@ import java.util.List;
 @Table(
         name = "stock_transfers",
         uniqueConstraints = {
-                // 1. Multi-tenant Unique Constraint එක (transferNo එක tenant_id එකත් එක්ක Unique වෙයි)
-                @UniqueConstraint(columnNames = {"tenant_id", "transfer_no"})
+                @UniqueConstraint(columnNames = {"transfer_no"})
         },
         indexes = {
-                // 2. Index වලට Database Column Names පාවිච්චි කළා, ඒ වගේම tenant_id එකතු කළා
-                @Index(name = "idx_tenant_transfer_no", columnList = "tenant_id, transfer_no"),
-                @Index(name = "idx_tenant_transfer_branches", columnList = "tenant_id, from_branch_id, to_branch_id"),
-                @Index(name = "idx_tenant_transfer_status", columnList = "tenant_id, status")
+                @Index(name = "idx_transfer_no", columnList = "transfer_no"),
+                @Index(name = "idx_transfer_branches", columnList = "from_branch_id, to_branch_id"),
+                @Index(name = "idx_transfer_status", columnList = "status")
         }
 )
 @Getter @Setter

@@ -16,13 +16,15 @@ public interface WarrantyRepository extends JpaRepository<Warranty, Long> {
     @Query("""
         SELECT w
         FROM Warranty w
+        LEFT JOIN Item i ON i.id = w.itemId
         WHERE (:branchId IS NULL OR w.branchId = :branchId)
           AND (:search IS NULL OR :search = ''
                OR LOWER(w.warrantyNo) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(w.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(w.customerName) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(w.itemName) LIKE LOWER(CONCAT('%', :search, '%'))
-               OR LOWER(w.barcode) LIKE LOWER(CONCAT('%', :search, '%')))
+               OR LOWER(w.barcode) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%')))
         """)
     Page<Warranty> search(
             @Param("search") String search,

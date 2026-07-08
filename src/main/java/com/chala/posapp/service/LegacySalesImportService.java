@@ -14,8 +14,8 @@ import com.chala.posapp.repository.OrderRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -44,6 +44,7 @@ public class LegacySalesImportService {
     private final ItemRepository itemRepository;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
 
     @Transactional(readOnly = true)
     public LegacySalesImportPreviewResponse preview(MultipartFile salesFile, MultipartFile mappingFile, Long branchId, Long cashierUserId) {
@@ -146,11 +147,7 @@ public class LegacySalesImportService {
     @Transactional
     public int repairImportedSaleDates(Long branchId) {
         Branch branch = resolveBranch(branchId);
-        String tenantId = TenantContext.getTenant();
-        if (tenantId == null || tenantId.isBlank()) {
-            throw new BadRequestException("Tenant not found in request");
-        }
-        return orderRepository.repairLegacyImportedCreatedAt(tenantId, branch.getId());
+        return orderRepository.repairLegacyImportedCreatedAt(branch.getId());
     }
 
     private ImportPlan buildPlan(MultipartFile salesFile, MultipartFile mappingFile, Long branchId, Long cashierUserId) {
@@ -315,9 +312,9 @@ public class LegacySalesImportService {
     }
 
     private Branch resolveBranch(Long branchId) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long resolvedBranchId = branchId;
-        if (!isAdminLike(user)) {
+        if (!securityUtils.isAdminLike(user)) {
             if (user.getBranchId() == null) {
                 throw new NotAssignedException("User branch not assigned");
             }
@@ -326,7 +323,7 @@ public class LegacySalesImportService {
         if (resolvedBranchId == null) {
             throw new BadRequestException("branchId is required");
         }
-        if (!isAdminLike(user) && !resolvedBranchId.equals(user.getBranchId())) {
+        if (!securityUtils.isAdminLike(user) && !resolvedBranchId.equals(user.getBranchId())) {
             throw new BadRequestException("Cannot import sales for another branch");
         }
         return branchRepository.findById(resolvedBranchId)
@@ -334,7 +331,7 @@ public class LegacySalesImportService {
     }
 
     private User resolveCashier(Long cashierUserId, Long branchId) {
-        User loggedUser = getLoggedUser();
+        User loggedUser = securityUtils.getCurrentUser();
         Long resolvedCashierId = cashierUserId == null ? loggedUser.getId() : cashierUserId;
         User cashier = userRepository.findById(resolvedCashierId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cashier user not found"));
@@ -344,15 +341,7 @@ public class LegacySalesImportService {
         return cashier;
     }
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
-
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
     private Map<String, String> readMappingFile(MultipartFile mappingFile) {
         if (mappingFile == null || mappingFile.isEmpty()) {

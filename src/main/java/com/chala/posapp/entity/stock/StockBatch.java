@@ -15,12 +15,12 @@ import java.time.LocalDateTime;
 @Table(
         name = "stock_batches",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "batch_code"})
+                @UniqueConstraint(columnNames = {"batch_code"})
         },
         indexes = {
-                @Index(name = "idx_tenant_batch_item_branch", columnList = "tenant_id, item_id, branch_id"),
-                @Index(name = "idx_tenant_batch_expiry", columnList = "tenant_id, expire_date"),
-                @Index(name = "idx_tenant_batch_origin_branch", columnList = "tenant_id, origin_batch_id, branch_id")
+                @Index(name = "idx_batch_item_branch", columnList = "item_id, branch_id"),
+                @Index(name = "idx_batch_expiry", columnList = "expire_date"),
+                @Index(name = "idx_batch_origin_branch", columnList = "origin_batch_id, branch_id")
         }
 )
 @Getter @Setter

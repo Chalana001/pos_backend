@@ -13,4 +13,5 @@ public class GrnItemRequest {
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;
     private LocalDate expiryDate;
+    private Boolean zeroNegativeStock;
 }

@@ -13,6 +13,7 @@ public class StockTransferItemResponse {
     private Long itemId;
     private String barcode;
     private String itemName;
+    private String altName;
     private BigDecimal qty;
     private MeasurementUnit qtyUnit;
 }
