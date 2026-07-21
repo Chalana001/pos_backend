@@ -1,0 +1,87 @@
+package com.chala.posapp.dto.barcodelabel;
+
+import com.chala.posapp.entity.ItemNameSource;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
+import lombok.Data;
+
+import java.math.BigDecimal;
+
+@Data
+public class BarcodeLabelSettingsRequest {
+
+    @Min(20)
+    @Max(120)
+    private int labelWidthMm;
+
+    @Min(15)
+    @Max(100)
+    private int labelHeightMm;
+
+    @Min(0)
+    @Max(10)
+    private int paddingTopMm;
+
+    private boolean showShopName;
+
+    @Size(max = 60)
+    private String shopNameText;
+
+    @Min(5)
+    @Max(20)
+    private int shopNameFontSize;
+
+    private boolean shopNameBold;
+
+    private boolean showItemName;
+
+    private ItemNameSource itemNameSource;
+
+    @Min(5)
+    @Max(60)
+    private int itemNameMaxChars;
+
+    @Min(5)
+    @Max(20)
+    private int itemNameFontSize;
+
+    @Size(max = 20)
+    private String barcodeFormat;
+
+    @DecimalMin("0.5")
+    @DecimalMax("4.0")
+    private BigDecimal barcodeWidth;
+
+    @Min(15)
+    @Max(80)
+    private int barcodeHeight;
+
+    private boolean showBarcodeValue;
+
+    @Min(6)
+    @Max(20)
+    private int barcodeValueFontSize;
+
+    private boolean showPrice;
+
+    @Size(max = 10)
+    private String pricePrefix;
+
+    @Min(5)
+    @Max(24)
+    private int priceFontSize;
+
+    private boolean priceBold;
+
+    private boolean showFooterText;
+
+    @Size(max = 80)
+    private String footerText;
+
+    @Min(5)
+    @Max(16)
+    private int footerFontSize;
+}
