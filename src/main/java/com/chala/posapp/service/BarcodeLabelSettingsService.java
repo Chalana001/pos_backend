@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +25,10 @@ public class BarcodeLabelSettingsService {
     private static final BigDecimal DEFAULT_BARCODE_WIDTH = new BigDecimal("1.5");
     private static final BigDecimal MIN_BARCODE_WIDTH = new BigDecimal("0.5");
     private static final BigDecimal MAX_BARCODE_WIDTH = new BigDecimal("4.0");
+    private static final String DEFAULT_EXPIRY_PREFIX = "EXP:";
+    private static final String DEFAULT_EXPIRY_DATE_FORMAT = "dd/MM/yyyy";
+    private static final Set<String> ALLOWED_EXPIRY_DATE_FORMATS =
+            Set.of("dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd");
 
     private final BranchRepository branchRepository;
     private final BarcodeLabelSettingsRepository barcodeLabelSettingsRepository;
@@ -68,6 +73,14 @@ public class BarcodeLabelSettingsService {
         settings.setShowFooterText(request.isShowFooterText());
         settings.setFooterText(normalizeNullableText(request.getFooterText(), 80));
         settings.setFooterFontSize(clamp(request.getFooterFontSize(), 5, 16));
+        settings.setShowExpiry(request.isShowExpiry());
+        settings.setExpiryPrefix(normalizeExpiryPrefix(request.getExpiryPrefix()));
+        settings.setExpiryFontSize(clamp(request.getExpiryFontSize(), 5, 20));
+        settings.setExpiryDateFormat(normalizeExpiryDateFormat(request.getExpiryDateFormat()));
+        settings.setDirectPrintEnabled(request.isDirectPrintEnabled());
+        settings.setPrinterName(normalizeNullableText(request.getPrinterName(), 160));
+        settings.setPrinterCopies(clamp(request.getPrinterCopies(), 1, 10));
+        settings.setLayoutJson(normalizeLayoutJson(request.getLayoutJson()));
 
         BarcodeLabelSettings saved = barcodeLabelSettingsRepository.save(settings);
         return mapToResponse(saved, branch);
@@ -104,6 +117,13 @@ public class BarcodeLabelSettingsService {
                 .showFooterText(false)
                 .footerText(null)
                 .footerFontSize(6)
+                .showExpiry(false)
+                .expiryPrefix(DEFAULT_EXPIRY_PREFIX)
+                .expiryFontSize(7)
+                .expiryDateFormat(DEFAULT_EXPIRY_DATE_FORMAT)
+                .directPrintEnabled(false)
+                .printerName(null)
+                .printerCopies(1)
                 .build();
     }
 
@@ -147,6 +167,32 @@ public class BarcodeLabelSettingsService {
         return trimmed.length() > maxLength ? trimmed.substring(0, maxLength) : trimmed;
     }
 
+    private String normalizeExpiryPrefix(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_EXPIRY_PREFIX;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > 20 ? trimmed.substring(0, 20) : trimmed;
+    }
+
+    private String normalizeExpiryDateFormat(String value) {
+        if (value == null || !ALLOWED_EXPIRY_DATE_FORMATS.contains(value.trim())) {
+            return DEFAULT_EXPIRY_DATE_FORMAT;
+        }
+        return value.trim();
+    }
+
+    // Guard the layout JSON the same way receipt template lines are guarded:
+    // blank or non-array → null (renders from the legacy flat columns). The
+    // array's internal shape is validated/clamped on the client.
+    private String normalizeLayoutJson(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.startsWith("[") ? trimmed : null;
+    }
+
     private BarcodeLabelSettingsResponse mapToResponse(BarcodeLabelSettings settings, Branch branch) {
         return BarcodeLabelSettingsResponse.builder()
                 .branchId(settings.getBranchId())
@@ -174,6 +220,14 @@ public class BarcodeLabelSettingsService {
                 .showFooterText(settings.isShowFooterText())
                 .footerText(settings.getFooterText())
                 .footerFontSize(settings.getFooterFontSize())
+                .showExpiry(settings.isShowExpiry())
+                .expiryPrefix(settings.getExpiryPrefix())
+                .expiryFontSize(settings.getExpiryFontSize())
+                .expiryDateFormat(settings.getExpiryDateFormat())
+                .directPrintEnabled(settings.isDirectPrintEnabled())
+                .printerName(settings.getPrinterName())
+                .printerCopies(clamp(settings.getPrinterCopies(), 1, 10))
+                .layoutJson(settings.getLayoutJson())
                 .build();
     }
 }

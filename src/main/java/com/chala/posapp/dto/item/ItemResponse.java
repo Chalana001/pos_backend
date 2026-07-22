@@ -49,4 +49,7 @@ public class ItemResponse {
     private List<ItemIngredientResponse> ingredients;
     private List<StockProcessingOutputLinkResponse> processingOutputs;
     private List<StockBatchResponse> batches;
+
+    /** Earliest-expiry sellable batch (FEFO) — populated only by barcode-print endpoints. */
+    private LocalDateTime labelExpiry;
 }

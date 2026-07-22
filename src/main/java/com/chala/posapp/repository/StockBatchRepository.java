@@ -77,6 +77,21 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     List<StockBatch> findAllByBranchId(Long branchId);
 
+    /**
+     * FEFO lookup for barcode labels: the sellable batch (quantity > 0) with the
+     * earliest expireDate, scoped to a branch (null branchId = all branches).
+     * Callers should cap results to 1 via the Pageable (e.g. PageRequest.of(0, 1)).
+     */
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE (:branchId IS NULL OR sb.branch.id = :branchId)
+              AND sb.item.id = :itemId
+              AND sb.quantity > 0
+              AND sb.expireDate IS NOT NULL
+            ORDER BY sb.expireDate ASC
+            """)
+    List<StockBatch> findEarliestExpiryBatches(@Param("branchId") Long branchId, @Param("itemId") Long itemId, Pageable pageable);
+
     @Query("SELECT sb.item.id AS itemId, sb.item.barcode AS barcode, sb.item.name AS itemName, " +
             "sb.item.altName AS altName, " +
             "SUM(sb.quantity) AS totalQty, sb.item.reorderLevel AS reorderLevel, " +

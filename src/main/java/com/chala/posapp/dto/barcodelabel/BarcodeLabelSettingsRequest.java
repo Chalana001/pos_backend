@@ -84,4 +84,29 @@ public class BarcodeLabelSettingsRequest {
     @Min(5)
     @Max(16)
     private int footerFontSize;
+
+    private boolean showExpiry;
+
+    @Size(max = 20)
+    private String expiryPrefix;
+
+    @Min(5)
+    @Max(20)
+    private int expiryFontSize;
+
+    @Size(max = 20)
+    private String expiryDateFormat;
+
+    private boolean directPrintEnabled;
+
+    @Size(max = 160)
+    private String printerName;
+
+    @Min(1)
+    @Max(10)
+    private int printerCopies;
+
+    // Ordered element-array layout as a JSON string (validated in the service:
+    // must start with '['; otherwise stored as null → legacy layout).
+    private String layoutJson;
 }

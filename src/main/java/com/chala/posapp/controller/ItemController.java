@@ -176,13 +176,16 @@ public class ItemController {
 
     @GetMapping("/recent")
     public ResponseEntity<List<ItemResponse>> getRecentItems(
-            @RequestParam(name = "limit", defaultValue = "50") int limit) {
-        return ResponseEntity.ok(itemService.getRecentlyAddedItems(limit));
+            @RequestParam(name = "limit", defaultValue = "50") int limit,
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(itemService.getRecentlyAddedItems(limit, branchId));
     }
 
     @GetMapping("/search-print")
-    public ResponseEntity<List<ItemResponse>> searchItemsForPrint(@RequestParam(name = "query") String query) {
-        return ResponseEntity.ok(itemService.searchForBarcodePrint(query));
+    public ResponseEntity<List<ItemResponse>> searchItemsForPrint(
+            @RequestParam(name = "query") String query,
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(itemService.searchForBarcodePrint(query, branchId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

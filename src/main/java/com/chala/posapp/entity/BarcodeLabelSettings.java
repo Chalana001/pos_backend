@@ -98,6 +98,33 @@ public class BarcodeLabelSettings extends TenantEntity {
     @Column(name = "footer_font_size", nullable = false)
     private int footerFontSize;
 
+    @Column(name = "show_expiry", nullable = false)
+    private boolean showExpiry;
+
+    @Column(name = "expiry_prefix", nullable = false, length = 20)
+    private String expiryPrefix;
+
+    @Column(name = "expiry_font_size", nullable = false)
+    private int expiryFontSize;
+
+    @Column(name = "expiry_date_format", nullable = false, length = 20)
+    private String expiryDateFormat;
+
+    @Column(name = "direct_print_enabled", nullable = false, columnDefinition = "boolean default false")
+    private boolean directPrintEnabled;
+
+    @Column(name = "printer_name", length = 160)
+    private String printerName;
+
+    @Column(name = "printer_copies", nullable = false, columnDefinition = "int default 1")
+    private int printerCopies;
+
+    // Ordered element-array layout as a raw JSON string. null → render from the
+    // flat show*/font-size columns above (legacy layout).
+    @Lob
+    @Column(name = "layout_json", columnDefinition = "LONGTEXT")
+    private String layoutJson;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
