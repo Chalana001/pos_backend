@@ -55,6 +55,7 @@ import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -423,12 +424,12 @@ public class ItemService {
         }
     }
 
-    public List<ItemResponse> searchForBarcodePrint(String query) {
+    public List<ItemResponse> searchForBarcodePrint(String query, Long branchId) {
         String searchTerm = query.trim();
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream()
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
                 .collect(Collectors.toList());
     }
 
@@ -644,6 +645,10 @@ public class ItemService {
     }
 
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId) {
+        return mapToResponse(item, availableBaseQty, batches, branchId, null);
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId, LocalDateTime labelExpiry) {
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
         List<Long> branchIds = item.getItemType() == ItemType.SERVICE
@@ -694,6 +699,7 @@ public class ItemService {
                 .ingredients(ingredients)
                 .processingOutputs(processingOutputs)
                 .batches(batches)
+                .labelExpiry(labelExpiry)
                 .build();
     }
 
@@ -1069,11 +1075,20 @@ public class ItemService {
         return newBarcode;
     }
 
-    public List<ItemResponse> getRecentlyAddedItems(int limit) {
+    public List<ItemResponse> getRecentlyAddedItems(int limit, Long branchId) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));
 
         return itemRepository.findAll(pageable).stream()
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
                 .toList();
+    }
+
+    /** Earliest-expiry sellable batch (FEFO) for a barcode label, or null if none qualify. */
+    private LocalDateTime findLabelExpiry(Long branchId, Long itemId) {
+        return stockBatchRepository.findEarliestExpiryBatches(branchId, itemId, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .map(StockBatch::getExpireDate)
+                .orElse(null);
     }
 }

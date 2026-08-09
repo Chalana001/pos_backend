@@ -45,4 +45,15 @@ public class BarcodeLabelSettingsResponse {
     private boolean showFooterText;
     private String footerText;
     private int footerFontSize;
+
+    private boolean showExpiry;
+    private String expiryPrefix;
+    private int expiryFontSize;
+    private String expiryDateFormat;
+
+    private boolean directPrintEnabled;
+    private String printerName;
+    private int printerCopies;
+
+    private String layoutJson;
 }

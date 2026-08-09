@@ -5,13 +5,40 @@ import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// Runs on real MySQL (not H2) — this test exercises the FULLTEXT-backed
+// item search (MATCH...AGAINST), which H2 cannot execute.
+@ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("pos_master")
+            .withUsername("posapp")
+            .withPassword("posapp");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () ->
+                "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
+                + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
 
     @Test
     void recipeItemsSupportPendingDineInFlowAndIngredientStockRollback() throws Exception {
