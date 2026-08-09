@@ -209,7 +209,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
     """, nativeQuery = true)
-    Object[] profitSummaryRaw(
+    ProfitSummaryProjection profitSummaryRaw(
             @Param("branchId") Long branchId,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate

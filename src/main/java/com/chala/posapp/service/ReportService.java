@@ -28,6 +28,7 @@ import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.ReportRepository;
+import com.chala.posapp.repository.ProfitSummaryProjection;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.config.CacheConfig;
 import com.chala.posapp.util.CacheKeyUtils;
@@ -683,10 +684,10 @@ public class ReportService {
 
         // BUG-05 FIX: single-row SQL aggregate instead of loading up to 1,000,000 rows
         // into a Java List and summing them in a for-loop
-        Object[] summary = reportRepository.profitSummaryRaw(queryBranchId, range.from(), range.to());
-        double totalRevenue = toDouble(summary[0]);
-        double totalCost    = toDouble(summary[1]);
-        double grossProfit  = toDouble(summary[2]);
+        ProfitSummaryProjection summary = reportRepository.profitSummaryRaw(queryBranchId, range.from(), range.to());
+        double totalRevenue = summary == null ? 0 : toDouble(summary.getTotalRevenue());
+        double totalCost    = summary == null ? 0 : toDouble(summary.getTotalCost());
+        double grossProfit  = summary == null ? 0 : toDouble(summary.getGrossProfit());
 
         double totalExpenses = reportRepository.getTotalExpenses(queryBranchId, range.from(), range.to());
         double netProfit = grossProfit - totalExpenses;
