@@ -41,6 +41,7 @@ public class ReportExportJobService {
     private final ReportExportStorage storage;
     private final ObjectProvider<ReportExportEmailService> emailService;
     private final TransactionTemplate transactionTemplate;
+    private final ReportExportMetrics metrics;
 
     @Value("${app.report-exports.max-attempts:3}") private int maxAttempts;
     @Value("${app.report-exports.retry-delay-seconds:60}") private long retryDelaySeconds;
@@ -108,7 +109,9 @@ public class ReportExportJobService {
         if (job.getStatus() != ReportExportStatus.QUEUED) throw new BadRequestException("Only queued exports can be cancelled");
         job.setStatus(ReportExportStatus.CANCELLED);
         job.setCompletedAt(LocalDateTime.now());
-        return toResponse(repository.save(job));
+        ReportExportJob saved = repository.save(job);
+        metrics.increment("cancelled");
+        return toResponse(saved);
     }
 
     @Transactional
@@ -117,7 +120,9 @@ public class ReportExportJobService {
         if (job.getStatus() != ReportExportStatus.FAILED) throw new BadRequestException("Only failed exports can be retried");
         job.setStatus(ReportExportStatus.QUEUED); job.setAttemptCount(0); job.setErrorMessage(null);
         job.setStartedAt(null); job.setCompletedAt(null); job.setNextAttemptAt(LocalDateTime.now());
-        return toResponse(repository.save(job));
+        ReportExportJob saved = repository.save(job);
+        metrics.increment("manual_retry");
+        return toResponse(saved);
     }
 
     @Transactional
@@ -126,6 +131,7 @@ public class ReportExportJobService {
         if (job.getStatus() == ReportExportStatus.PROCESSING) throw new BadRequestException("Processing exports cannot be deleted");
         deleteStoredFile(job);
         repository.delete(job);
+        metrics.increment("deleted");
     }
 
     public void processQueuedJobs() {
@@ -138,8 +144,8 @@ public class ReportExportJobService {
     public void recoverStaleJobs() {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(staleAfterMinutes);
         for (ReportExportJob job : repository.findByStatusAndStartedAtBefore(ReportExportStatus.PROCESSING, cutoff)) {
-            repository.recover(job.getId(), ReportExportStatus.PROCESSING, ReportExportStatus.QUEUED,
-                    cutoff, LocalDateTime.now(), "Recovered after worker timeout");
+            if (repository.recover(job.getId(), ReportExportStatus.PROCESSING, ReportExportStatus.QUEUED,
+                    cutoff, LocalDateTime.now(), "Recovered after worker timeout") == 1) metrics.increment("recovered");
         }
     }
 
@@ -148,6 +154,7 @@ public class ReportExportJobService {
             if (job.getStatus() == ReportExportStatus.PROCESSING || job.getStatus() == ReportExportStatus.QUEUED) continue;
             deleteStoredFile(job);
             repository.delete(job);
+            metrics.increment("retention_deleted");
         }
     }
 
@@ -174,16 +181,20 @@ public class ReportExportJobService {
                 ReportExportEmailService sender = emailService.getIfAvailable();
                 if (sender == null) throw new IllegalStateException("Report email delivery is not configured");
                 sender.send(job.getEmailTo(), fileName, bytes); job.setEmailDeliveredAt(LocalDateTime.now());
+                metrics.increment("emailed");
             }
             job.setStatus(ReportExportStatus.COMPLETED); job.setCompletedAt(LocalDateTime.now());
+            metrics.increment("completed");
         } catch (Exception error) {
             String message = error.getMessage() == null ? "Export generation failed" : error.getMessage();
             job.setErrorMessage(message.substring(0, Math.min(message.length(), 500)));
             if (job.getAttemptCount() < job.getMaxAttempts()) {
                 job.setStatus(ReportExportStatus.QUEUED); job.setStartedAt(null);
                 job.setNextAttemptAt(LocalDateTime.now().plus(Duration.ofSeconds(retryDelaySeconds * job.getAttemptCount())));
+                metrics.increment("automatic_retry");
             } else {
                 job.setStatus(ReportExportStatus.FAILED); job.setCompletedAt(LocalDateTime.now());
+                metrics.increment("failed");
             }
         } finally {
             SecurityContextHolder.setContext(previousContext);
