@@ -73,6 +73,34 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
     }
 
     @Test
+    void demandForecastProjectsRecentDemandAndLabelsSparseHistory() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("forecast"), 1);
+        String tenantId = fixture.tenantId();
+        String token = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        Item steady = saveForecastItem(fixture, "FORECAST-STEADY", 10, 8, 20);
+        Item sparse = saveForecastItem(fixture, "FORECAST-SPARSE", 6, 5, 15);
+
+        for (int day = 1; day <= 20; day++) saveForecastSale(fixture, steady, 2000, day, "STEADY-" + day);
+        saveForecastSale(fixture, sparse, 1000, 2, "SPARSE-1");
+
+        JsonNode response = getJson("/api/reports/v2/demand-forecast?branchId=" + fixture.mainBranch().getId()
+                + "&forecastDays=30&targetCoverDays=30", tenantId, token);
+        assertEquals(90, response.path("historyDays").asInt());
+        assertEquals(30, response.path("forecastDays").asInt());
+        assertTrue(response.path("actionableItems").asLong() >= 1);
+
+        JsonNode steadyForecast = findByItemId(response.path("items"), steady.getId());
+        assertEquals("HIGH", steadyForecast.path("confidence").asText());
+        assertTrue(steadyForecast.path("projectedDemand").asDouble() > 0);
+        assertTrue(steadyForecast.path("suggestedReorderQty").asDouble() > 0);
+
+        JsonNode sparseForecast = findByItemId(response.path("items"), sparse.getId());
+        assertEquals("INSUFFICIENT", sparseForecast.path("confidence").asText());
+        assertEquals(0.0, sparseForecast.path("projectedDemand").asDouble(), 0.001);
+        assertFalse(sparseForecast.path("warning").asText().isBlank());
+    }
+
+    @Test
     void reportExportLifecycleSupportsSchedulesCancellationAndDeletion() throws Exception {
         TenantFixture fixture = seedTenantShop(uniqueKey("report-lifecycle"), 1);
         String tenantId = fixture.tenantId();
@@ -973,6 +1001,39 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
                 .qtyUnit(MeasurementUnit.PCS).costPrice(cost).unitPrice(revenue)
                 .discountType(DiscountType.NONE).discountValue(0.0).finalUnitPrice(revenue)
                 .lineCost(cost).lineTotal(revenue).build());
+    }
+
+    private Item saveForecastItem(TenantFixture fixture, String barcode, int stock, double cost, double selling) {
+        Category category = new Category();
+        category.setName(barcode + " category");
+        category = categoryRepository.save(category);
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName(barcode + " sub");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+        Item item = itemRepository.save(Item.builder().barcode(barcode).name(barcode).subCategory(subCategory)
+                .costPrice(BigDecimal.valueOf(cost)).sellingPrice(BigDecimal.valueOf(selling)).reorderLevel(3000)
+                .itemType(ItemType.NORMAL).defaultUnit(MeasurementUnit.PCS).active(true).build());
+        stockBatchRepository.save(StockBatch.builder().branch(fixture.mainBranch()).item(item).batchCode(barcode + "-B1")
+                .sourceType(StockBatchSourceType.PURCHASE).costPrice(BigDecimal.valueOf(cost))
+                .sellingPrice(BigDecimal.valueOf(selling)).quantity(stock * 1000).originalQuantity(stock * 1000).build());
+        return item;
+    }
+
+    private void saveForecastSale(TenantFixture fixture, Item item, int baseQty, int daysAgo, String invoiceNo) {
+        double displayedQty = baseQty / 1000.0;
+        Order order = orderRepository.save(Order.builder().invoiceNo(invoiceNo).branchId(fixture.mainBranch().getId())
+                .cashierUserId(fixture.admin().getId()).orderType(OrderType.CASH).paymentMethod("CASH")
+                .saleMode(SaleMode.TAKEAWAY).status(OrderStatus.COMPLETED).subTotal(displayedQty * item.getSellingPrice().doubleValue())
+                .billDiscount(0.0).grandTotal(displayedQty * item.getSellingPrice().doubleValue())
+                .paidAmount(displayedQty * item.getSellingPrice().doubleValue()).dueAmount(0.0)
+                .salePaidAmount(displayedQty * item.getSellingPrice().doubleValue()).saleDueAmount(0.0)
+                .createdAt(LocalDateTime.now().minusDays(daysAgo)).build());
+        orderItemRepository.save(OrderItem.builder().orderId(order.getId()).itemId(item.getId()).barcode(item.getBarcode())
+                .itemName(item.getName()).itemType(ItemType.NORMAL).qty(baseQty).displayQty(BigDecimal.valueOf(displayedQty))
+                .qtyUnit(MeasurementUnit.PCS).costPrice(item.getCostPrice().doubleValue()).unitPrice(item.getSellingPrice().doubleValue())
+                .discountType(DiscountType.NONE).discountValue(0.0).finalUnitPrice(item.getSellingPrice().doubleValue())
+                .lineCost(displayedQty * item.getCostPrice().doubleValue()).lineTotal(displayedQty * item.getSellingPrice().doubleValue()).build());
     }
 
     private void saveAgingOrder(Long branchId, Long cashierId, Long customerId, double due,

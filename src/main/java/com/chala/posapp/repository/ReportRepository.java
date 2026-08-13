@@ -100,6 +100,37 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                   @Param("salesFrom") LocalDateTime salesFrom);
 
     @Query(value = """
+        SELECT i.id, i.barcode, i.name, i.default_unit, i.item_type,
+          COALESCE((SELECT SUM(sb.quantity) FROM stock_batches sb WHERE sb.item_id = i.id AND (:branchId = 0 OR sb.branch_id = :branchId)), 0),
+          COALESCE(i.cost_price, 0), COALESCE(i.selling_price, 0), i.reorder_level,
+          COALESCE(SUM(CASE WHEN o.created_at >= :recentFrom THEN oi.qty ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN o.created_at >= :historyFrom AND o.created_at < :recentFrom THEN oi.qty ELSE 0 END), 0),
+          COUNT(DISTINCT CASE WHEN o.created_at >= :historyFrom THEN DATE(o.created_at) END)
+        FROM items i
+        LEFT JOIN order_items oi ON oi.item_id = i.id
+        LEFT JOIN orders o ON o.id = oi.order_id AND o.status = 'COMPLETED'
+          AND (:branchId = 0 OR o.branch_id = :branchId) AND o.created_at >= :historyFrom
+        WHERE i.active = true AND i.deleted_at IS NULL AND i.item_type <> 'SERVICE'
+          AND (:branchId = 0 OR EXISTS (SELECT 1 FROM stock_batches scoped_sb WHERE scoped_sb.item_id = i.id AND scoped_sb.branch_id = :branchId)
+               OR EXISTS (SELECT 1 FROM order_items scoped_oi JOIN orders scoped_o ON scoped_o.id = scoped_oi.order_id
+                          WHERE scoped_oi.item_id = i.id AND scoped_o.branch_id = :branchId))
+        GROUP BY i.id, i.barcode, i.name, i.default_unit, i.item_type, i.cost_price, i.selling_price, i.reorder_level
+        ORDER BY i.name
+        """, nativeQuery = true)
+    List<Object[]> demandForecastRaw(@Param("branchId") Long branchId,
+                                     @Param("historyFrom") LocalDateTime historyFrom,
+                                     @Param("recentFrom") LocalDateTime recentFrom);
+
+    @Query(value = """
+        SELECT oi.item_id, DATE(o.created_at), SUM(oi.qty)
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        WHERE o.status = 'COMPLETED' AND (:branchId = 0 OR o.branch_id = :branchId) AND o.created_at >= :historyFrom
+        GROUP BY oi.item_id, DATE(o.created_at)
+        """, nativeQuery = true)
+    List<Object[]> dailyItemDemandRaw(@Param("branchId") Long branchId,
+                                      @Param("historyFrom") LocalDateTime historyFrom);
+
+    @Query(value = """
         SELECT
           COALESCE((SELECT SUM(oi.line_total) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
           COALESCE((SELECT SUM(o.bill_discount) FROM orders o WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),

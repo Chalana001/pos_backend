@@ -424,6 +424,74 @@ public class NewReportService {
                 .estimatedReorderCost(items.stream().mapToDouble(StockHealthResponse.ItemHealth::getEstimatedReorderCost).sum()).items(items).build();
     }
 
+    public DemandForecastResponse demandForecast(Long requestedBranchId, int forecastDays, int targetCoverDays) {
+        if (forecastDays < 7 || forecastDays > 90) throw new BadRequestException("forecastDays must be between 7 and 90");
+        if (targetCoverDays < 1 || targetCoverDays > 90) throw new BadRequestException("targetCoverDays must be between 1 and 90");
+        final int historyDays = 90;
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        LocalDateTime recentFrom = LocalDate.now().minusDays(30).atStartOfDay();
+        LocalDateTime historyFrom = LocalDate.now().minusDays(historyDays).atStartOfDay();
+        Map<Long, List<Double>> dailyDemandByItem = reportRepository.dailyItemDemandRaw(qb(branchId), historyFrom).stream()
+                .collect(Collectors.groupingBy(row -> toLong(row[0]), Collectors.mapping(row -> toDouble(row[2]), Collectors.toList())));
+        List<DemandForecastResponse.ItemForecast> items = reportRepository.demandForecastRaw(qb(branchId), historyFrom, recentFrom)
+                .stream().map(row -> forecastItem(row, forecastDays, targetCoverDays, dailyDemandByItem.getOrDefault(toLong(row[0]), List.of()))).toList();
+        return DemandForecastResponse.builder()
+                .historyDays(historyDays).forecastDays(forecastDays).targetCoverDays(targetCoverDays)
+                .totalItems(items.size())
+                .actionableItems(items.stream().filter(item -> item.getSuggestedReorderQty() > 0).count())
+                .lowConfidenceItems(items.stream().filter(item -> !"HIGH".equals(item.getConfidence())).count())
+                .projectedRevenue(items.stream().mapToDouble(DemandForecastResponse.ItemForecast::getProjectedRevenue).sum())
+                .estimatedReorderCost(items.stream().mapToDouble(DemandForecastResponse.ItemForecast::getEstimatedReorderCost).sum())
+                .items(items).build();
+    }
+
+    private DemandForecastResponse.ItemForecast forecastItem(Object[] row, int forecastDays, int targetCoverDays, List<Double> dailyDemandValues) {
+        boolean scaled = "NORMAL".equals(toStr(row[4])) || "WEIGHT".equals(toStr(row[4])) || "VOLUME".equals(toStr(row[4]));
+        double factor = scaled ? 1000.0 : 1.0;
+        double stock = toDouble(row[5]) / factor;
+        double cost = toDouble(row[6]);
+        double selling = toDouble(row[7]);
+        double reorderLevel = toDouble(row[8]) / factor;
+        double recentSold = toDouble(row[9]) / factor;
+        double previousSold = toDouble(row[10]) / factor;
+        int activeDays = (int) toLong(row[11]);
+        double recentDaily = recentSold / 30.0;
+        double previousDaily = previousSold / 60.0;
+        double dailyDemand = recentSold > 0 ? recentDaily * 0.7 + previousDaily * 0.3 : 0;
+        double rawMean = dailyDemandValues.stream().mapToDouble(Double::doubleValue).average().orElse(0);
+        double variance = dailyDemandValues.stream().mapToDouble(value -> Math.pow(value - rawMean, 2)).average().orElse(0);
+        double coefficientOfVariation = rawMean <= 0 ? 0 : Math.sqrt(variance) / rawMean;
+        String confidence;
+        String warning;
+        String trend = recentSold <= 0 ? "NO_RECENT_DEMAND" : previousDaily <= 0 ? "NEW_DEMAND" : recentDaily >= previousDaily * 1.2 ? "RISING" : recentDaily <= previousDaily * 0.8 ? "FALLING" : "STABLE";
+        if (activeDays < 5 || recentSold + previousSold <= 0) {
+            confidence = "INSUFFICIENT";
+            warning = "Fewer than 5 selling days in the 90-day history; use the configured reorder level.";
+        } else if (recentSold <= 0) {
+            confidence = "LOW";
+            warning = "No sales in the last 30 days; older demand is not projected forward.";
+        } else if (activeDays >= 20 && coefficientOfVariation <= 1.0) {
+            confidence = "HIGH";
+            warning = null;
+        } else if (activeDays >= 10 && coefficientOfVariation <= 1.5) {
+            confidence = "MEDIUM";
+            warning = "Demand history is limited or variable; review before ordering.";
+        } else {
+            confidence = "LOW";
+            warning = "Demand is sparse or volatile; forecast is directional only.";
+        }
+        double projectedDemand = "INSUFFICIENT".equals(confidence) ? 0 : dailyDemand * forecastDays;
+        double reorderLevelGap = Math.max(0, reorderLevel - stock);
+        double suggested = "INSUFFICIENT".equals(confidence) ? 0 : Math.max(0, dailyDemand * targetCoverDays - stock);
+        return DemandForecastResponse.ItemForecast.builder()
+                .itemId(toLong(row[0])).barcode(toStr(row[1])).itemName(toStr(row[2])).unit(toStr(row[3]))
+                .qtyOnHand(stock).soldLast30Days(recentSold).soldPrevious60Days(previousSold).activeSalesDays(activeDays)
+                .averageDailyDemand(dailyDemand).projectedDemand(projectedDemand).projectedRevenue(projectedDemand * selling)
+                .estimatedStockoutDays(dailyDemand > 0 ? Math.max(0, stock) / dailyDemand : null)
+                .suggestedReorderQty(suggested).estimatedReorderCost(suggested * cost)
+                .reorderLevelGapQty(reorderLevelGap).trend(trend).confidence(confidence).warning(warning).build();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // RPT-06: Expense Report by Category
     // ═══════════════════════════════════════════════════════════════════════

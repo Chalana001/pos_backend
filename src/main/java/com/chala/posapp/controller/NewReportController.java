@@ -125,6 +125,15 @@ public class NewReportController {
         return ResponseEntity.ok(reportService.stockHealth(branchId, targetCoverDays));
     }
 
+    @GetMapping("/demand-forecast")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<DemandForecastResponse> demandForecast(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(defaultValue = "30") int forecastDays,
+            @RequestParam(defaultValue = "14") int targetCoverDays) {
+        return ResponseEntity.ok(reportService.demandForecast(branchId, forecastDays, targetCoverDays));
+    }
+
     // RPT-06: Expense Report by Category
     @GetMapping("/expenses")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
