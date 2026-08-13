@@ -20,8 +20,11 @@ public class StockMovementResponse {
     private double purchasesIn;      // quantity received via GRN
     private double salesOut;         // quantity sold
     private double returnsIn;        // customer returns (stock back in)
+    private double purchaseReturnsOut; // quantity returned to suppliers
     private double adjustmentsNet;   // stock adjustments (positive = in, negative = out)
     private double transfersIn;      // transfers received
     private double transfersOut;     // transfers sent
-    private double closingStock;     // opening + purchasesIn - salesOut + returnsIn + adjustmentsNet + transfersIn - transfersOut
+    private double processingIn;     // stock created by processing
+    private double processingOut;    // source stock consumed by processing
+    private double closingStock;
 }

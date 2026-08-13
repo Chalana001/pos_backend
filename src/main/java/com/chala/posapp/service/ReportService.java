@@ -2,10 +2,12 @@ package com.chala.posapp.service;
 
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.CategorySalesResponse;
+import com.chala.posapp.dto.report.CreditAgingResponse;
 import com.chala.posapp.dto.report.CreditDueResponse;
 import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
+import com.chala.posapp.dto.report.OwnerCommandCenterResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
 import com.chala.posapp.dto.report.ReturnReasonBreakdownResponse;
 import com.chala.posapp.dto.report.ReturnTrendPoint;
@@ -70,6 +72,7 @@ public class ReportService {
     private final StockBatchRepository stockBatchRepository;
     // BUG-07 FIX: securityUtils.getCurrentUser() removed — use SecurityUtils.getCurrentUser() instead
     private final SecurityUtils securityUtils;
+    private final NewReportService newReportService;
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) {
@@ -109,6 +112,68 @@ public class ReportService {
             throw new BadRequestException(
                 "Date range exceeds maximum of " + MAX_TREND_DAYS + " days for trend reports.");
         }
+    }
+
+    public OwnerCommandCenterResponse ownerCommandCenter(
+            Long requestedBranchId, LocalDate from, LocalDate to) {
+        validateDateRange(from, to);
+        if (from == null || to == null) {
+            throw new BadRequestException("'from' and 'to' dates are required");
+        }
+
+        long periodDays = java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1;
+        LocalDate comparisonTo = from.minusDays(1);
+        LocalDate comparisonFrom = comparisonTo.minusDays(periodDays - 1);
+
+        SalesSummaryResponse currentSales = salesSummary(requestedBranchId, from, to);
+        ProfitSummaryResponse currentProfit = getProfitSummary(requestedBranchId, from, to);
+        SalesSummaryResponse comparisonSales = salesSummary(requestedBranchId, comparisonFrom, comparisonTo);
+        ProfitSummaryResponse comparisonProfit = getProfitSummary(requestedBranchId, comparisonFrom, comparisonTo);
+        List<LowStockResponse> lowStockItems = lowStock(requestedBranchId);
+        List<CreditAgingResponse> creditAging = newReportService.creditAging(requestedBranchId);
+        ReturnsSummaryResponse returns = getReturnsSummary(requestedBranchId, from, to);
+
+        return OwnerCommandCenterResponse.builder()
+                .currentPeriod(OwnerCommandCenterResponse.Period.builder().from(from).to(to).build())
+                .comparisonPeriod(OwnerCommandCenterResponse.Period.builder()
+                        .from(comparisonFrom).to(comparisonTo).build())
+                .current(toOwnerMetrics(currentSales, currentProfit))
+                .comparison(toOwnerMetrics(comparisonSales, comparisonProfit))
+                .risks(OwnerCommandCenterResponse.Risks.builder()
+                        .lowStockItems(lowStockItems.size())
+                        .outOfStockItems(lowStockItems.stream().filter(item -> item.getTotalQty() <= 0).count())
+                        .totalReceivables(creditAging.stream().mapToDouble(CreditAgingResponse::getTotalDue).sum())
+                        .overdue91Plus(creditAging.stream().mapToDouble(CreditAgingResponse::getBucket91plus).sum())
+                        .overdueCustomerCount(creditAging.stream().filter(item -> item.getBucket91plus() > 0).count())
+                        .saleReturnAmount(returns.getSaleReturnTotal().doubleValue())
+                        .saleReturnRatePercent(returns.getReturnRate())
+                        .build())
+                .build();
+    }
+
+    private OwnerCommandCenterResponse.Metrics toOwnerMetrics(
+            SalesSummaryResponse sales, ProfitSummaryResponse profit) {
+        double totalSales = sales.getTotalSales();
+        double totalRevenue = profit.getTotalRevenue();
+        double averageOrder = sales.getTotalOrders() == 0 ? 0 : totalSales / sales.getTotalOrders();
+        double grossMargin = totalRevenue == 0 ? 0 : (profit.getGrossProfit() / totalRevenue) * 100;
+        double netMargin = totalRevenue == 0 ? 0 : (profit.getNetProfit() / totalRevenue) * 100;
+
+        return OwnerCommandCenterResponse.Metrics.builder()
+                .totalSales(totalSales)
+                .cashSales(sales.getCashSales())
+                .creditSales(sales.getCreditSales())
+                .totalDiscount(sales.getTotalDiscount())
+                .totalOrders(sales.getTotalOrders())
+                .averageOrderValue(averageOrder)
+                .totalRevenue(totalRevenue)
+                .totalCost(profit.getTotalCost())
+                .grossProfit(profit.getGrossProfit())
+                .grossMarginPercent(grossMargin)
+                .totalExpenses(profit.getTotalExpenses())
+                .netProfit(profit.getNetProfit())
+                .netMarginPercent(netMargin)
+                .build();
     }
 
     // MISS-01: Cache sales summary per branch+date range for 1 hour
@@ -620,8 +685,9 @@ public class ReportService {
         return stockBatchRepository.findLowStockItems(branchId);
     }
 
-    public List<CreditDueResponse> creditDueList() {
-        return customerRepository.creditDueRaw().stream()
+    public List<CreditDueResponse> creditDueList(Long requestedBranchId) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        return customerRepository.creditDueRaw(toQueryBranchId(branchId)).stream()
                 .map(r -> CreditDueResponse.builder()
                         .customerId(toLong(r[0]))
                         .customerName((String) r[1])

@@ -16,4 +16,7 @@ public class GrnReportSummary {
     private double totalAmount;
     private double totalPaid;
     private double totalDue;
+    private double totalReturns;
+    private double netReceivedAmount;
+    private long uniquePurchaseCount;
 }

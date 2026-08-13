@@ -12,6 +12,174 @@ import java.util.List;
 public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
+        SELECT 'HIGH_DISCOUNT', o.invoice_no, 'Manual bill discount at or above 20 percent', o.bill_discount, 'HIGH'
+        FROM orders o WHERE (:branchId=0 OR o.branch_id=:branchId) AND o.status='COMPLETED'
+          AND o.created_at BETWEEN :fromDate AND :toDate AND o.sub_total>0 AND (o.bill_discount/o.sub_total)*100>=20
+        UNION ALL
+        SELECT 'LARGE_RETURN', r.return_no, 'Completed refund at or above LKR 5,000', r.total_refund_amount, 'HIGH'
+        FROM order_returns r WHERE (:branchId=0 OR r.branch_id=:branchId) AND r.status='COMPLETED'
+          AND r.created_at BETWEEN :fromDate AND :toDate AND r.total_refund_amount>=5000
+        UNION ALL
+        SELECT 'CASH_SHORTAGE', CONCAT('Shift #',s.id), 'Closed shift cash shortage at or above LKR 500', ABS(s.cash_difference), 'CRITICAL'
+        FROM cash_shifts s WHERE (:branchId=0 OR s.branch_id=:branchId) AND s.status='CLOSED'
+          AND s.closed_at BETWEEN :fromDate AND :toDate AND s.cash_difference<=-500
+        UNION ALL
+        SELECT 'STALE_SHIFT', CONCAT('Shift #',s2.id), 'Open shift older than 12 hours', 0, 'HIGH'
+        FROM cash_shifts s2 WHERE (:branchId=0 OR s2.branch_id=:branchId) AND s2.status='OPEN'
+          AND s2.opened_at < :staleBefore
+        UNION ALL
+        SELECT 'LARGE_ADJUSTMENT', i.name, 'Stock adjustment at or above 100 display units', ABS(sa.display_qty_change), 'HIGH'
+        FROM stock_adjustments sa JOIN items i ON i.id=sa.item_id
+        WHERE (:branchId=0 OR sa.branch_id=:branchId) AND sa.created_at BETWEEN :fromDate AND :toDate
+          AND ABS(sa.display_qty_change)>=100
+        """, nativeQuery = true)
+    List<Object[]> exceptionActivityRaw(@Param("branchId") Long branchId,
+                                        @Param("fromDate") LocalDateTime fromDate,
+                                        @Param("toDate") LocalDateTime toDate,
+                                        @Param("staleBefore") LocalDateTime staleBefore);
+
+    @Query(value = """
+        SELECT b.id, b.name,
+          COUNT(o.id), COALESCE(SUM(o.grand_total),0), COALESCE(AVG(o.grand_total),0), COALESCE(SUM(o.bill_discount),0),
+          COALESCE((SELECT COUNT(*) FROM order_returns r WHERE r.branch_id=b.id AND r.status='COMPLETED' AND r.created_at BETWEEN :fromDate AND :toDate),0),
+          COALESCE((SELECT SUM(r2.total_refund_amount) FROM order_returns r2 WHERE r2.branch_id=b.id AND r2.status='COMPLETED' AND r2.created_at BETWEEN :fromDate AND :toDate),0),
+          COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.branch_id=b.id AND e.count_in_profit_report=true AND e.created_at BETWEEN :fromDate AND :toDate),0)
+        FROM branches b
+        LEFT JOIN orders o ON o.branch_id=b.id AND o.status='COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate
+        WHERE b.active=true
+        GROUP BY b.id,b.name
+        ORDER BY COALESCE(SUM(o.grand_total),0) DESC
+        """, nativeQuery = true)
+    List<Object[]> branchComparisonRaw(@Param("fromDate") LocalDateTime fromDate,
+                                       @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
+        SELECT c.id, c.name, c.phone,
+          MIN(o.created_at) AS firstPurchaseAt,
+          MAX(o.created_at) AS lastPurchaseAt,
+          SUM(CASE WHEN o.created_at BETWEEN :fromDate AND :toDate THEN 1 ELSE 0 END) AS periodOrders,
+          COUNT(o.id) AS lifetimeOrders,
+          COALESCE(SUM(CASE WHEN o.created_at BETWEEN :fromDate AND :toDate THEN o.grand_total ELSE 0 END), 0) AS periodSpend,
+          COALESCE(SUM(o.grand_total), 0) AS lifetimeSpend,
+          c.due_amount
+        FROM customers c
+        JOIN orders o ON o.customer_id = c.id
+        WHERE o.status = 'COMPLETED'
+          AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.created_at <= :toDate
+          AND c.deleted_at IS NULL
+        GROUP BY c.id, c.name, c.phone, c.due_amount
+        HAVING SUM(CASE WHEN o.created_at BETWEEN :fromDate AND :toDate THEN 1 ELSE 0 END) > 0
+        ORDER BY periodSpend DESC
+        """, nativeQuery = true)
+    List<Object[]> customerBehaviorRaw(@Param("branchId") Long branchId,
+                                       @Param("fromDate") LocalDateTime fromDate,
+                                       @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
+        SELECT i.id, i.barcode, i.name, i.default_unit, i.item_type,
+          COALESCE((SELECT SUM(sb.quantity) FROM stock_batches sb WHERE sb.item_id = i.id AND (:branchId = 0 OR sb.branch_id = :branchId)), 0),
+          i.reorder_level, COALESCE(i.cost_price, 0), COALESCE(i.selling_price, 0),
+          COALESCE((SELECT SUM(oi.qty) FROM order_items oi JOIN orders o ON o.id = oi.order_id
+            WHERE oi.item_id = i.id AND (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED'
+              AND o.created_at >= :salesFrom), 0),
+          (SELECT MAX(o2.created_at) FROM order_items oi2 JOIN orders o2 ON o2.id = oi2.order_id
+            WHERE oi2.item_id = i.id AND (:branchId = 0 OR o2.branch_id = :branchId) AND o2.status = 'COMPLETED'),
+          (SELECT s.name FROM supplier_items si JOIN suppliers s ON s.id = si.supplier_id
+            WHERE si.item_id = i.id ORDER BY si.primary_supplier DESC, si.id ASC LIMIT 1),
+          (SELECT MIN(sb2.expire_date) FROM stock_batches sb2 WHERE sb2.item_id = i.id
+            AND (:branchId = 0 OR sb2.branch_id = :branchId) AND sb2.quantity > 0 AND sb2.expire_date IS NOT NULL)
+        FROM items i
+        WHERE i.active = true AND i.deleted_at IS NULL
+          AND (:branchId = 0 OR EXISTS (SELECT 1 FROM stock_batches scoped_sb WHERE scoped_sb.item_id = i.id AND scoped_sb.branch_id = :branchId)
+               OR EXISTS (SELECT 1 FROM order_items scoped_oi JOIN orders scoped_o ON scoped_o.id = scoped_oi.order_id
+                          WHERE scoped_oi.item_id = i.id AND scoped_o.branch_id = :branchId))
+        ORDER BY i.name
+        """, nativeQuery = true)
+    List<Object[]> stockHealthRaw(@Param("branchId") Long branchId,
+                                  @Param("salesFrom") LocalDateTime salesFrom);
+
+    @Query(value = """
+        SELECT
+          COALESCE((SELECT SUM(oi.line_total) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(o.bill_discount) FROM orders o WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(ori.refund_line_amount) FROM order_return_items ori JOIN order_returns r ON r.id = ori.order_return_id WHERE (:branchId = 0 OR r.branch_id = :branchId) AND r.status = 'COMPLETED' AND r.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(oi.line_cost) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(CASE WHEN oi.qty > 0 THEN oi.line_cost * ori.return_qty / oi.qty ELSE 0 END) FROM order_return_items ori JOIN order_returns r ON r.id = ori.order_return_id JOIN order_items oi ON oi.id = ori.order_item_id WHERE (:branchId = 0 OR r.branch_id = :branchId) AND r.status = 'COMPLETED' AND r.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE (:branchId = 0 OR e.branch_id = :branchId) AND e.count_in_profit_report = true AND e.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND oi.line_total > 0 AND o.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND oi.line_total > 0 AND COALESCE(oi.line_cost, 0) <= 0 AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+        """, nativeQuery = true)
+    List<Object[]> profitAndLossRaw(@Param("branchId") Long branchId,
+                                    @Param("fromDate") LocalDateTime fromDate,
+                                    @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
+        SELECT movement_date, SUM(inflow) AS inflow, SUM(outflow) AS outflow
+        FROM (
+            SELECT DATE(o.created_at) movement_date,
+                   SUM(COALESCE(o.sale_paid_amount, CASE WHEN o.order_type = 'CASH' THEN LEAST(o.paid_amount, o.grand_total) ELSE 0 END)) inflow,
+                   0 outflow
+            FROM orders o
+            WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED'
+              AND o.created_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(o.created_at)
+            UNION ALL
+            SELECT DATE(cp.paid_at), SUM(cp.amount), 0
+            FROM credit_payments cp
+            WHERE (:branchId = 0 OR cp.branch_id = :branchId) AND UPPER(cp.payment_method) = 'CASH'
+              AND cp.paid_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(cp.paid_at)
+            UNION ALL
+            SELECT DATE(e.created_at), 0, SUM(e.amount)
+            FROM expenses e
+            WHERE (:branchId = 0 OR e.branch_id = :branchId)
+              AND e.created_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(e.created_at)
+            UNION ALL
+            SELECT DATE(p.created_at), 0, SUM(p.cash_source_amount)
+            FROM purchase p
+            WHERE (:branchId = 0 OR p.cash_source_branch_id = :branchId) AND p.status = 'COMPLETED'
+              AND p.cash_source IN ('BRANCH_CASH','CASH_DRAWER')
+              AND p.created_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(p.created_at)
+            UNION ALL
+            SELECT DATE(sp.paid_at), 0, SUM(sp.amount)
+            FROM supplier_payments sp
+            WHERE (:branchId = 0 OR sp.cash_source_branch_id = :branchId)
+              AND sp.cash_source IN ('BRANCH_CASH','CASH_DRAWER')
+              AND sp.paid_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(sp.paid_at)
+            UNION ALL
+            SELECT DATE(r.created_at), 0, SUM(r.total_refund_amount)
+            FROM order_returns r
+            WHERE (:branchId = 0 OR r.branch_id = :branchId) AND r.status = 'COMPLETED'
+              AND UPPER(r.refund_method) = 'CASH'
+              AND r.created_at BETWEEN :fromDate AND :toDate
+            GROUP BY DATE(r.created_at)
+        ) movements
+        GROUP BY movement_date
+        ORDER BY movement_date
+        """, nativeQuery = true)
+    List<Object[]> cashFlowDailyRaw(@Param("branchId") Long branchId,
+                                    @Param("fromDate") LocalDateTime fromDate,
+                                    @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
+        SELECT
+          COALESCE((SELECT SUM(COALESCE(o.sale_paid_amount, CASE WHEN o.order_type = 'CASH' THEN LEAST(o.paid_amount, o.grand_total) ELSE 0 END)) FROM orders o WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(cp.amount) FROM credit_payments cp WHERE (:branchId = 0 OR cp.branch_id = :branchId) AND UPPER(cp.payment_method) = 'CASH' AND cp.paid_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE (:branchId = 0 OR e.branch_id = :branchId) AND e.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(p.cash_source_amount) FROM purchase p WHERE (:branchId = 0 OR p.cash_source_branch_id = :branchId) AND p.status = 'COMPLETED' AND p.cash_source IN ('BRANCH_CASH','CASH_DRAWER') AND p.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(sp.amount) FROM supplier_payments sp WHERE (:branchId = 0 OR sp.cash_source_branch_id = :branchId) AND sp.cash_source IN ('BRANCH_CASH','CASH_DRAWER') AND sp.paid_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(r.total_refund_amount) FROM order_returns r WHERE (:branchId = 0 OR r.branch_id = :branchId) AND r.status = 'COMPLETED' AND UPPER(r.refund_method) = 'CASH' AND r.created_at BETWEEN :fromDate AND :toDate), 0),
+          COALESCE((SELECT SUM(cd.amount) FROM cash_drops cd WHERE (:branchId = 0 OR cd.branch_id = :branchId) AND cd.created_at BETWEEN :fromDate AND :toDate), 0)
+        """, nativeQuery = true)
+    List<Object[]> cashFlowTotalsRaw(@Param("branchId") Long branchId,
+                                     @Param("fromDate") LocalDateTime fromDate,
+                                     @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
         WHERE (:branchId = 0 OR o.branch_id = :branchId)
           AND o.status = 'COMPLETED'
@@ -527,7 +695,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                          @Param("toDate") LocalDateTime toDate);
 
     @Query(value = """
-        SELECT COALESCE(SUM(total_return_amount), 0)
+        SELECT COALESCE(SUM(total_refund_amount), 0)
         FROM order_returns
         WHERE (:branchId = 0 OR branch_id = :branchId)
           AND status = 'COMPLETED'
@@ -591,7 +759,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             ori.barcode,
             COUNT(DISTINCT orr.id)          AS return_count,
             COALESCE(SUM(ori.return_qty),0) AS total_returned_qty,
-            COALESCE(SUM(ori.return_line_amount),0) AS total_return_amount
+            COALESCE(SUM(ori.refund_line_amount),0) AS total_return_amount
         FROM order_return_items ori
         JOIN order_returns orr ON orr.id = ori.order_return_id
         WHERE (:branchId = 0 OR orr.branch_id = :branchId)
@@ -634,7 +802,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         SELECT
             reason,
             COUNT(*) AS cnt,
-            COALESCE(SUM(total_return_amount),0) AS total_amount
+            COALESCE(SUM(total_refund_amount),0) AS total_amount
         FROM order_returns
         WHERE (:branchId = 0 OR branch_id = :branchId)
           AND status = 'COMPLETED'
@@ -672,7 +840,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(CASE WHEN rtype = 'SALE' THEN amount ELSE 0 END), 0)     AS sale_returns,
             COALESCE(SUM(CASE WHEN rtype = 'PURCHASE' THEN amount ELSE 0 END), 0) AS purchase_returns
         FROM (
-            SELECT DATE(created_at) AS lbl, 'SALE' AS rtype, total_return_amount AS amount
+            SELECT DATE(created_at) AS lbl, 'SALE' AS rtype, total_refund_amount AS amount
             FROM order_returns
             WHERE (:branchId = 0 OR branch_id = :branchId)
               AND status = 'COMPLETED'
@@ -698,7 +866,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(SUM(CASE WHEN rtype = 'SALE' THEN amount ELSE 0 END), 0)     AS sale_returns,
             COALESCE(SUM(CASE WHEN rtype = 'PURCHASE' THEN amount ELSE 0 END), 0) AS purchase_returns
         FROM (
-            SELECT DATE_FORMAT(created_at, '%Y-%m') AS lbl, 'SALE' AS rtype, total_return_amount AS amount
+            SELECT DATE_FORMAT(created_at, '%Y-%m') AS lbl, 'SALE' AS rtype, total_refund_amount AS amount
             FROM order_returns
             WHERE (:branchId = 0 OR branch_id = :branchId)
               AND status = 'COMPLETED'
@@ -736,11 +904,11 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         LEFT JOIN (
             SELECT cashier_user_id,
                    COUNT(*)    AS returnCount,
-                   SUM(refund_amount) AS totalRefunds
+                   SUM(total_refund_amount) AS totalRefunds
             FROM order_returns
             WHERE (:branchId = 0 OR branch_id = :branchId)
               AND created_at BETWEEN :fromDate AND :toDate
-              AND status = 'APPROVED'
+               AND status = 'COMPLETED'
             GROUP BY cashier_user_id
         ) r ON r.cashier_user_id = o.cashier_user_id
         WHERE (:branchId = 0 OR o.branch_id = :branchId)
@@ -772,11 +940,15 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                 THEN COALESCE(SUM(sb.quantity), 0) / 1000.0
                 ELSE COALESCE(SUM(sb.quantity), 0)
             END                                                     AS qtyOnHand,
-            COALESCE(i.cost_price, 0)                               AS costPrice,
+            CASE
+                WHEN COALESCE(SUM(sb.quantity), 0) > 0
+                THEN COALESCE(SUM(sb.quantity * sb.cost_price), 0) / SUM(sb.quantity)
+                ELSE COALESCE(i.cost_price, 0)
+            END                                                     AS costPrice,
             CASE
                 WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME')
-                THEN (COALESCE(SUM(sb.quantity), 0) / 1000.0) * COALESCE(i.cost_price, 0)
-                ELSE COALESCE(SUM(sb.quantity), 0) * COALESCE(i.cost_price, 0)
+                THEN COALESCE(SUM(sb.quantity * sb.cost_price), 0) / 1000.0
+                ELSE COALESCE(SUM(sb.quantity * sb.cost_price), 0)
             END                                                     AS stockValue,
             COALESCE(i.selling_price, 0)                            AS sellingPrice,
             CASE
@@ -819,11 +991,19 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             COALESCE(g.total_amount, 0) - COALESCE(g.paid_amount, 0) AS dueAmount,
             g.note,
             g.received_at                               AS receivedAt,
-            u.username                                  AS createdByUsername
+            u.username                                  AS createdByUsername,
+            p.id                                        AS purchaseId,
+            p.invoice_no                                AS purchaseInvoiceNo,
+            CAST(p.status AS CHAR)                      AS purchaseStatus,
+            COALESCE(p.paid_amount, 0)                  AS purchasePaidAmount,
+            COALESCE(p.due_amount, 0)                   AS purchaseDueAmount,
+            COALESCE((SELECT SUM(pr.total_return_amount) FROM purchase_returns pr
+                      WHERE pr.grn_id = g.id AND pr.status = 'COMPLETED'), 0) AS returnAmount
         FROM grn g
         JOIN suppliers s ON s.id = g.supplier_id
         JOIN branches b ON b.id = g.branch_id
         LEFT JOIN users u ON u.id = g.created_by_user_id
+        LEFT JOIN purchase p ON p.id = g.purchase_id
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
@@ -853,16 +1033,28 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT
-            COALESCE(SUM(g.total_amount), 0)    AS totalAmount,
-            COALESCE(SUM(g.paid_amount), 0)     AS totalPaid,
-            COALESCE(SUM(g.total_amount - g.paid_amount), 0) AS totalDue
+            COALESCE(SUM(g.total_amount), 0) AS totalAmount,
+            COALESCE((SELECT SUM(p2.paid_amount) FROM purchase p2 WHERE p2.id IN (
+                SELECT DISTINCT g2.purchase_id FROM grn g2 JOIN suppliers s2 ON s2.id = g2.supplier_id
+                WHERE (:branchId = 0 OR g2.branch_id = :branchId) AND g2.received_at BETWEEN :fromDate AND :toDate
+                  AND (:supplierId = 0 OR s2.id = :supplierId))), 0) AS totalPaid,
+            COALESCE((SELECT SUM(p3.due_amount) FROM purchase p3 WHERE p3.id IN (
+                SELECT DISTINCT g3.purchase_id FROM grn g3 JOIN suppliers s3 ON s3.id = g3.supplier_id
+                WHERE (:branchId = 0 OR g3.branch_id = :branchId) AND g3.received_at BETWEEN :fromDate AND :toDate
+                  AND (:supplierId = 0 OR s3.id = :supplierId))), 0) AS totalDue,
+            COALESCE((SELECT SUM(pr.total_return_amount) FROM purchase_returns pr
+                WHERE pr.status = 'COMPLETED' AND pr.grn_id IN (
+                    SELECT g4.id FROM grn g4 JOIN suppliers s4 ON s4.id = g4.supplier_id
+                    WHERE (:branchId = 0 OR g4.branch_id = :branchId) AND g4.received_at BETWEEN :fromDate AND :toDate
+                      AND (:supplierId = 0 OR s4.id = :supplierId))), 0) AS totalReturns,
+            COUNT(DISTINCT g.purchase_id) AS uniquePurchaseCount
         FROM grn g
         JOIN suppliers s ON s.id = g.supplier_id
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
     """, nativeQuery = true)
-    Object[] grnReportTotals(
+    List<Object[]> grnReportTotals(
             @Param("branchId") Long branchId,
             @Param("supplierId") Long supplierId,
             @Param("fromDate") LocalDateTime fromDate,
@@ -878,19 +1070,88 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             i.barcode,
             i.name        AS itemName,
             i.default_unit AS unit,
+            i.item_type   AS itemType,
 
-            /* Opening stock = batches received BEFORE fromDate still on hand */
+            /* Opening stock = current stock reversed by all movements since fromDate. */
             COALESCE((
-                SELECT SUM(sb2.original_quantity)
+                SELECT SUM(sb2.quantity)
                 FROM stock_batches sb2
                 WHERE sb2.item_id = i.id
                   AND (:branchId = 0 OR sb2.branch_id = :branchId)
-                  AND sb2.received_at < :fromDate
-            ), 0)  AS openingStock,
+            ), 0)
+            - COALESCE((
+                SELECT SUM(gi2.qty)
+                FROM grn_items gi2
+                JOIN grn g2 ON g2.id = gi2.grn_id
+                WHERE gi2.item_id = i.id
+                  AND (:branchId = 0 OR g2.branch_id = :branchId)
+                  AND g2.received_at >= :fromDate
+            ), 0)
+            + COALESCE((
+                SELECT SUM(oi2.qty)
+                FROM order_items oi2
+                JOIN orders ord2 ON ord2.id = oi2.order_id
+                WHERE oi2.item_id = i.id
+                  AND (:branchId = 0 OR ord2.branch_id = :branchId)
+                  AND ord2.status = 'COMPLETED'
+                  AND ord2.created_at >= :fromDate
+            ), 0)
+            - COALESCE((
+                SELECT SUM(ori2.return_qty)
+                FROM order_return_items ori2
+                JOIN order_returns orr2 ON orr2.id = ori2.order_return_id
+                WHERE ori2.item_id = i.id
+                  AND ori2.stock_reversed = true
+                  AND (:branchId = 0 OR orr2.branch_id = :branchId)
+                  AND orr2.status = 'COMPLETED'
+                  AND orr2.created_at >= :fromDate
+            ), 0)
+            + COALESCE((
+                SELECT SUM(pri2.return_qty)
+                FROM purchase_return_items pri2
+                JOIN purchase_returns pr2 ON pr2.id = pri2.purchase_return_id
+                WHERE pri2.item_id = i.id
+                  AND pri2.stock_deducted = true
+                  AND (:branchId = 0 OR pr2.branch_id = :branchId)
+                  AND pr2.status = 'COMPLETED'
+                  AND pr2.created_at >= :fromDate
+            ), 0)
+            - COALESCE((
+                SELECT SUM(sa2.qty_change)
+                FROM stock_adjustments sa2
+                WHERE sa2.item_id = i.id
+                  AND (:branchId = 0 OR sa2.branch_id = :branchId)
+                  AND sa2.created_at >= :fromDate
+            ), 0)
+            - COALESCE((
+                SELECT SUM(sti3.qty)
+                FROM stock_transfer_items sti3
+                JOIN stock_transfers st3 ON st3.id = sti3.transfer_id
+                WHERE sti3.item_id = i.id
+                  AND (:branchId = 0 OR st3.to_branch_id = :branchId)
+                  AND st3.status = 'COMPLETED'
+                  AND st3.received_at >= :fromDate
+            ), 0)
+            + COALESCE((
+                SELECT SUM(sti4.qty)
+                FROM stock_transfer_items sti4
+                JOIN stock_transfers st4 ON st4.id = sti4.transfer_id
+                WHERE sti4.item_id = i.id
+                  AND (:branchId = 0 OR st4.from_branch_id = :branchId)
+                  AND st4.status IN ('IN_TRANSIT', 'COMPLETED')
+                  AND st4.requested_at >= :fromDate
+            ), 0)
+            + COALESCE((SELECT SUM(sp2.source_qty) FROM stock_processings sp2
+                WHERE sp2.source_item_id = i.id AND sp2.processing_status = 'COMPLETED' AND (:branchId = 0 OR sp2.branch_id = :branchId)
+                AND sp2.processed_at >= :fromDate), 0)
+            - COALESCE((SELECT SUM(spo2.quantity) FROM stock_processing_outputs spo2
+                JOIN stock_processings sp3 ON sp3.id = spo2.processing_id
+                WHERE spo2.output_item_id = i.id AND spo2.is_waste = false AND sp3.processing_status = 'COMPLETED'
+                AND (:branchId = 0 OR sp3.branch_id = :branchId) AND sp3.processed_at >= :fromDate), 0) AS openingStock,
 
             /* Purchases in (GRN items received in range) */
             COALESCE((
-                SELECT SUM(gi.quantity)
+                SELECT SUM(gi.qty)
                 FROM grn_items gi
                 JOIN grn g ON g.id = gi.grn_id
                 WHERE gi.item_id = i.id
@@ -900,7 +1161,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
             /* Sales out */
             COALESCE((
-                SELECT SUM(oi.quantity)
+                SELECT SUM(oi.qty)
                 FROM order_items oi
                 JOIN orders ord ON ord.id = oi.order_id
                 WHERE oi.item_id = i.id
@@ -911,14 +1172,27 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
             /* Customer returns in */
             COALESCE((
-                SELECT SUM(ori.quantity)
+                SELECT SUM(ori.return_qty)
                 FROM order_return_items ori
                 JOIN order_returns orr ON orr.id = ori.order_return_id
                 WHERE ori.item_id = i.id
                   AND (:branchId = 0 OR orr.branch_id = :branchId)
-                  AND orr.status = 'APPROVED'
+                  AND ori.stock_reversed = true
+                  AND orr.status = 'COMPLETED'
                   AND orr.created_at BETWEEN :fromDate AND :toDate
             ), 0)  AS returnsIn,
+
+            /* Purchase returns out */
+            COALESCE((
+                SELECT SUM(pri.return_qty)
+                FROM purchase_return_items pri
+                JOIN purchase_returns pr ON pr.id = pri.purchase_return_id
+                WHERE pri.item_id = i.id
+                  AND pri.stock_deducted = true
+                  AND (:branchId = 0 OR pr.branch_id = :branchId)
+                  AND pr.status = 'COMPLETED'
+                  AND pr.created_at BETWEEN :fromDate AND :toDate
+            ), 0) AS purchaseReturnsOut,
 
             /* Net adjustments */
             COALESCE((
@@ -931,25 +1205,35 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
             /* Transfers in */
             COALESCE((
-                SELECT SUM(sti.quantity)
+                SELECT SUM(sti.qty)
                 FROM stock_transfer_items sti
                 JOIN stock_transfers st ON st.id = sti.transfer_id
                 WHERE sti.item_id = i.id
                   AND (:branchId = 0 OR st.to_branch_id = :branchId)
                   AND st.status = 'COMPLETED'
-                  AND st.created_at BETWEEN :fromDate AND :toDate
+                  AND st.received_at BETWEEN :fromDate AND :toDate
             ), 0)  AS transfersIn,
 
             /* Transfers out */
             COALESCE((
-                SELECT SUM(sti2.quantity)
+                SELECT SUM(sti2.qty)
                 FROM stock_transfer_items sti2
                 JOIN stock_transfers st2 ON st2.id = sti2.transfer_id
                 WHERE sti2.item_id = i.id
                   AND (:branchId = 0 OR st2.from_branch_id = :branchId)
-                  AND st2.status = 'COMPLETED'
-                  AND st2.created_at BETWEEN :fromDate AND :toDate
-            ), 0)  AS transfersOut
+                  AND st2.status IN ('IN_TRANSIT', 'COMPLETED')
+                  AND st2.requested_at BETWEEN :fromDate AND :toDate
+            ), 0)  AS transfersOut,
+
+            COALESCE((SELECT SUM(spo.quantity) FROM stock_processing_outputs spo
+                JOIN stock_processings sp ON sp.id = spo.processing_id
+                WHERE spo.output_item_id = i.id AND spo.is_waste = false AND sp.processing_status = 'COMPLETED'
+                AND (:branchId = 0 OR sp.branch_id = :branchId)
+                AND sp.processed_at BETWEEN :fromDate AND :toDate), 0) AS processingIn,
+
+            COALESCE((SELECT SUM(sp.source_qty) FROM stock_processings sp
+                WHERE sp.source_item_id = i.id AND sp.processing_status = 'COMPLETED' AND (:branchId = 0 OR sp.branch_id = :branchId)
+                AND sp.processed_at BETWEEN :fromDate AND :toDate), 0) AS processingOut
 
         FROM items i
         WHERE i.item_type != 'SERVICE'
@@ -1015,29 +1299,62 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             c.phone,
             COALESCE(SUM(o.due_amount), 0)          AS totalDue,
             COALESCE(SUM(CASE
-                WHEN DATEDIFF(NOW(), o.created_at) <= 30 THEN o.due_amount ELSE 0
+                WHEN TIMESTAMPDIFF(DAY, o.created_at, CURRENT_TIMESTAMP) <= 30 THEN o.due_amount ELSE 0
             END), 0)                                AS bucket0to30,
             COALESCE(SUM(CASE
-                WHEN DATEDIFF(NOW(), o.created_at) BETWEEN 31 AND 60 THEN o.due_amount ELSE 0
+                WHEN TIMESTAMPDIFF(DAY, o.created_at, CURRENT_TIMESTAMP) BETWEEN 31 AND 60 THEN o.due_amount ELSE 0
             END), 0)                                AS bucket31to60,
             COALESCE(SUM(CASE
-                WHEN DATEDIFF(NOW(), o.created_at) BETWEEN 61 AND 90 THEN o.due_amount ELSE 0
+                WHEN TIMESTAMPDIFF(DAY, o.created_at, CURRENT_TIMESTAMP) BETWEEN 61 AND 90 THEN o.due_amount ELSE 0
             END), 0)                                AS bucket61to90,
             COALESCE(SUM(CASE
-                WHEN DATEDIFF(NOW(), o.created_at) > 90 THEN o.due_amount ELSE 0
+                WHEN TIMESTAMPDIFF(DAY, o.created_at, CURRENT_TIMESTAMP) > 90 THEN o.due_amount ELSE 0
             END), 0)                                AS bucket91plus,
-            MIN(o.created_at)                       AS oldestOrderAt
+            MIN(o.created_at)                       AS oldestOrderAt,
+            (SELECT o2.invoice_no FROM orders o2 WHERE o2.customer_id = c.id
+             AND (:branchId = 0 OR o2.branch_id = :branchId) AND o2.due_amount > 0
+             AND o2.status = 'COMPLETED' ORDER BY o2.created_at ASC LIMIT 1) AS oldestInvoiceNo,
+            COUNT(o.id)                             AS unpaidInvoiceCount,
+            (SELECT MAX(cp.paid_at) FROM credit_payments cp WHERE cp.customer_id = c.id) AS lastPaymentAt,
+            c.credit_limit                          AS creditLimit
         FROM customers c
         JOIN orders o ON o.customer_id = c.id
-        WHERE o.due_amount > 0
-          AND o.status IN ('COMPLETED', 'CREDIT')
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.due_amount > 0
+          AND o.status = 'COMPLETED'
           AND c.active = true
           AND c.deleted_at IS NULL
-        GROUP BY c.id, c.name, c.phone
+        GROUP BY c.id, c.name, c.phone, c.credit_limit
         HAVING totalDue > 0
         ORDER BY totalDue DESC
     """, nativeQuery = true)
-    List<Object[]> creditAgingRaw();
+    List<Object[]> creditAgingRaw(@Param("branchId") Long branchId);
+
+    @Query(value = """
+        SELECT
+            s.id, s.name, s.phone,
+            COALESCE(SUM(p.due_amount), 0) AS totalDue,
+            COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(DAY, p.created_at, CURRENT_TIMESTAMP) <= 30 THEN p.due_amount ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(DAY, p.created_at, CURRENT_TIMESTAMP) BETWEEN 31 AND 60 THEN p.due_amount ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(DAY, p.created_at, CURRENT_TIMESTAMP) BETWEEN 61 AND 90 THEN p.due_amount ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN TIMESTAMPDIFF(DAY, p.created_at, CURRENT_TIMESTAMP) > 90 THEN p.due_amount ELSE 0 END), 0),
+            MIN(p.created_at),
+            (SELECT p2.invoice_no FROM purchase p2 WHERE p2.supplier_id = s.id
+             AND p2.due_amount > 0 AND p2.status = 'COMPLETED'
+             AND (:branchId = 0 OR EXISTS (SELECT 1 FROM grn g2 WHERE g2.purchase_id = p2.id AND g2.branch_id = :branchId))
+             ORDER BY p2.created_at ASC LIMIT 1),
+            COUNT(p.id),
+            (SELECT MAX(sp.paid_at) FROM supplier_payments sp WHERE sp.supplier_id = s.id)
+        FROM suppliers s
+        JOIN purchase p ON p.supplier_id = s.id
+        WHERE p.due_amount > 0 AND p.status = 'COMPLETED'
+          AND s.active = true AND s.deleted_at IS NULL
+          AND (:branchId = 0 OR EXISTS (SELECT 1 FROM grn g WHERE g.purchase_id = p.id AND g.branch_id = :branchId))
+        GROUP BY s.id, s.name, s.phone
+        HAVING COALESCE(SUM(p.due_amount), 0) > 0
+        ORDER BY totalDue DESC
+        """, nativeQuery = true)
+    List<Object[]> supplierPayablesAgingRaw(@Param("branchId") Long branchId);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // RPT-08: Promotion Effectiveness
@@ -1098,17 +1415,23 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     @Query(value = """
         SELECT
-            COALESCE(SUM(CASE WHEN o.payment_type = 'CASH'   THEN o.grand_total ELSE 0 END), 0) AS cashSales,
-            COALESCE(SUM(CASE WHEN o.payment_type = 'CREDIT' THEN o.grand_total ELSE 0 END), 0) AS creditSales,
-            COALESCE(SUM(o.total_discount), 0)  AS totalDiscount,
+            COALESCE(SUM(COALESCE(
+                o.sale_paid_amount,
+                CASE WHEN o.order_type = 'CASH' THEN LEAST(o.paid_amount, o.grand_total) ELSE 0 END
+            )), 0) AS cashSales,
+            COALESCE(SUM(COALESCE(
+                o.sale_due_amount,
+                CASE WHEN o.order_type = 'CREDIT' THEN o.due_amount ELSE 0 END
+            )), 0) AS creditSales,
+            COALESCE(SUM(o.bill_discount), 0) AS totalDiscount,
             COUNT(o.id)                          AS orderCount
         FROM orders o
         WHERE o.branch_id       = :branchId
           AND o.cashier_user_id = :cashierUserId
           AND o.created_at BETWEEN :fromDate AND :toDate
-          AND o.status IN ('COMPLETED', 'CREDIT')
+          AND o.status = 'COMPLETED'
     """, nativeQuery = true)
-    Object[] shiftSalesRaw(
+    List<Object[]> shiftSalesRaw(
             @Param("branchId")       Long branchId,
             @Param("cashierUserId")  Long cashierUserId,
             @Param("fromDate")       LocalDateTime fromDate,

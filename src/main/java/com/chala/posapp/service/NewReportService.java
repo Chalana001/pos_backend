@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.sql.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -92,6 +93,37 @@ public class NewReportService {
                 .toList();
     }
 
+    public List<BranchComparisonResponse> branchComparison(LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) throw new BadRequestException("A valid from/to date range is required");
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        return reportRepository.branchComparisonRaw(range.from(), range.to()).stream().map(r -> BranchComparisonResponse.builder()
+                .branchId(toLong(r[0])).branchName(toStr(r[1])).orderCount(toLong(r[2])).totalSales(toDouble(r[3]))
+                .averageOrderValue(toDouble(r[4])).totalDiscounts(toDouble(r[5])).returnCount(toLong(r[6]))
+                .returnAmount(toDouble(r[7])).operatingExpenses(toDouble(r[8])).build()).toList();
+    }
+
+    public ExceptionCenterResponse exceptionCenter(Long requestedBranchId, LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) throw new BadRequestException("A valid from/to date range is required");
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        StockHealthResponse stock = stockHealth(requestedBranchId, 14);
+        List<CreditAgingResponse> credit = creditAging(requestedBranchId);
+        List<SupplierPayablesAgingResponse> payables = supplierPayablesAging(requestedBranchId);
+        List<ExceptionCenterResponse.ExceptionItem> items = new java.util.ArrayList<>();
+        stock.getItems().stream().filter(i -> java.util.Set.of("NEGATIVE","MISSING_COST","BELOW_COST","EXPIRED").contains(i.getStatus())).limit(50).forEach(i -> items.add(ExceptionCenterResponse.ExceptionItem.builder()
+                .type(i.getStatus()).severity("NEGATIVE".equals(i.getStatus()) || "EXPIRED".equals(i.getStatus()) ? "CRITICAL" : "HIGH")
+                .title(i.getItemName()).detail(i.getStatus().replace('_',' ')).amount(Math.abs(i.getStockValue())).path("/reports/stock-health").build()));
+        credit.stream().filter(c -> c.getBucket91plus() > 0).forEach(c -> items.add(ExceptionCenterResponse.ExceptionItem.builder().type("CUSTOMER_CREDIT_91_PLUS").severity("CRITICAL").title(c.getCustomerName()).detail("Customer credit overdue 91+ days").amount(c.getBucket91plus()).path("/reports/credit-aging").build()));
+        payables.stream().filter(s -> s.getBucket91plus() > 0).forEach(s -> items.add(ExceptionCenterResponse.ExceptionItem.builder().type("SUPPLIER_PAYABLE_91_PLUS").severity("CRITICAL").title(s.getSupplierName()).detail("Supplier payable overdue 91+ days").amount(s.getBucket91plus()).path("/reports/supplier-payables").build()));
+        reportRepository.exceptionActivityRaw(qb(branchId), range.from(), range.to(), LocalDateTime.now().minusHours(12)).forEach(r -> {
+            String type = toStr(r[0]);
+            String path = "HIGH_DISCOUNT".equals(type) ? "/reports/sales" : "LARGE_RETURN".equals(type) ? "/reports/returns" : "CASH_SHORTAGE".equals(type) || "STALE_SHIFT".equals(type) ? "/reports/shifts" : "/stock/adjustments";
+            items.add(ExceptionCenterResponse.ExceptionItem.builder().type(type).title(toStr(r[1])).detail(toStr(r[2])).amount(toDouble(r[3])).severity(toStr(r[4])).path(path).build());
+        });
+        long critical = items.stream().filter(i -> "CRITICAL".equals(i.getSeverity())).count();
+        return ExceptionCenterResponse.builder().totalExceptions(items.size()).criticalExceptions(critical).items(items).build();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // RPT-02: Inventory Valuation
     // ═══════════════════════════════════════════════════════════════════════
@@ -140,7 +172,9 @@ public class NewReportService {
 
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
-        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        LocalDate resolvedTo = to != null ? to : LocalDate.now();
+        LocalDate resolvedFrom = from != null ? from : resolvedTo.minusDays(365);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(resolvedFrom, resolvedTo);
         Long effectiveCashierId = (user.getRole() == Role.CASHIER) ? user.getId() : cashierUserId;
 
         Page<CashShift> shiftPage = cashShiftRepository.findShiftsForReport(
@@ -154,16 +188,17 @@ public class NewReportService {
         List<ShiftSummaryResponse> responses = shiftPage.getContent().stream().map(cs -> {
             LocalDateTime shiftFrom = cs.getOpenedAt();
             LocalDateTime shiftTo   = cs.getClosedAt() != null ? cs.getClosedAt() : LocalDateTime.now();
-            Object[] sales = reportRepository.shiftSalesRaw(
+            List<Object[]> salesRows = reportRepository.shiftSalesRaw(
                     cs.getBranchId(), cs.getCashierUserId(), shiftFrom, shiftTo);
+            Object[] sales = salesRows.isEmpty() ? null : salesRows.get(0);
 
             double cashSales   = sales != null ? toDouble(sales[0]) : 0.0;
             double creditSales = sales != null ? toDouble(sales[1]) : 0.0;
             double discount    = sales != null ? toDouble(sales[2]) : 0.0;
             long   orderCount  = sales != null ? toLong(sales[3])   : 0L;
-            double expected    = cs.getOpeningCash()
-                    + (cs.getCashSales() != null ? cs.getCashSales() : 0.0)
-                    - cs.getTotalExpenses() + cs.getTotalCashDrops();
+            double expected = cs.getExpectedCash() != null
+                    ? cs.getExpectedCash()
+                    : cs.getOpeningCash() + cashSales - cs.getTotalExpenses() - cs.getTotalCashDrops();
 
             return ShiftSummaryResponse.builder()
                     .shiftId(cs.getId()).branchId(cs.getBranchId())
@@ -192,6 +227,87 @@ public class NewReportService {
     // RPT-04: GRN / Purchase Report
     // ═══════════════════════════════════════════════════════════════════════
 
+    public CashFlowResponse cashFlow(Long requestedBranchId, LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new BadRequestException("A valid from/to date range is required");
+        }
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        List<Object[]> totalsRows = reportRepository.cashFlowTotalsRaw(qb(branchId), range.from(), range.to());
+        Object[] totals = totalsRows.isEmpty() ? new Object[7] : totalsRows.get(0);
+        double cashSales = toDouble(totals[0]);
+        double collections = toDouble(totals[1]);
+        double expenses = toDouble(totals[2]);
+        double purchases = toDouble(totals[3]);
+        double supplierPayments = toDouble(totals[4]);
+        double refunds = toDouble(totals[5]);
+        double drops = toDouble(totals[6]);
+        double inflows = cashSales + collections;
+        double outflows = expenses + purchases + supplierPayments + refunds;
+
+        List<CashFlowResponse.DailyMovement> daily = reportRepository
+                .cashFlowDailyRaw(qb(branchId), range.from(), range.to()).stream()
+                .map(row -> {
+                    double dayInflows = toDouble(row[1]);
+                    double dayOutflows = toDouble(row[2]);
+                    return CashFlowResponse.DailyMovement.builder()
+                            .date(row[0] instanceof Date date ? date.toLocalDate() : LocalDate.parse(row[0].toString()))
+                            .inflows(dayInflows).outflows(dayOutflows)
+                            .netMovement(dayInflows - dayOutflows).build();
+                }).toList();
+
+        return CashFlowResponse.builder()
+                .cashSales(cashSales).creditCollections(collections).totalInflows(inflows)
+                .expenses(expenses).purchasePayments(purchases).supplierPayments(supplierPayments)
+                .cashRefunds(refunds).totalOutflows(outflows).netCashMovement(inflows - outflows)
+                .cashDrops(drops).dailyMovements(daily).build();
+    }
+
+    public ProfitAndLossResponse profitAndLoss(Long requestedBranchId, LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) {
+            throw new BadRequestException("A valid from/to date range is required");
+        }
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        long periodDays = java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1;
+        LocalDate comparisonTo = from.minusDays(1);
+        LocalDate comparisonFrom = comparisonTo.minusDays(periodDays - 1);
+
+        return ProfitAndLossResponse.builder()
+                .currentPeriod(ProfitAndLossResponse.Period.builder().from(from).to(to).build())
+                .comparisonPeriod(ProfitAndLossResponse.Period.builder().from(comparisonFrom).to(comparisonTo).build())
+                .current(profitAndLossStatement(branchId, from, to))
+                .comparison(profitAndLossStatement(branchId, comparisonFrom, comparisonTo))
+                .build();
+    }
+
+    private ProfitAndLossResponse.Statement profitAndLossStatement(Long branchId, LocalDate from, LocalDate to) {
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        List<Object[]> rows = reportRepository.profitAndLossRaw(qb(branchId), range.from(), range.to());
+        Object[] row = rows.isEmpty() ? new Object[8] : rows.get(0);
+        double itemRevenue = toDouble(row[0]);
+        double billDiscounts = toDouble(row[1]);
+        double salesReturns = toDouble(row[2]);
+        double originalCost = toDouble(row[3]);
+        double returnedCost = toDouble(row[4]);
+        double expenses = toDouble(row[5]);
+        long revenueLines = toLong(row[6]);
+        long missingCostLines = toLong(row[7]);
+        double netRevenue = itemRevenue - billDiscounts - salesReturns;
+        double cogs = originalCost - returnedCost;
+        double grossProfit = netRevenue - cogs;
+        double netProfit = grossProfit - expenses;
+
+        return ProfitAndLossResponse.Statement.builder()
+                .itemRevenue(itemRevenue).billDiscounts(billDiscounts).salesReturns(salesReturns)
+                .netRevenue(netRevenue).costOfGoodsSold(cogs).returnedCost(returnedCost)
+                .grossProfit(grossProfit).grossMarginPercent(netRevenue == 0 ? 0 : grossProfit / netRevenue * 100)
+                .operatingExpenses(expenses).netProfit(netProfit)
+                .netMarginPercent(netRevenue == 0 ? 0 : netProfit / netRevenue * 100)
+                .revenueLineCount(revenueLines).missingCostLineCount(missingCostLines)
+                .costCoveragePercent(revenueLines == 0 ? 100 : (revenueLines - missingCostLines) * 100.0 / revenueLines)
+                .build();
+    }
+
     public GrnReportSummary grnReport(
             Long requestedBranchId, Long supplierId,
             LocalDate from, LocalDate to, int page, int size) {
@@ -204,7 +320,8 @@ public class NewReportService {
         List<Object[]> rows = reportRepository.grnReportRaw(
                 qb(branchId), qSup, range.from(), range.to(), size, page * size);
         long total      = reportRepository.countGrnReport(qb(branchId), qSup, range.from(), range.to());
-        Object[] totals = reportRepository.grnReportTotals(qb(branchId), qSup, range.from(), range.to());
+        List<Object[]> totalsRows = reportRepository.grnReportTotals(qb(branchId), qSup, range.from(), range.to());
+        Object[] totals = totalsRows.isEmpty() ? null : totalsRows.get(0);
 
         List<GrnReportResponse> items = rows.stream().map(r -> GrnReportResponse.builder()
                 .grnId(toLong(r[0])).grnNo(toStr(r[1]))
@@ -212,6 +329,9 @@ public class NewReportService {
                 .branchId(toLong(r[4])).branchName(toStr(r[5]))
                 .totalAmount(toDouble(r[6])).paidAmount(toDouble(r[7])).dueAmount(toDouble(r[8]))
                 .note(toStr(r[9])).receivedAt(toLdt(r[10])).createdByUsername(toStr(r[11]))
+                .purchaseId(r[12] == null ? null : toLong(r[12])).purchaseInvoiceNo(toStr(r[13]))
+                .purchaseStatus(toStr(r[14])).purchasePaidAmount(toDouble(r[15])).purchaseDueAmount(toDouble(r[16]))
+                .returnAmount(toDouble(r[17])).netReceivedAmount(toDouble(r[6]) - toDouble(r[17]))
                 .build()).toList();
 
         int totalPages = (int) Math.ceil((double) total / size);
@@ -222,6 +342,9 @@ public class NewReportService {
                 .totalAmount(totals != null ? toDouble(totals[0]) : 0.0)
                 .totalPaid(totals   != null ? toDouble(totals[1]) : 0.0)
                 .totalDue(totals    != null ? toDouble(totals[2]) : 0.0)
+                .totalReturns(totals != null ? toDouble(totals[3]) : 0.0)
+                .netReceivedAmount(totals != null ? toDouble(totals[0]) - toDouble(totals[3]) : 0.0)
+                .uniquePurchaseCount(totals != null ? toLong(totals[4]) : 0L)
                 .build();
     }
 
@@ -241,20 +364,21 @@ public class NewReportService {
         long total = reportRepository.countStockMovement();
 
         List<StockMovementResponse> items = rows.stream().map(r -> {
-            double open    = toDouble(r[4]);
-            double purIn   = toDouble(r[5]);
-            double saleOut = toDouble(r[6]);
-            double retIn   = toDouble(r[7]);
-            double adjNet  = toDouble(r[8]);
-            double trfIn   = toDouble(r[9]);
-            double trfOut  = toDouble(r[10]);
+            boolean scaled = "NORMAL".equals(toStr(r[4])) || "WEIGHT".equals(toStr(r[4])) || "VOLUME".equals(toStr(r[4]));
+            double factor = scaled ? 1000.0 : 1.0;
+            double open = toDouble(r[5]) / factor, purIn = toDouble(r[6]) / factor;
+            double saleOut = toDouble(r[7]) / factor, retIn = toDouble(r[8]) / factor;
+            double purRetOut = toDouble(r[9]) / factor, adjNet = toDouble(r[10]) / factor;
+            double trfIn = toDouble(r[11]) / factor, trfOut = toDouble(r[12]) / factor;
+            double processingIn = toDouble(r[13]) / factor, processingOut = toDouble(r[14]) / factor;
             return StockMovementResponse.builder()
                     .itemId(toLong(r[0])).barcode(toStr(r[1]))
                     .itemName(toStr(r[2])).unit(toStr(r[3]))
                     .openingStock(open).purchasesIn(purIn).salesOut(saleOut)
-                    .returnsIn(retIn).adjustmentsNet(adjNet)
+                    .returnsIn(retIn).purchaseReturnsOut(purRetOut).adjustmentsNet(adjNet)
                     .transfersIn(trfIn).transfersOut(trfOut)
-                    .closingStock(open + purIn - saleOut + retIn + adjNet + trfIn - trfOut)
+                    .processingIn(processingIn).processingOut(processingOut)
+                    .closingStock(open + purIn - saleOut + retIn - purRetOut + adjNet + trfIn - trfOut + processingIn - processingOut)
                     .build();
         }).toList();
 
@@ -262,6 +386,42 @@ public class NewReportService {
         return PageResponse.<StockMovementResponse>builder()
                 .items(items).page(page).size(size)
                 .totalElements(total).totalPages(totalPages).build();
+    }
+
+    public StockHealthResponse stockHealth(Long requestedBranchId, int targetCoverDays) {
+        if (targetCoverDays < 1 || targetCoverDays > 90) throw new BadRequestException("targetCoverDays must be between 1 and 90");
+        final int salesWindowDays = 90;
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        LocalDateTime salesFrom = LocalDate.now().minusDays(salesWindowDays).atStartOfDay();
+        LocalDate today = LocalDate.now();
+        List<StockHealthResponse.ItemHealth> items = reportRepository.stockHealthRaw(qb(branchId), salesFrom).stream().map(r -> {
+            boolean scaled = "NORMAL".equals(toStr(r[4])) || "WEIGHT".equals(toStr(r[4])) || "VOLUME".equals(toStr(r[4]));
+            double factor = scaled ? 1000.0 : 1.0;
+            double stock = toDouble(r[5]) / factor;
+            double reorder = toDouble(r[6]) / factor;
+            double cost = toDouble(r[7]);
+            double selling = toDouble(r[8]);
+            double sold = toDouble(r[9]) / factor;
+            double daily = sold / salesWindowDays;
+            double suggested = Math.max(0, Math.max(reorder, daily * targetCoverDays) - stock);
+            LocalDateTime lastSold = toLdt(r[10]);
+            LocalDate expiry = r[12] == null ? null : toLdt(r[12]).toLocalDate();
+            String status = stock < 0 ? "NEGATIVE" : stock == 0 ? "OUT_OF_STOCK" : expiry != null && expiry.isBefore(today) ? "EXPIRED" : expiry != null && !expiry.isAfter(today.plusDays(30)) ? "EXPIRING_SOON" : lastSold == null || lastSold.isBefore(today.minusDays(90).atStartOfDay()) ? "DEAD_STOCK" : stock <= reorder ? "LOW_STOCK" : selling < cost ? "BELOW_COST" : cost <= 0 ? "MISSING_COST" : "HEALTHY";
+            return StockHealthResponse.ItemHealth.builder().itemId(toLong(r[0])).barcode(toStr(r[1])).itemName(toStr(r[2])).unit(toStr(r[3]))
+                    .qtyOnHand(stock).reorderLevel(reorder).costPrice(cost).sellingPrice(selling).stockValue(stock * cost)
+                    .soldLast90Days(sold).averageDailySales(daily).estimatedDaysOfStock(daily > 0 ? stock / daily : null)
+                    .suggestedReorderQty(suggested).estimatedReorderCost(suggested * cost).lastSoldAt(lastSold)
+                    .preferredSupplier(toStr(r[11])).nearestExpiryDate(expiry).status(status).build();
+        }).toList();
+        return StockHealthResponse.builder().salesWindowDays(salesWindowDays).targetCoverDays(targetCoverDays).totalItems(items.size())
+                .outOfStockItems(items.stream().filter(i -> "OUT_OF_STOCK".equals(i.getStatus())).count())
+                .negativeStockItems(items.stream().filter(i -> "NEGATIVE".equals(i.getStatus())).count())
+                .belowReorderItems(items.stream().filter(i -> i.getQtyOnHand() > 0 && i.getQtyOnHand() <= i.getReorderLevel()).count())
+                .deadStockItems(items.stream().filter(i -> "DEAD_STOCK".equals(i.getStatus())).count())
+                .itemsWithExpiredStock(items.stream().filter(i -> "EXPIRED".equals(i.getStatus())).count())
+                .itemsExpiringSoon(items.stream().filter(i -> "EXPIRING_SOON".equals(i.getStatus())).count())
+                .deadStockValue(items.stream().filter(i -> "DEAD_STOCK".equals(i.getStatus())).mapToDouble(StockHealthResponse.ItemHealth::getStockValue).sum())
+                .estimatedReorderCost(items.stream().mapToDouble(StockHealthResponse.ItemHealth::getEstimatedReorderCost).sum()).items(items).build();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -298,16 +458,67 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-credit-aging",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key('all')")
-    public List<CreditAgingResponse> creditAging() {
-        return reportRepository.creditAgingRaw().stream()
-                .map(r -> CreditAgingResponse.builder()
-                        .customerId(toLong(r[0])).customerName(toStr(r[1])).phone(toStr(r[2]))
-                        .totalDue(toDouble(r[3])).bucket0to30(toDouble(r[4]))
-                        .bucket31to60(toDouble(r[5])).bucket61to90(toDouble(r[6]))
-                        .bucket91plus(toDouble(r[7])).oldestOrderAt(toLdt(r[8]))
-                        .build())
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId)")
+    public List<CreditAgingResponse> creditAging(Long requestedBranchId) {
+        User user = securityUtils.getCurrentUser();
+        Long branchId = resolveBranchId(user, requestedBranchId);
+        return reportRepository.creditAgingRaw(qb(branchId)).stream()
+                .map(r -> {
+                    double totalDue = toDouble(r[3]);
+                    double overdue91 = toDouble(r[7]);
+                    Double creditLimit = r[12] == null ? null : toDouble(r[12]);
+                    String priority = overdue91 > 0 ? "CRITICAL" : toDouble(r[6]) > 0 ? "HIGH" : toDouble(r[5]) > 0 ? "MEDIUM" : "NORMAL";
+                    return CreditAgingResponse.builder()
+                            .customerId(toLong(r[0])).customerName(toStr(r[1])).phone(toStr(r[2]))
+                            .totalDue(totalDue).bucket0to30(toDouble(r[4])).bucket31to60(toDouble(r[5]))
+                            .bucket61to90(toDouble(r[6])).bucket91plus(overdue91).oldestOrderAt(toLdt(r[8]))
+                            .oldestInvoiceNo(toStr(r[9])).unpaidInvoiceCount(toLong(r[10])).lastPaymentAt(toLdt(r[11]))
+                            .creditLimit(creditLimit).overCreditLimit(creditLimit != null && totalDue > creditLimit)
+                            .priority(priority).build();
+                })
                 .toList();
+    }
+
+    public List<SupplierPayablesAgingResponse> supplierPayablesAging(Long requestedBranchId) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        return reportRepository.supplierPayablesAgingRaw(qb(branchId)).stream()
+                .map(r -> {
+                    double bucket31 = toDouble(r[5]);
+                    double bucket61 = toDouble(r[6]);
+                    double bucket91 = toDouble(r[7]);
+                    String priority = bucket91 > 0 ? "CRITICAL" : bucket61 > 0 ? "HIGH" : bucket31 > 0 ? "MEDIUM" : "NORMAL";
+                    return SupplierPayablesAgingResponse.builder()
+                            .supplierId(toLong(r[0])).supplierName(toStr(r[1])).contactNo(toStr(r[2]))
+                            .totalDue(toDouble(r[3])).bucket0to30(toDouble(r[4])).bucket31to60(bucket31)
+                            .bucket61to90(bucket61).bucket91plus(bucket91).oldestPurchaseAt(toLdt(r[8]))
+                            .oldestInvoiceNo(toStr(r[9])).unpaidPurchaseCount(toLong(r[10]))
+                            .lastPaymentAt(toLdt(r[11])).priority(priority).build();
+                }).toList();
+    }
+
+    public CustomerBehaviorResponse customerBehavior(Long requestedBranchId, LocalDate from, LocalDate to) {
+        if (from == null || to == null || from.isAfter(to)) throw new BadRequestException("A valid from/to date range is required");
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
+        List<CustomerBehaviorResponse.CustomerBehavior> customers = reportRepository.customerBehaviorRaw(qb(branchId), range.from(), range.to()).stream().map(r -> {
+            LocalDateTime first = toLdt(r[3]);
+            LocalDateTime last = toLdt(r[4]);
+            long periodOrders = toLong(r[5]);
+            long daysSince = java.time.temporal.ChronoUnit.DAYS.between(last.toLocalDate(), to);
+            String bucket = daysSince <= 30 ? "ACTIVE_30" : daysSince <= 60 ? "INACTIVE_31_60" : daysSince <= 90 ? "INACTIVE_61_90" : "INACTIVE_91_PLUS";
+            return CustomerBehaviorResponse.CustomerBehavior.builder().customerId(toLong(r[0])).customerName(toStr(r[1])).phone(toStr(r[2]))
+                    .firstPurchaseAt(first).lastPurchaseAt(last).periodOrderCount(periodOrders).lifetimeOrderCount(toLong(r[6]))
+                    .periodSpend(toDouble(r[7])).lifetimeSpend(toDouble(r[8])).averagePeriodOrder(periodOrders == 0 ? 0 : toDouble(r[7]) / periodOrders)
+                    .currentDue(toDouble(r[9])).daysSinceLastPurchase(daysSince).inactivityBucket(bucket)
+                    .newCustomer(!first.isBefore(range.from())).build();
+        }).toList();
+        long active = customers.size();
+        long newCustomers = customers.stream().filter(CustomerBehaviorResponse.CustomerBehavior::isNewCustomer).count();
+        long returning = active - newCustomers;
+        long orders = customers.stream().mapToLong(CustomerBehaviorResponse.CustomerBehavior::getPeriodOrderCount).sum();
+        return CustomerBehaviorResponse.builder().activeCustomersInPeriod(active).newCustomers(newCustomers).returningCustomers(returning)
+                .repeatRatePercent(active == 0 ? 0 : returning * 100.0 / active).periodOrders(orders)
+                .averageOrdersPerActiveCustomer(active == 0 ? 0 : orders * 1.0 / active).customers(customers).build();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -370,11 +581,12 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     public PageResponse<StockTransferReportResponse> stockTransferReport(
-            Long requestedFromBranchId, Long toBranchId,
+            Long requestedBranchId, Long requestedFromBranchId, Long toBranchId,
             String status, LocalDate from, LocalDate to, int page, int size) {
 
         User user = securityUtils.getCurrentUser();
-        Long fromBranchId = resolveBranchId(user, requestedFromBranchId);
+        Long branchId = resolveBranchId(user, requestedBranchId);
+        Long fromBranchId = requestedFromBranchId;
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         StockTransferStatus statusEnum = null;
@@ -387,7 +599,7 @@ public class NewReportService {
         }
 
         Page<StockTransfer> transferPage = stockTransferRepository.findForReport(
-                fromBranchId, toBranchId, statusEnum,
+                branchId, fromBranchId, toBranchId, statusEnum,
                 range.from(), range.to(),
                 PageRequest.of(page, size, Sort.by("requestedAt").descending()));
 

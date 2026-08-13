@@ -22,4 +22,10 @@ public class CreditAgingResponse {
     private double        bucket61to90;  // 61-90 days overdue
     private double        bucket91plus;  // 91+ days overdue
     private LocalDateTime oldestOrderAt; // date of oldest unpaid order
+    private String oldestInvoiceNo;
+    private long unpaidInvoiceCount;
+    private LocalDateTime lastPaymentAt;
+    private Double creditLimit;
+    private boolean overCreditLimit;
+    private String priority;
 }

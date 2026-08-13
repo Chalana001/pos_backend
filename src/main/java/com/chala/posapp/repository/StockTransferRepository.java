@@ -99,13 +99,15 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
     // RPT-10: Stock transfer report — all transfers for a date range
     @Query("""
         SELECT st FROM StockTransfer st
-        WHERE (:fromBranchId IS NULL OR st.fromBranchId = :fromBranchId)
+        WHERE (:branchId IS NULL OR st.fromBranchId = :branchId OR st.toBranchId = :branchId)
+          AND (:fromBranchId IS NULL OR st.fromBranchId = :fromBranchId)
           AND (:toBranchId   IS NULL OR st.toBranchId   = :toBranchId)
           AND (:status       IS NULL OR st.status        = :status)
           AND st.requestedAt BETWEEN :fromDate AND :toDate
         ORDER BY st.requestedAt DESC
         """)
     Page<StockTransfer> findForReport(
+            @Param("branchId") Long branchId,
             @Param("fromBranchId") Long fromBranchId,
             @Param("toBranchId")   Long toBranchId,
             @Param("status")       StockTransferStatus status,

@@ -6,6 +6,7 @@ import com.chala.posapp.dto.report.CreditDueResponse;
 import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
+import com.chala.posapp.dto.report.OwnerCommandCenterResponse;
 import com.chala.posapp.dto.report.RecentOrderResponse;
 import com.chala.posapp.dto.report.ReturnReasonBreakdownResponse;
 import com.chala.posapp.dto.report.ReturnTrendPoint;
@@ -40,6 +41,15 @@ import java.util.List;
 public class ReportController {
 
     private final ReportService reportService;
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/owner-command-center")
+    public ResponseEntity<OwnerCommandCenterResponse> ownerCommandCenter(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.ownerCommandCenter(branchId, from, to));
+    }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/sales-summary")
@@ -191,8 +201,9 @@ public class ReportController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/credit-due")
-    public ResponseEntity<List<CreditDueResponse>> creditDue() {
-        return ResponseEntity.ok(reportService.creditDueList());
+    public ResponseEntity<List<CreditDueResponse>> creditDue(
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(reportService.creditDueList(branchId));
     }
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")

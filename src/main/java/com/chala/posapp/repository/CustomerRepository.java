@@ -31,12 +31,22 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     List<Customer> searchFt(@Param("search") String search);
 
     @Query(value = """
-    SELECT id, name, due_amount
-    FROM customers
-    WHERE due_amount > 0
-    ORDER BY due_amount DESC
-""", nativeQuery = true)
-    List<Object[]> creditDueRaw();
+        SELECT
+            c.id,
+            c.name,
+            COALESCE(SUM(o.due_amount), 0) AS due_amount
+        FROM customers c
+        JOIN orders o ON o.customer_id = c.id
+        WHERE (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.due_amount > 0
+          AND o.status = 'COMPLETED'
+          AND c.active = true
+          AND c.deleted_at IS NULL
+        GROUP BY c.id, c.name
+        HAVING COALESCE(SUM(o.due_amount), 0) > 0
+        ORDER BY COALESCE(SUM(o.due_amount), 0) DESC
+        """, nativeQuery = true)
+    List<Object[]> creditDueRaw(@Param("branchId") Long branchId);
 
     @Query("""
         SELECT c

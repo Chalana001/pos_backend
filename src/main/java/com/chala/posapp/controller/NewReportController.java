@@ -33,6 +33,23 @@ public class NewReportController {
         return ResponseEntity.ok(reportService.cashierPerformance(branchId, from, to));
     }
 
+    @GetMapping("/branch-comparison")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    public ResponseEntity<List<BranchComparisonResponse>> branchComparison(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.branchComparison(from, to));
+    }
+
+    @GetMapping("/exceptions")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<ExceptionCenterResponse> exceptionCenter(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.exceptionCenter(branchId, from, to));
+    }
+
     // RPT-02: Inventory Valuation
     @GetMapping("/inventory-valuation")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
@@ -53,6 +70,26 @@ public class NewReportController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(reportService.shiftSummary(branchId, cashierUserId, from, to, page, size));
+    }
+
+    // RPT-04: GRN / Purchase Report
+    @GetMapping("/profit-loss")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<ProfitAndLossResponse> profitAndLoss(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.profitAndLoss(branchId, from, to));
+    }
+
+    // RPT-04: GRN / Purchase Report
+    @GetMapping("/cash-flow")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<CashFlowResponse> cashFlow(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.cashFlow(branchId, from, to));
     }
 
     // RPT-04: GRN / Purchase Report
@@ -80,6 +117,14 @@ public class NewReportController {
         return ResponseEntity.ok(reportService.stockMovement(branchId, from, to, page, size));
     }
 
+    @GetMapping("/stock-health")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<StockHealthResponse> stockHealth(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(defaultValue = "14") int targetCoverDays) {
+        return ResponseEntity.ok(reportService.stockHealth(branchId, targetCoverDays));
+    }
+
     // RPT-06: Expense Report by Category
     @GetMapping("/expenses")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
@@ -93,8 +138,25 @@ public class NewReportController {
     // RPT-07: Customer Credit Aging
     @GetMapping("/credit-aging")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
-    public ResponseEntity<List<CreditAgingResponse>> creditAging() {
-        return ResponseEntity.ok(reportService.creditAging());
+    public ResponseEntity<List<CreditAgingResponse>> creditAging(
+            @RequestParam(required = false) Long branchId) {
+        return ResponseEntity.ok(reportService.creditAging(branchId));
+    }
+
+    @GetMapping("/supplier-payables-aging")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<List<SupplierPayablesAgingResponse>> supplierPayablesAging(
+            @RequestParam(required = false) Long branchId) {
+        return ResponseEntity.ok(reportService.supplierPayablesAging(branchId));
+    }
+
+    @GetMapping("/customer-behavior")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<CustomerBehaviorResponse> customerBehavior(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ResponseEntity.ok(reportService.customerBehavior(branchId, from, to));
     }
 
     // RPT-08: Promotion Effectiveness
@@ -121,6 +183,7 @@ public class NewReportController {
     @GetMapping("/stock-transfers")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
     public ResponseEntity<PageResponse<StockTransferReportResponse>> stockTransferReport(
+            @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long fromBranchId,
             @RequestParam(required = false) Long toBranchId,
             @RequestParam(required = false) String status,
@@ -129,6 +192,6 @@ public class NewReportController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(
-                reportService.stockTransferReport(fromBranchId, toBranchId, status, from, to, page, size));
+                reportService.stockTransferReport(branchId, fromBranchId, toBranchId, status, from, to, page, size));
     }
 }

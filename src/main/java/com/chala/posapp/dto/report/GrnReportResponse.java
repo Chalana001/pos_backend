@@ -25,4 +25,11 @@ public class GrnReportResponse {
     private String        note;
     private LocalDateTime receivedAt;
     private String        createdByUsername;
+    private Long          purchaseId;
+    private String        purchaseInvoiceNo;
+    private String        purchaseStatus;
+    private double        purchasePaidAmount;
+    private double        purchaseDueAmount;
+    private double        returnAmount;
+    private double        netReceivedAmount;
 }

@@ -34,7 +34,7 @@ public class ShiftSummaryResponse {
     private double totalExpenses;
 
     // Closing
-    private double expectedClosingCash;   // openingCash + cashSales - expenses + cashDrops
+    private double expectedClosingCash;   // openingCash + cashSales - expenses - cashDrops
     private double countedCash;
     private double cashDifference;        // counted - expected (negative = short)
 
