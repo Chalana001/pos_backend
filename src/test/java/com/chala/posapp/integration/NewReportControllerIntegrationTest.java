@@ -163,6 +163,10 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         reportExportJobScheduler.processTenantNow(tenantId);
 
         JsonNode jobs = getJson("/reports/export-jobs?page=0&size=10", tenantId, token);
+        for (int attempt = 0; attempt < 20 && "QUEUED".equals(jobs.path("items").get(0).path("status").asText()); attempt++) {
+            Thread.sleep(100);
+            jobs = getJson("/reports/export-jobs?page=0&size=10", tenantId, token);
+        }
         assertEquals("PRODUCT", jobs.path("items").get(0).path("reportType").asText());
         assertEquals(schedule.path("id").asLong(), jobs.path("items").get(0).path("scheduleId").asLong());
         assertEquals("COMPLETED", jobs.path("items").get(0).path("status").asText());
