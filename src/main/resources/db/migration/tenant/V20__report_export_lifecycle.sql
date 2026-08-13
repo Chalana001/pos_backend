@@ -1,5 +1,4 @@
 ALTER TABLE `report_export_jobs`
-    ADD COLUMN `version` BIGINT NOT NULL DEFAULT 0 AFTER `id`,
     ADD COLUMN `storage_key` VARCHAR(500) NULL AFTER `file_path`,
     ADD COLUMN `email_to` VARCHAR(320) NULL AFTER `error_message`,
     ADD COLUMN `email_delivered_at` DATETIME(3) NULL AFTER `email_to`,

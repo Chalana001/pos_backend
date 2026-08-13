@@ -98,6 +98,24 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals("INSUFFICIENT", sparseForecast.path("confidence").asText());
         assertEquals(0.0, sparseForecast.path("projectedDemand").asDouble(), 0.001);
         assertFalse(sparseForecast.path("warning").asText().isBlank());
+
+        JsonNode highOnly = getJson("/api/reports/v2/demand-forecast?branchId=" + fixture.mainBranch().getId()
+                + "&forecastDays=14&targetCoverDays=30&confidence=HIGH&actionableOnly=true", tenantId, token);
+        assertEquals("HIGH", highOnly.path("confidenceFilter").asText());
+        assertTrue(highOnly.path("actionableOnly").asBoolean());
+        for (JsonNode item : highOnly.path("items")) {
+            assertEquals("HIGH", item.path("confidence").asText());
+            assertTrue(item.path("suggestedReorderQty").asDouble() > 0);
+        }
+
+        JsonNode export = jsonRequest(org.springframework.http.HttpMethod.POST, "/reports/export-jobs", tenantId, token, """
+                {"reportType":"DEMAND_FORECAST","branchId":%d,"forecastDays":14,"targetCoverDays":30,"confidence":"HIGH","actionableOnly":true}
+                """.formatted(fixture.mainBranch().getId()), 202);
+        reportExportJobScheduler.processTenantNow(tenantId);
+        JsonNode completed = getJson("/reports/export-jobs?page=0&size=10", tenantId, token).path("items").get(0);
+        assertEquals(export.path("id").asLong(), completed.path("id").asLong());
+        assertEquals("COMPLETED", completed.path("status").asText());
+        assertTrue(completed.path("downloadable").asBoolean());
     }
 
     @Test

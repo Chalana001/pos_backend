@@ -130,8 +130,13 @@ public class NewReportController {
     public ResponseEntity<DemandForecastResponse> demandForecast(
             @RequestParam(required = false) Long branchId,
             @RequestParam(defaultValue = "30") int forecastDays,
-            @RequestParam(defaultValue = "14") int targetCoverDays) {
-        return ResponseEntity.ok(reportService.demandForecast(branchId, forecastDays, targetCoverDays));
+            @RequestParam(defaultValue = "14") int targetCoverDays,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) String confidence,
+            @RequestParam(defaultValue = "false") boolean actionableOnly) {
+        return ResponseEntity.ok(reportService.demandForecast(branchId, forecastDays, targetCoverDays,
+                categoryId, supplierId, confidence, actionableOnly));
     }
 
     // RPT-06: Expense Report by Category

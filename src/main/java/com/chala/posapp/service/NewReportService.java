@@ -425,21 +425,36 @@ public class NewReportService {
     }
 
     public DemandForecastResponse demandForecast(Long requestedBranchId, int forecastDays, int targetCoverDays) {
+        return demandForecast(requestedBranchId, forecastDays, targetCoverDays, null, null, null, false);
+    }
+
+    public DemandForecastResponse demandForecast(Long requestedBranchId, int forecastDays, int targetCoverDays,
+                                                 Long categoryId, Long supplierId, String confidence,
+                                                 boolean actionableOnly) {
         if (forecastDays < 7 || forecastDays > 90) throw new BadRequestException("forecastDays must be between 7 and 90");
         if (targetCoverDays < 1 || targetCoverDays > 90) throw new BadRequestException("targetCoverDays must be between 1 and 90");
+        String normalizedConfidence = confidence == null || confidence.isBlank() ? null : confidence.trim().toUpperCase();
+        if (normalizedConfidence != null && !java.util.Set.of("HIGH", "MEDIUM", "LOW", "INSUFFICIENT").contains(normalizedConfidence)) {
+            throw new BadRequestException("confidence must be HIGH, MEDIUM, LOW, or INSUFFICIENT");
+        }
         final int historyDays = 90;
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         LocalDateTime recentFrom = LocalDate.now().minusDays(30).atStartOfDay();
         LocalDateTime historyFrom = LocalDate.now().minusDays(historyDays).atStartOfDay();
         Map<Long, List<Double>> dailyDemandByItem = reportRepository.dailyItemDemandRaw(qb(branchId), historyFrom).stream()
                 .collect(Collectors.groupingBy(row -> toLong(row[0]), Collectors.mapping(row -> toDouble(row[2]), Collectors.toList())));
-        List<DemandForecastResponse.ItemForecast> items = reportRepository.demandForecastRaw(qb(branchId), historyFrom, recentFrom)
-                .stream().map(row -> forecastItem(row, forecastDays, targetCoverDays, dailyDemandByItem.getOrDefault(toLong(row[0]), List.of()))).toList();
+        final String confidenceFilter = normalizedConfidence;
+        List<DemandForecastResponse.ItemForecast> items = reportRepository.demandForecastRaw(qb(branchId), historyFrom, recentFrom, categoryId, supplierId)
+                .stream().map(row -> forecastItem(row, forecastDays, targetCoverDays, dailyDemandByItem.getOrDefault(toLong(row[0]), List.of())))
+                .filter(item -> confidenceFilter == null || confidenceFilter.equals(item.getConfidence()))
+                .filter(item -> !actionableOnly || item.getSuggestedReorderQty() > 0)
+                .toList();
         return DemandForecastResponse.builder()
                 .historyDays(historyDays).forecastDays(forecastDays).targetCoverDays(targetCoverDays)
                 .totalItems(items.size())
                 .actionableItems(items.stream().filter(item -> item.getSuggestedReorderQty() > 0).count())
                 .lowConfidenceItems(items.stream().filter(item -> !"HIGH".equals(item.getConfidence())).count())
+                .categoryId(categoryId).supplierId(supplierId).confidenceFilter(confidenceFilter).actionableOnly(actionableOnly)
                 .projectedRevenue(items.stream().mapToDouble(DemandForecastResponse.ItemForecast::getProjectedRevenue).sum())
                 .estimatedReorderCost(items.stream().mapToDouble(DemandForecastResponse.ItemForecast::getEstimatedReorderCost).sum())
                 .items(items).build();

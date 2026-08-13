@@ -77,6 +77,10 @@ public class TenantFlywayRunner implements ApplicationRunner {
 
     private boolean migrateDatabase(String dbName) {
         try {
+            if (dbName == null || !dbName.matches("[A-Za-z0-9_]+")) {
+                log.error("Refusing to migrate unsafe database identifier: {}", dbName);
+                return false;
+            }
             var flyway = Flyway.configure()
                     .dataSource(dataSource)
                     .schemas(dbName)

@@ -114,12 +114,18 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND (:branchId = 0 OR EXISTS (SELECT 1 FROM stock_batches scoped_sb WHERE scoped_sb.item_id = i.id AND scoped_sb.branch_id = :branchId)
                OR EXISTS (SELECT 1 FROM order_items scoped_oi JOIN orders scoped_o ON scoped_o.id = scoped_oi.order_id
                           WHERE scoped_oi.item_id = i.id AND scoped_o.branch_id = :branchId))
+          AND (:categoryId IS NULL OR EXISTS (SELECT 1 FROM sub_categories forecast_sc
+               WHERE forecast_sc.id = i.sub_category_id AND forecast_sc.category_id = :categoryId))
+          AND (:supplierId IS NULL OR EXISTS (SELECT 1 FROM supplier_items forecast_si
+               WHERE forecast_si.item_id = i.id AND forecast_si.supplier_id = :supplierId))
         GROUP BY i.id, i.barcode, i.name, i.default_unit, i.item_type, i.cost_price, i.selling_price, i.reorder_level
         ORDER BY i.name
         """, nativeQuery = true)
     List<Object[]> demandForecastRaw(@Param("branchId") Long branchId,
                                      @Param("historyFrom") LocalDateTime historyFrom,
-                                     @Param("recentFrom") LocalDateTime recentFrom);
+                                     @Param("recentFrom") LocalDateTime recentFrom,
+                                     @Param("categoryId") Long categoryId,
+                                     @Param("supplierId") Long supplierId);
 
     @Query(value = """
         SELECT oi.item_id, DATE(o.created_at), SUM(oi.qty)

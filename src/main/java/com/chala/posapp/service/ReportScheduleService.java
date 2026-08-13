@@ -28,6 +28,10 @@ public class ReportScheduleService {
         if (request == null || request.report() == null || request.frequency() == null || request.nextRunAt() == null) {
             throw new BadRequestException("report, frequency and nextRunAt are required");
         }
+        if (request.emailTo() != null && !request.emailTo().isBlank()
+                && !request.emailTo().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new BadRequestException("Invalid emailTo");
+        }
         exportJobService.validateRequest(request.report());
         User user = securityUtils.getCurrentUser();
         try {

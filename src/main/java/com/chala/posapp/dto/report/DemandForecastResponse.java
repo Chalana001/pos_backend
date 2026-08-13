@@ -12,6 +12,10 @@ public class DemandForecastResponse {
     private long totalItems;
     private long actionableItems;
     private long lowConfidenceItems;
+    private Long categoryId;
+    private Long supplierId;
+    private String confidenceFilter;
+    private boolean actionableOnly;
     private double projectedRevenue;
     private double estimatedReorderCost;
     private List<ItemForecast> items;

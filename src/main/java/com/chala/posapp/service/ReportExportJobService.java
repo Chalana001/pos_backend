@@ -172,7 +172,9 @@ public class ReportExportJobService {
             SecurityContextHolder.setContext(workerContext);
             ReportExportJobRequest request = objectMapper.readValue(job.getParametersJson(), ReportExportJobRequest.class);
             byte[] bytes = reportService.exportPerformanceReport(request.reportType(), request.branchId(), request.from(), request.to(),
-                    request.itemType(), request.orderType(), request.sortBy(), request.sortDirection());
+                    request.itemType(), request.orderType(), request.sortBy(), request.sortDirection(),
+                    request.forecastDays(), request.targetCoverDays(), request.categoryId(), request.supplierId(),
+                    request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
             String fileName = request.reportType().toLowerCase() + "-report-job-" + job.getId() + ".xlsx";
             String tenant = TenantContext.getTenant() == null ? "unknown" : TenantContext.getTenant();
             job.setStorageKey(storage.store(tenant, fileName, bytes)); job.setFilePath(null);
@@ -216,9 +218,15 @@ public class ReportExportJobService {
     public void validateRequest(ReportExportJobRequest request) {
         if (request == null || request.reportType() == null) throw new BadRequestException("reportType is required");
         String type = request.reportType().trim().toUpperCase();
-        if (!type.matches("SALES|PRODUCT|CUSTOMER|SUPPLIER")) throw new BadRequestException("Invalid export reportType: " + request.reportType());
+        if (!type.matches("SALES|PRODUCT|CUSTOMER|SUPPLIER|DEMAND_FORECAST")) throw new BadRequestException("Invalid export reportType: " + request.reportType());
         if (request.from() != null && request.to() != null && request.from().isAfter(request.to())) throw new BadRequestException("from must be on or before to");
         if (request.emailTo() != null && !request.emailTo().isBlank() && !request.emailTo().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) throw new BadRequestException("Invalid emailTo");
+        if ("DEMAND_FORECAST".equals(type)) {
+            int forecastDays = request.forecastDays() == null ? 30 : request.forecastDays();
+            int targetCoverDays = request.targetCoverDays() == null ? 14 : request.targetCoverDays();
+            if (forecastDays < 7 || forecastDays > 90) throw new BadRequestException("forecastDays must be between 7 and 90");
+            if (targetCoverDays < 1 || targetCoverDays > 90) throw new BadRequestException("targetCoverDays must be between 1 and 90");
+        }
     }
 
     private String blankToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }

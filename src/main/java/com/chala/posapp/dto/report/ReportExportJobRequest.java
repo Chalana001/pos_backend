@@ -11,5 +11,11 @@ public record ReportExportJobRequest(
         String orderType,
         String sortBy,
         String sortDirection,
-        String emailTo
+        String emailTo,
+        Integer forecastDays,
+        Integer targetCoverDays,
+        Long categoryId,
+        Long supplierId,
+        String confidence,
+        Boolean actionableOnly
 ) {}

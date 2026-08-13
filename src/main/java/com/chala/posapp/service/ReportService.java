@@ -5,6 +5,7 @@ import com.chala.posapp.dto.report.CategorySalesResponse;
 import com.chala.posapp.dto.report.CreditAgingResponse;
 import com.chala.posapp.dto.report.CreditDueResponse;
 import com.chala.posapp.dto.report.CustomerPerformanceResponse;
+import com.chala.posapp.dto.report.DemandForecastResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
 import com.chala.posapp.dto.report.OwnerCommandCenterResponse;
@@ -431,6 +432,16 @@ public class ReportService {
             String sortBy,
             String sortDirection
     ) {
+        return exportPerformanceReport(reportType, requestedBranchId, from, to, itemType, orderType,
+                sortBy, sortDirection, null, null, null, null, null, false);
+    }
+
+    public byte[] exportPerformanceReport(
+            String reportType, Long requestedBranchId, LocalDate from, LocalDate to,
+            String itemType, String orderType, String sortBy, String sortDirection,
+            Integer forecastDays, Integer targetCoverDays, Long categoryId, Long supplierId,
+            String confidence, boolean actionableOnly
+    ) {
         String normalizedType = reportType == null ? "" : reportType.trim().toUpperCase();
 
         return switch (normalizedType) {
@@ -438,8 +449,29 @@ public class ReportService {
             case "PRODUCT" -> exportProductPerformance(requestedBranchId, from, to, itemType, sortBy, sortDirection);
             case "CUSTOMER" -> exportCustomerPerformance(requestedBranchId, from, to, sortBy, sortDirection);
             case "SUPPLIER" -> exportSupplierPerformance(requestedBranchId, from, to, sortBy, sortDirection);
+            case "DEMAND_FORECAST" -> exportDemandForecast(requestedBranchId,
+                    forecastDays == null ? 30 : forecastDays, targetCoverDays == null ? 14 : targetCoverDays,
+                    categoryId, supplierId, confidence, actionableOnly);
             default -> throw new BadRequestException("Invalid export reportType: " + reportType);
         };
+    }
+
+    private byte[] exportDemandForecast(Long branchId, int forecastDays, int targetCoverDays,
+                                        Long categoryId, Long supplierId, String confidence,
+                                        boolean actionableOnly) {
+        DemandForecastResponse forecast = newReportService.demandForecast(branchId, forecastDays, targetCoverDays,
+                categoryId, supplierId, confidence, actionableOnly);
+        return buildWorkbook("Demand Forecast",
+                List.of("Item ID", "Barcode", "Item", "Unit", "On Hand", "Sold Last 30 Days",
+                        "Active Sales Days", "Average Daily Demand", "Projected Demand", "Projected Revenue",
+                        "Stockout Days", "Suggested Reorder", "Reorder Cost", "Trend", "Confidence", "Warning"),
+                forecast.getItems().stream().map(item -> List.of(
+                        safe(item.getItemId()), safe(item.getBarcode()), safe(item.getItemName()), safe(item.getUnit()),
+                        item.getQtyOnHand(), item.getSoldLast30Days(), item.getActiveSalesDays(), item.getAverageDailyDemand(),
+                        item.getProjectedDemand(), item.getProjectedRevenue(), safe(item.getEstimatedStockoutDays()),
+                        item.getSuggestedReorderQty(), item.getEstimatedReorderCost(), safe(item.getTrend()),
+                        safe(item.getConfidence()), safe(item.getWarning())
+                )).toList());
     }
 
     private byte[] exportSalesReport(
