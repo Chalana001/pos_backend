@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.ReportExportJobRequest;
 import com.chala.posapp.dto.report.ReportExportJobResponse;
+import com.chala.posapp.dto.report.DemandForecastResponse;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -42,6 +43,7 @@ public class ReportExportJobService {
     private final ObjectProvider<ReportExportEmailService> emailService;
     private final TransactionTemplate transactionTemplate;
     private final ReportExportMetrics metrics;
+    private final ForecastAccuracyService forecastAccuracyService;
 
     @Value("${app.report-exports.max-attempts:3}") private int maxAttempts;
     @Value("${app.report-exports.retry-delay-seconds:60}") private long retryDelaySeconds;
@@ -171,10 +173,20 @@ public class ReportExportJobService {
                     java.util.List.of(new SimpleGrantedAuthority("ROLE_" + requester.getRole().name()))));
             SecurityContextHolder.setContext(workerContext);
             ReportExportJobRequest request = objectMapper.readValue(job.getParametersJson(), ReportExportJobRequest.class);
-            byte[] bytes = reportService.exportPerformanceReport(request.reportType(), request.branchId(), request.from(), request.to(),
-                    request.itemType(), request.orderType(), request.sortBy(), request.sortDirection(),
-                    request.forecastDays(), request.targetCoverDays(), request.categoryId(), request.supplierId(),
-                    request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
+            byte[] bytes;
+            if ("DEMAND_FORECAST".equalsIgnoreCase(request.reportType())) {
+                int forecastDays = request.forecastDays() == null ? 30 : request.forecastDays();
+                DemandForecastResponse forecast = reportService.forecastForExport(request.branchId(), forecastDays,
+                        request.targetCoverDays() == null ? 14 : request.targetCoverDays(), request.categoryId(),
+                        request.supplierId(), request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
+                bytes = reportService.exportDemandForecast(forecast);
+                forecastAccuracyService.capture(job, request.branchId(), forecastDays, forecast);
+            } else {
+                bytes = reportService.exportPerformanceReport(request.reportType(), request.branchId(), request.from(), request.to(),
+                        request.itemType(), request.orderType(), request.sortBy(), request.sortDirection(),
+                        request.forecastDays(), request.targetCoverDays(), request.categoryId(), request.supplierId(),
+                        request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
+            }
             String fileName = request.reportType().toLowerCase() + "-report-job-" + job.getId() + ".xlsx";
             String tenant = TenantContext.getTenant() == null ? "unknown" : TenantContext.getTenant();
             job.setStorageKey(storage.store(tenant, fileName, bytes)); job.setFilePath(null);

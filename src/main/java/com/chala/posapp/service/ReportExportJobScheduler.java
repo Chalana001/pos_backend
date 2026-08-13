@@ -19,6 +19,7 @@ public class ReportExportJobScheduler {
     private final TenantDatabaseRegistry tenantDatabaseRegistry;
     private final ReportExportJobService exportJobService;
     private final ReportScheduleService reportScheduleService;
+    private final ForecastAccuracyService forecastAccuracyService;
     private final EntityManagerFactory entityManagerFactory;
 
     @Scheduled(fixedDelayString = "${app.report-exports.poll-delay-ms:5000}")
@@ -51,6 +52,7 @@ public class ReportExportJobScheduler {
                 exportJobService.recoverStaleJobs();
                 reportScheduleService.enqueueDueSchedules();
                 exportJobService.processQueuedJobs();
+                forecastAccuracyService.evaluateMatured();
             });
         } finally {
             TransactionSynchronizationManager.unbindResource(entityManagerFactory);
@@ -68,6 +70,7 @@ public class ReportExportJobScheduler {
                 TransactionSynchronizationManager.bindResource(entityManagerFactory, holder);
                 try {
                     TenantContext.runWith(tenantId, exportJobService::cleanupExpiredJobs);
+                    TenantContext.runWith(tenantId, forecastAccuracyService::cleanup);
                 } finally {
                     TransactionSynchronizationManager.unbindResource(entityManagerFactory);
                     entityManager.close();

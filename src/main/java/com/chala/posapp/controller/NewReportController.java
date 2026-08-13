@@ -3,6 +3,7 @@ package com.chala.posapp.controller;
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.service.NewReportService;
+import com.chala.posapp.service.ForecastAccuracyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,7 @@ import java.util.List;
 public class NewReportController {
 
     private final NewReportService reportService;
+    private final ForecastAccuracyService forecastAccuracyService;
 
     // RPT-01: Cashier Performance
     @GetMapping("/cashier-performance")
@@ -137,6 +139,12 @@ public class NewReportController {
             @RequestParam(defaultValue = "false") boolean actionableOnly) {
         return ResponseEntity.ok(reportService.demandForecast(branchId, forecastDays, targetCoverDays,
                 categoryId, supplierId, confidence, actionableOnly));
+    }
+
+    @GetMapping("/forecast-accuracy")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<ForecastAccuracyResponse> forecastAccuracy() {
+        return ResponseEntity.ok(forecastAccuracyService.summary());
     }
 
     // RPT-06: Expense Report by Category

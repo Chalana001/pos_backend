@@ -31,6 +31,9 @@ import com.chala.posapp.entity.stock.StockProcessingOutput;
 import com.chala.posapp.repository.StockProcessingRepository;
 import com.chala.posapp.repository.StockProcessingOutputRepository;
 import com.chala.posapp.repository.PurchaseReturnRepository;
+import com.chala.posapp.repository.ForecastSnapshotRepository;
+import com.chala.posapp.service.ForecastAccuracyService;
+import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.service.ReportExportJobScheduler;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
@@ -53,6 +56,10 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
     private PurchaseReturnRepository purchaseReturnRepository;
     @org.springframework.beans.factory.annotation.Autowired
     private ReportExportJobScheduler reportExportJobScheduler;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ForecastSnapshotRepository forecastSnapshotRepository;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ForecastAccuracyService forecastAccuracyService;
 
     @Test
     void durableExportWorkerCompletesQueuedTenantJob() throws Exception {
@@ -116,6 +123,19 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(export.path("id").asLong(), completed.path("id").asLong());
         assertEquals("COMPLETED", completed.path("status").asText());
         assertTrue(completed.path("downloadable").asBoolean());
+
+        TenantContext.runWith(tenantId, () -> {
+            var snapshot = forecastSnapshotRepository.findAll().get(0);
+            snapshot.setWindowStart(LocalDateTime.now().minusDays(2));
+            snapshot.setWindowEnd(LocalDateTime.now().minusDays(1));
+            forecastSnapshotRepository.save(snapshot);
+            forecastAccuracyService.evaluateMatured();
+        });
+        JsonNode accuracy = getJson("/api/reports/v2/forecast-accuracy", tenantId, token);
+        assertEquals(1, accuracy.path("evaluatedSnapshots").asInt());
+        assertEquals(0, accuracy.path("maturingSnapshots").asInt());
+        assertEquals(1, accuracy.path("history").size());
+        assertTrue(accuracy.path("history").get(0).path("totalItems").asInt() >= 1);
     }
 
     @Test

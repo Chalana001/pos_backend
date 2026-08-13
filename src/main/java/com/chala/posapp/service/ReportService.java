@@ -449,18 +449,20 @@ public class ReportService {
             case "PRODUCT" -> exportProductPerformance(requestedBranchId, from, to, itemType, sortBy, sortDirection);
             case "CUSTOMER" -> exportCustomerPerformance(requestedBranchId, from, to, sortBy, sortDirection);
             case "SUPPLIER" -> exportSupplierPerformance(requestedBranchId, from, to, sortBy, sortDirection);
-            case "DEMAND_FORECAST" -> exportDemandForecast(requestedBranchId,
+            case "DEMAND_FORECAST" -> exportDemandForecast(forecastForExport(requestedBranchId,
                     forecastDays == null ? 30 : forecastDays, targetCoverDays == null ? 14 : targetCoverDays,
-                    categoryId, supplierId, confidence, actionableOnly);
+                    categoryId, supplierId, confidence, actionableOnly));
             default -> throw new BadRequestException("Invalid export reportType: " + reportType);
         };
     }
 
-    private byte[] exportDemandForecast(Long branchId, int forecastDays, int targetCoverDays,
+    public DemandForecastResponse forecastForExport(Long branchId, int forecastDays, int targetCoverDays,
                                         Long categoryId, Long supplierId, String confidence,
                                         boolean actionableOnly) {
-        DemandForecastResponse forecast = newReportService.demandForecast(branchId, forecastDays, targetCoverDays,
-                categoryId, supplierId, confidence, actionableOnly);
+        return newReportService.demandForecast(branchId, forecastDays, targetCoverDays, categoryId, supplierId, confidence, actionableOnly);
+    }
+
+    public byte[] exportDemandForecast(DemandForecastResponse forecast) {
         return buildWorkbook("Demand Forecast",
                 List.of("Item ID", "Barcode", "Item", "Unit", "On Hand", "Sold Last 30 Days",
                         "Active Sales Days", "Average Daily Demand", "Projected Demand", "Projected Revenue",

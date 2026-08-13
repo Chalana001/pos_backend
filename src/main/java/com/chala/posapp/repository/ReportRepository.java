@@ -137,6 +137,17 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                       @Param("historyFrom") LocalDateTime historyFrom);
 
     @Query(value = """
+        SELECT oi.item_id, COALESCE(SUM(CASE WHEN COALESCE(oi.item_type, i.item_type) IN ('NORMAL','WEIGHT','VOLUME') THEN oi.qty / 1000.0 ELSE oi.qty END), 0)
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id LEFT JOIN items i ON i.id = oi.item_id
+        WHERE o.status = 'COMPLETED' AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.created_at >= :fromDate AND o.created_at < :toDate
+        GROUP BY oi.item_id
+        """, nativeQuery = true)
+    List<Object[]> itemDemandBetweenRaw(@Param("branchId") Long branchId,
+                                        @Param("fromDate") LocalDateTime fromDate,
+                                        @Param("toDate") LocalDateTime toDate);
+
+    @Query(value = """
         SELECT
           COALESCE((SELECT SUM(oi.line_total) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
           COALESCE((SELECT SUM(o.bill_discount) FROM orders o WHERE (:branchId = 0 OR o.branch_id = :branchId) AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0),
