@@ -433,13 +433,13 @@ public class ReportService {
             String sortDirection
     ) {
         return exportPerformanceReport(reportType, requestedBranchId, from, to, itemType, orderType,
-                sortBy, sortDirection, null, null, null, null, null, false);
+                sortBy, sortDirection, null, null, null, null, null, null, false);
     }
 
     public byte[] exportPerformanceReport(
             String reportType, Long requestedBranchId, LocalDate from, LocalDate to,
             String itemType, String orderType, String sortBy, String sortDirection,
-            Integer forecastDays, Integer targetCoverDays, Long categoryId, Long supplierId,
+            Integer forecastDays, Integer targetCoverDays, Long categoryId, Long subCategoryId, Long supplierId,
             String confidence, boolean actionableOnly
     ) {
         String normalizedType = reportType == null ? "" : reportType.trim().toUpperCase();
@@ -451,15 +451,15 @@ public class ReportService {
             case "SUPPLIER" -> exportSupplierPerformance(requestedBranchId, from, to, sortBy, sortDirection);
             case "DEMAND_FORECAST" -> exportDemandForecast(forecastForExport(requestedBranchId,
                     forecastDays == null ? 30 : forecastDays, targetCoverDays == null ? 14 : targetCoverDays,
-                    categoryId, supplierId, confidence, actionableOnly));
+                    categoryId, subCategoryId, supplierId, confidence, actionableOnly));
             default -> throw new BadRequestException("Invalid export reportType: " + reportType);
         };
     }
 
     public DemandForecastResponse forecastForExport(Long branchId, int forecastDays, int targetCoverDays,
-                                        Long categoryId, Long supplierId, String confidence,
+                                        Long categoryId, Long subCategoryId, Long supplierId, String confidence,
                                         boolean actionableOnly) {
-        return newReportService.demandForecast(branchId, forecastDays, targetCoverDays, categoryId, supplierId, confidence, actionableOnly);
+        return newReportService.demandForecast(branchId, forecastDays, targetCoverDays, categoryId, subCategoryId, supplierId, confidence, actionableOnly);
     }
 
     public byte[] exportDemandForecast(DemandForecastResponse forecast) {
@@ -678,19 +678,19 @@ public class ReportService {
     }
 
     public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to) {
-        return salesByCategory(requestedBranchId, from, to, null);
+        return salesByCategory(requestedBranchId, from, to, null, false);
     }
 
     // MISS-01: Cache sales-by-category for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_SALES_CATEGORY,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #itemType)")
-    public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to, String itemType) {
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #itemType, #singleCategory)")
+    public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to, String itemType, boolean singleCategory) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
         String normalizedItemType = normalizeItemType(itemType);
 
-        List<Object[]> rows = reportRepository.salesByCategoryRaw(toQueryBranchId(branchId), normalizedItemType, range.from(), range.to());
+        List<Object[]> rows = reportRepository.salesByCategoryRaw(toQueryBranchId(branchId), normalizedItemType, singleCategory, range.from(), range.to());
 
         return rows.stream().map(r -> new CategorySalesResponse(
                 (String) r[0],

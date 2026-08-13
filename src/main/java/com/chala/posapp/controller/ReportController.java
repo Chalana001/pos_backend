@@ -181,8 +181,9 @@ public class ReportController {
             @RequestParam(name = "branchId", required = false) Long branchId,
             @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(name = "itemType", required = false) String itemType) {
-        return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to, itemType));
+            @RequestParam(name = "itemType", required = false) String itemType,
+            @RequestParam(name = "categoryMode", defaultValue = "MAIN_AND_SUB") String categoryMode) {
+        return ResponseEntity.ok(reportService.salesByCategory(branchId, from, to, itemType, "SINGLE_CATEGORY".equalsIgnoreCase(categoryMode)));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

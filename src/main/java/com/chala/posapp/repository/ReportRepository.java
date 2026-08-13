@@ -116,6 +116,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                           WHERE scoped_oi.item_id = i.id AND scoped_o.branch_id = :branchId))
           AND (:categoryId IS NULL OR EXISTS (SELECT 1 FROM sub_categories forecast_sc
                WHERE forecast_sc.id = i.sub_category_id AND forecast_sc.category_id = :categoryId))
+          AND (:subCategoryId IS NULL OR i.sub_category_id = :subCategoryId)
           AND (:supplierId IS NULL OR EXISTS (SELECT 1 FROM supplier_items forecast_si
                WHERE forecast_si.item_id = i.id AND forecast_si.supplier_id = :supplierId))
         GROUP BY i.id, i.barcode, i.name, i.default_unit, i.item_type, i.cost_price, i.selling_price, i.reorder_level
@@ -125,6 +126,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                      @Param("historyFrom") LocalDateTime historyFrom,
                                      @Param("recentFrom") LocalDateTime recentFrom,
                                      @Param("categoryId") Long categoryId,
+                                     @Param("subCategoryId") Long subCategoryId,
                                      @Param("supplierId") Long supplierId);
 
     @Query(value = """
@@ -432,7 +434,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     );
 
     @Query(value = """
-        SELECT c.name AS category_name, SUM(oi.line_total) AS total
+        SELECT CASE WHEN :singleCategory = true THEN sc.name ELSE c.name END AS category_name, SUM(oi.line_total) AS total
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         JOIN items i ON i.id = oi.item_id
@@ -442,11 +444,12 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND (:itemType IS NULL OR COALESCE(oi.item_type, i.item_type) = :itemType)
           AND o.status = 'COMPLETED'
           AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY c.name
+        GROUP BY CASE WHEN :singleCategory = true THEN sc.name ELSE c.name END
     """, nativeQuery = true)
     List<Object[]> salesByCategoryRaw(
             @Param("branchId") Long branchId,
             @Param("itemType") String itemType,
+            @Param("singleCategory") boolean singleCategory,
             @Param("fromDate") LocalDateTime fromDate,
             @Param("toDate") LocalDateTime toDate
     );
@@ -1014,13 +1017,15 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND i.active = true
           AND i.deleted_at IS NULL
           AND (:categoryId = 0 OR c.id = :categoryId)
+          AND (:subCategoryId = 0 OR sc.id = :subCategoryId)
         GROUP BY i.id, i.barcode, i.name, c.name, sc.name,
                  i.item_type, i.default_unit, i.cost_price, i.selling_price
         ORDER BY stockValue DESC
     """, nativeQuery = true)
     List<Object[]> inventoryValuationRaw(
             @Param("branchId") Long branchId,
-            @Param("categoryId") Long categoryId);
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId);
 
     // ═══════════════════════════════════════════════════════════════════════════
     // RPT-04: GRN / Purchase Report

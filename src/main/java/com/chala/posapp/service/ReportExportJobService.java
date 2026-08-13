@@ -178,13 +178,13 @@ public class ReportExportJobService {
                 int forecastDays = request.forecastDays() == null ? 30 : request.forecastDays();
                 DemandForecastResponse forecast = reportService.forecastForExport(request.branchId(), forecastDays,
                         request.targetCoverDays() == null ? 14 : request.targetCoverDays(), request.categoryId(),
-                        request.supplierId(), request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
+                        request.subCategoryId(), request.supplierId(), request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
                 bytes = reportService.exportDemandForecast(forecast);
                 forecastAccuracyService.capture(job, request.branchId(), forecastDays, forecast);
             } else {
                 bytes = reportService.exportPerformanceReport(request.reportType(), request.branchId(), request.from(), request.to(),
                         request.itemType(), request.orderType(), request.sortBy(), request.sortDirection(),
-                        request.forecastDays(), request.targetCoverDays(), request.categoryId(), request.supplierId(),
+                        request.forecastDays(), request.targetCoverDays(), request.categoryId(), request.subCategoryId(), request.supplierId(),
                         request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
             }
             String fileName = request.reportType().toLowerCase() + "-report-job-" + job.getId() + ".xlsx";

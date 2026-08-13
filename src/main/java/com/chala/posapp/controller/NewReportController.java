@@ -57,8 +57,9 @@ public class NewReportController {
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
     public ResponseEntity<InventoryValuationSummary> inventoryValuation(
             @RequestParam(required = false) Long branchId,
-            @RequestParam(required = false) Long categoryId) {
-        return ResponseEntity.ok(reportService.inventoryValuation(branchId, categoryId));
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long subCategoryId) {
+        return ResponseEntity.ok(reportService.inventoryValuation(branchId, categoryId, subCategoryId));
     }
 
     // RPT-03: Shift Summary / Z-Report
@@ -134,11 +135,12 @@ public class NewReportController {
             @RequestParam(defaultValue = "30") int forecastDays,
             @RequestParam(defaultValue = "14") int targetCoverDays,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long subCategoryId,
             @RequestParam(required = false) Long supplierId,
             @RequestParam(required = false) String confidence,
             @RequestParam(defaultValue = "false") boolean actionableOnly) {
         return ResponseEntity.ok(reportService.demandForecast(branchId, forecastDays, targetCoverDays,
-                categoryId, supplierId, confidence, actionableOnly));
+                categoryId, subCategoryId, supplierId, confidence, actionableOnly));
     }
 
     @GetMapping("/forecast-accuracy")

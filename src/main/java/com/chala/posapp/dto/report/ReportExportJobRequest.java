@@ -15,6 +15,7 @@ public record ReportExportJobRequest(
         Integer forecastDays,
         Integer targetCoverDays,
         Long categoryId,
+        Long subCategoryId,
         Long supplierId,
         String confidence,
         Boolean actionableOnly

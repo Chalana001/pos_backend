@@ -129,15 +129,16 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-inventory-val",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #categoryId)")
-    public InventoryValuationSummary inventoryValuation(Long requestedBranchId, Long categoryId) {
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #categoryId, #subCategoryId)")
+    public InventoryValuationSummary inventoryValuation(Long requestedBranchId, Long categoryId, Long subCategoryId) {
 
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
         long qCat = categoryId != null ? categoryId : 0L;
+        long qSubCat = subCategoryId != null ? subCategoryId : 0L;
 
         List<InventoryValuationResponse> items = reportRepository
-                .inventoryValuationRaw(qb(branchId), qCat)
+                .inventoryValuationRaw(qb(branchId), qCat, qSubCat)
                 .stream()
                 .map(r -> {
                     double sv = toDouble(r[9]);
@@ -425,11 +426,11 @@ public class NewReportService {
     }
 
     public DemandForecastResponse demandForecast(Long requestedBranchId, int forecastDays, int targetCoverDays) {
-        return demandForecast(requestedBranchId, forecastDays, targetCoverDays, null, null, null, false);
+        return demandForecast(requestedBranchId, forecastDays, targetCoverDays, null, null, null, null, false);
     }
 
     public DemandForecastResponse demandForecast(Long requestedBranchId, int forecastDays, int targetCoverDays,
-                                                 Long categoryId, Long supplierId, String confidence,
+                                                 Long categoryId, Long subCategoryId, Long supplierId, String confidence,
                                                  boolean actionableOnly) {
         if (forecastDays < 7 || forecastDays > 90) throw new BadRequestException("forecastDays must be between 7 and 90");
         if (targetCoverDays < 1 || targetCoverDays > 90) throw new BadRequestException("targetCoverDays must be between 1 and 90");
@@ -444,7 +445,7 @@ public class NewReportService {
         Map<Long, List<Double>> dailyDemandByItem = reportRepository.dailyItemDemandRaw(qb(branchId), historyFrom).stream()
                 .collect(Collectors.groupingBy(row -> toLong(row[0]), Collectors.mapping(row -> toDouble(row[2]), Collectors.toList())));
         final String confidenceFilter = normalizedConfidence;
-        List<DemandForecastResponse.ItemForecast> items = reportRepository.demandForecastRaw(qb(branchId), historyFrom, recentFrom, categoryId, supplierId)
+        List<DemandForecastResponse.ItemForecast> items = reportRepository.demandForecastRaw(qb(branchId), historyFrom, recentFrom, categoryId, subCategoryId, supplierId)
                 .stream().map(row -> forecastItem(row, forecastDays, targetCoverDays, dailyDemandByItem.getOrDefault(toLong(row[0]), List.of())))
                 .filter(item -> confidenceFilter == null || confidenceFilter.equals(item.getConfidence()))
                 .filter(item -> !actionableOnly || item.getSuggestedReorderQty() > 0)

@@ -8,7 +8,7 @@ public class ReorderPlanService {
  public ReorderPlanResponse create(ReorderPlanRequest request){
   if(request==null||request.name()==null||request.name().isBlank())throw new BadRequestException("name is required");
   Long branch=security.enforceBranchAccess(request.branchId()); User user=security.getCurrentUser();
-  var forecast=reports.demandForecast(branch,request.forecastDays(),request.targetCoverDays(),null,null,null,true);
+  var forecast=reports.demandForecast(branch,request.forecastDays(),request.targetCoverDays(),null,null,null,null,true);
   ReorderPlan plan=ReorderPlan.builder().name(request.name().trim()).branchId(branch).forecastDays(request.forecastDays()).targetCoverDays(request.targetCoverDays()).createdByUserId(user.getId()).createdByUsername(user.getUsername()).notes(request.notes()).build();
   for(var item:forecast.getItems()){
    SupplierItem mapping=supplierItems.findByItemIdAndSupplierActiveTrueOrderByPrimarySupplierDescIdAsc(item.getItemId()).stream().findFirst().orElse(null);
