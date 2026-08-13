@@ -19,6 +19,8 @@ public interface ReportExportJobRepository extends JpaRepository<ReportExportJob
     List<ReportExportJob> findTop5ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(ReportExportStatus status, LocalDateTime now);
     List<ReportExportJob> findByStatusAndStartedAtBefore(ReportExportStatus status, LocalDateTime cutoff);
     List<ReportExportJob> findByCompletedAtBefore(LocalDateTime cutoff);
+    long countByStatus(ReportExportStatus status);
+    long countByStatusAndStartedAtBefore(ReportExportStatus status, LocalDateTime cutoff);
 
     @Modifying
     @Query("update ReportExportJob j set j.status = :processing, j.attemptCount = j.attemptCount + 1, j.startedAt = :now, j.errorMessage = null where j.id = :id and j.status = :queued")
