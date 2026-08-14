@@ -103,8 +103,8 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         SELECT i.id, i.barcode, i.name, i.default_unit, i.item_type,
           COALESCE((SELECT SUM(sb.quantity) FROM stock_batches sb WHERE sb.item_id = i.id AND (:branchId = 0 OR sb.branch_id = :branchId)), 0),
           COALESCE(i.cost_price, 0), COALESCE(i.selling_price, 0), i.reorder_level,
-          COALESCE(SUM(CASE WHEN o.created_at >= :recentFrom THEN oi.qty ELSE 0 END), 0),
-          COALESCE(SUM(CASE WHEN o.created_at >= :historyFrom AND o.created_at < :recentFrom THEN oi.qty ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN o.created_at >= :recentFrom THEN CASE WHEN i.item_type IN ('RECIPE','SERVICE') THEN COALESCE(oi.display_qty, oi.qty) ELSE oi.qty END ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN o.created_at >= :historyFrom AND o.created_at < :recentFrom THEN CASE WHEN i.item_type IN ('RECIPE','SERVICE') THEN COALESCE(oi.display_qty, oi.qty) ELSE oi.qty END ELSE 0 END), 0),
           COUNT(DISTINCT CASE WHEN o.created_at >= :historyFrom THEN DATE(o.created_at) END)
         FROM items i
         LEFT JOIN order_items oi ON oi.item_id = i.id
@@ -130,8 +130,8 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                      @Param("supplierId") Long supplierId);
 
     @Query(value = """
-        SELECT oi.item_id, DATE(o.created_at), SUM(oi.qty)
-        FROM order_items oi JOIN orders o ON o.id = oi.order_id
+        SELECT oi.item_id, DATE(o.created_at), SUM(CASE WHEN COALESCE(oi.item_type, i.item_type) IN ('RECIPE','SERVICE') THEN COALESCE(oi.display_qty, oi.qty) ELSE oi.qty END)
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id LEFT JOIN items i ON i.id = oi.item_id
         WHERE o.status = 'COMPLETED' AND (:branchId = 0 OR o.branch_id = :branchId) AND o.created_at >= :historyFrom
         GROUP BY oi.item_id, DATE(o.created_at)
         """, nativeQuery = true)

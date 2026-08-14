@@ -74,6 +74,8 @@ class ReorderPlanIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(line.path("directDemandBase").asLong()+line.path("recipeDemandBase").asLong(),line.path("totalDemandBase").asLong());
         assertEquals(line.path("totalDemandBase").asLong()-1000,line.path("suggestedQtyBase").asLong());
         assertEquals(0, line.path("suggestedQtyBase").asLong() % 1);
+        assertTrue(line.path("recipeDemandBase").asLong() < 100_000,
+                "Recipe demand must use display quantity for recipe pieces, not legacy scaled qty");
     }
 
     private Item saveForecastItem(TenantFixture fixture, String barcode) {
