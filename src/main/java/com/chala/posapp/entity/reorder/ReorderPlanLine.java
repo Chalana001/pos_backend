@@ -10,6 +10,9 @@ public class ReorderPlanLine extends TenantEntity {
  @Column(name="item_id") private Long itemId; @Column(name="item_name") private String itemName; private String unit;
  @Column(name="supplier_id") private Long supplierId; @Column(name="supplier_name") private String supplierName;
  @Column(name="suggested_qty") private BigDecimal suggestedQty; @Column(name="approved_qty") private BigDecimal approvedQty;
+ @Column(name="direct_demand_base") private long directDemandBase; @Column(name="recipe_demand_base") private long recipeDemandBase;
+ @Column(name="total_demand_base") private long totalDemandBase; @Column(name="suggested_qty_base") private long suggestedQtyBase;
+ @Column(name="approved_qty_base") private long approvedQtyBase;
  @Column(name="unit_cost") private BigDecimal unitCost; private String confidence; private boolean excluded;
  @Column(name="manually_edited") private boolean manuallyEdited; @Column(name="edit_note") private String editNote;
 }

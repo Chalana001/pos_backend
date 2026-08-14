@@ -506,10 +506,12 @@ public class NewReportService {
             warning = "Demand is sparse or volatile; forecast is directional only.";
         }
         double projectedDemand = "INSUFFICIENT".equals(confidence) ? 0 : dailyDemand * forecastDays;
+        long projectedDemandBase = scaled ? (long) Math.ceil(projectedDemand * 1000.0) : (long) Math.ceil(projectedDemand);
         double reorderLevelGap = Math.max(0, reorderLevel - stock);
         double suggested = "INSUFFICIENT".equals(confidence) ? 0 : Math.max(0, dailyDemand * targetCoverDays - stock);
         return DemandForecastResponse.ItemForecast.builder()
-                .itemId(toLong(row[0])).barcode(toStr(row[1])).itemName(toStr(row[2])).unit(toStr(row[3]))
+                .itemId(toLong(row[0])).barcode(toStr(row[1])).itemName(toStr(row[2])).itemType(toStr(row[4])).unit(toStr(row[3]))
+                .qtyOnHandBase(Math.round(toDouble(row[5]))).projectedDemandBase(projectedDemandBase)
                 .qtyOnHand(stock).soldLast30Days(recentSold).soldPrevious60Days(previousSold).activeSalesDays(activeDays)
                 .averageDailyDemand(dailyDemand).projectedDemand(projectedDemand).projectedRevenue(projectedDemand * selling)
                 .estimatedStockoutDays(dailyDemand > 0 ? Math.max(0, stock) / dailyDemand : null)

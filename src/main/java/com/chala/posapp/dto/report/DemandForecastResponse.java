@@ -25,7 +25,10 @@ public class DemandForecastResponse {
         private Long itemId;
         private String barcode;
         private String itemName;
+        private String itemType;
         private String unit;
+        private long qtyOnHandBase;
+        private long projectedDemandBase;
         private double qtyOnHand;
         private double soldLast30Days;
         private double soldPrevious60Days;
