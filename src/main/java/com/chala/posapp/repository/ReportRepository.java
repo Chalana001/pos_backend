@@ -1006,7 +1006,8 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                 WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME')
                 THEN (COALESCE(SUM(sb.quantity), 0) / 1000.0) * COALESCE(i.selling_price, 0)
                 ELSE COALESCE(SUM(sb.quantity), 0) * COALESCE(i.selling_price, 0)
-            END                                                     AS potentialRevenue
+            END                                                     AS potentialRevenue,
+            i.pos_visible                                           AS posVisible
         FROM items i
         LEFT JOIN stock_batches sb
                ON sb.item_id = i.id
@@ -1019,7 +1020,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
           AND (:categoryId = 0 OR c.id = :categoryId)
           AND (:subCategoryId = 0 OR sc.id = :subCategoryId)
         GROUP BY i.id, i.barcode, i.name, c.name, sc.name,
-                 i.item_type, i.default_unit, i.cost_price, i.selling_price
+                 i.item_type, i.default_unit, i.cost_price, i.selling_price, i.pos_visible
         ORDER BY stockValue DESC
     """, nativeQuery = true)
     List<Object[]> inventoryValuationRaw(

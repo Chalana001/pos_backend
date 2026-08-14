@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.sql.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -142,14 +143,18 @@ public class NewReportService {
                 .stream()
                 .map(r -> {
                     double sv = toDouble(r[9]);
-                    double pr = toDouble(r[11]);
+                    double sellingPrice = toDouble(r[10]);
+                    boolean posVisible = Boolean.TRUE.equals(r[12]) || "1".equals(String.valueOf(r[12]));
+                    boolean priced = sellingPrice > 0;
+                    Double pr = priced ? toDouble(r[11]) : null;
+                    String status = priced ? (posVisible ? "SELLABLE" : "PRICED_INTERNAL_USE") : (posVisible ? "MISSING_PRICE" : "INTERNAL_USE");
                     return InventoryValuationResponse.builder()
                             .itemId(toLong(r[0])).barcode(toStr(r[1])).itemName(toStr(r[2]))
                             .categoryName(toStr(r[3])).subCategoryName(toStr(r[4]))
                             .itemType(toStr(r[5])).unit(toStr(r[6]))
                             .qtyOnHand(toDouble(r[7])).costPrice(toDouble(r[8]))
-                            .stockValue(sv).sellingPrice(toDouble(r[10]))
-                            .potentialRevenue(pr).potentialProfit(pr - sv)
+                            .stockValue(sv).sellingPrice(sellingPrice).posVisible(posVisible).valuationStatus(status)
+                            .potentialRevenue(pr).potentialProfit(pr == null ? null : pr - sv)
                             .build();
                 })
                 .toList();
@@ -157,8 +162,12 @@ public class NewReportService {
         return InventoryValuationSummary.builder()
                 .items(items)
                 .totalStockValue(items.stream().mapToDouble(InventoryValuationResponse::getStockValue).sum())
-                .totalPotentialRevenue(items.stream().mapToDouble(InventoryValuationResponse::getPotentialRevenue).sum())
-                .totalPotentialProfit(items.stream().mapToDouble(InventoryValuationResponse::getPotentialProfit).sum())
+                .totalPotentialRevenue(items.stream().map(InventoryValuationResponse::getPotentialRevenue).filter(Objects::nonNull).mapToDouble(Double::doubleValue).sum())
+                .totalPotentialProfit(items.stream().map(InventoryValuationResponse::getPotentialProfit).filter(Objects::nonNull).mapToDouble(Double::doubleValue).sum())
+                .pricedStockValue(items.stream().filter(item -> item.getPotentialRevenue() != null).mapToDouble(InventoryValuationResponse::getStockValue).sum())
+                .internalUseStockValue(items.stream().filter(item -> "INTERNAL_USE".equals(item.getValuationStatus())).mapToDouble(InventoryValuationResponse::getStockValue).sum())
+                .missingPriceStockValue(items.stream().filter(item -> "MISSING_PRICE".equals(item.getValuationStatus())).mapToDouble(InventoryValuationResponse::getStockValue).sum())
+                .missingPriceItems(items.stream().filter(item -> "MISSING_PRICE".equals(item.getValuationStatus())).count())
                 .totalItems(items.size())
                 .build();
     }

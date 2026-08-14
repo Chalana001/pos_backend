@@ -22,6 +22,8 @@ public class InventoryValuationResponse {
     private double costPrice;
     private double stockValue;        // qtyOnHand * costPrice (in display units)
     private double sellingPrice;
-    private double potentialRevenue;  // qtyOnHand * sellingPrice
-    private double potentialProfit;   // potentialRevenue - stockValue
+    private boolean posVisible;
+    private String valuationStatus;
+    private Double potentialRevenue;  // null when no selling price is available
+    private Double potentialProfit;   // null when no selling price is available
 }

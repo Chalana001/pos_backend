@@ -17,5 +17,9 @@ public class InventoryValuationSummary {
     private double totalStockValue;
     private double totalPotentialRevenue;
     private double totalPotentialProfit;
+    private double pricedStockValue;
+    private double internalUseStockValue;
+    private double missingPriceStockValue;
+    private long missingPriceItems;
     private long   totalItems;
 }

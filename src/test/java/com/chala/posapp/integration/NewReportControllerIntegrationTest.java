@@ -363,7 +363,38 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(40.0, row.path("stockValue").asDouble(), 0.001);
         assertEquals(90.0, row.path("potentialRevenue").asDouble(), 0.001);
         assertEquals(50.0, row.path("potentialProfit").asDouble(), 0.001);
+        assertEquals("SELLABLE", row.path("valuationStatus").asText());
+        assertTrue(row.path("posVisible").asBoolean());
         assertEquals(40.0, response.path("totalStockValue").asDouble(), 0.001);
+        assertEquals(40.0, response.path("pricedStockValue").asDouble(), 0.001);
+    }
+
+    @Test
+    void inventoryValuationKeepsInternalStockAtCostAndOnlyProjectsPricedItems() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("valuation-usage"), 1);
+        String tenantId = fixture.tenantId();
+        String token = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        Category category = new Category(); category.setName("Usage Category"); category = categoryRepository.save(category);
+        SubCategory sub = new SubCategory(); sub.setName("Ingredients"); sub.setCategory(category); sub = subCategoryRepository.save(sub);
+
+        saveValuationItem(fixture, sub, "INT-NO-PRICE", false, 0, 5, 2000);
+        saveValuationItem(fixture, sub, "INT-PRICED", false, 12, 5, 1000);
+        saveValuationItem(fixture, sub, "RETAIL-PRICED", true, 15, 5, 1000);
+        saveValuationItem(fixture, sub, "RETAIL-NO-PRICE", true, 0, 5, 1000);
+
+        JsonNode response = getJson("/api/reports/v2/inventory-valuation?branchId=" + fixture.mainBranch().getId(), tenantId, token);
+        assertEquals(25.0, response.path("totalStockValue").asDouble(), 0.001);
+        assertEquals(10.0, response.path("pricedStockValue").asDouble(), 0.001);
+        assertEquals(10.0, response.path("internalUseStockValue").asDouble(), 0.001);
+        assertEquals(5.0, response.path("missingPriceStockValue").asDouble(), 0.001);
+        assertEquals(1, response.path("missingPriceItems").asInt());
+        assertEquals(27.0, response.path("totalPotentialRevenue").asDouble(), 0.001);
+        assertEquals(17.0, response.path("totalPotentialProfit").asDouble(), 0.001);
+
+        assertValuationStatus(response.path("items"), "INT-NO-PRICE", "INTERNAL_USE", true);
+        assertValuationStatus(response.path("items"), "INT-PRICED", "PRICED_INTERNAL_USE", false);
+        assertValuationStatus(response.path("items"), "RETAIL-PRICED", "SELLABLE", false);
+        assertValuationStatus(response.path("items"), "RETAIL-NO-PRICE", "MISSING_PRICE", true);
     }
 
     @Test
@@ -1060,6 +1091,30 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
                 .sourceType(StockBatchSourceType.PURCHASE).costPrice(BigDecimal.valueOf(cost))
                 .sellingPrice(BigDecimal.valueOf(selling)).quantity(stock * 1000).originalQuantity(stock * 1000).build());
         return item;
+    }
+
+    private Item saveValuationItem(TenantFixture fixture, SubCategory subCategory, String barcode,
+                                   boolean posVisible, double sellingPrice, double costPrice, int quantity) {
+        Item item = itemRepository.save(Item.builder().barcode(barcode).name(barcode).subCategory(subCategory)
+                .costPrice(BigDecimal.valueOf(costPrice)).sellingPrice(BigDecimal.valueOf(sellingPrice))
+                .reorderLevel(0).itemType(ItemType.NORMAL).defaultUnit(MeasurementUnit.PCS)
+                .active(true).posVisible(posVisible).build());
+        stockBatchRepository.save(StockBatch.builder().branch(fixture.mainBranch()).item(item).batchCode(barcode + "-B")
+                .sourceType(StockBatchSourceType.PURCHASE).costPrice(BigDecimal.valueOf(costPrice))
+                .sellingPrice(BigDecimal.valueOf(sellingPrice)).quantity(quantity).originalQuantity(quantity).build());
+        return item;
+    }
+
+    private void assertValuationStatus(JsonNode items, String barcode, String expectedStatus, boolean potentialIsNull) {
+        for (JsonNode item : items) {
+            if (barcode.equals(item.path("barcode").asText())) {
+                assertEquals(expectedStatus, item.path("valuationStatus").asText());
+                assertEquals(potentialIsNull, item.path("potentialRevenue").isNull());
+                assertEquals(potentialIsNull, item.path("potentialProfit").isNull());
+                return;
+            }
+        }
+        throw new AssertionError("Inventory valuation item not found: " + barcode);
     }
 
     private void saveForecastSale(TenantFixture fixture, Item item, int baseQty, int daysAgo, String invoiceNo) {
