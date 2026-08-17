@@ -30,6 +30,7 @@ public class SecurityConfig {
     private final TenantFilter tenantFilter;
     private final SubscriptionFilter subscriptionFilter;
     private final RateLimitFilter rateLimitFilter; // MISS-02
+    private final DuplicateRequestFilter duplicateRequestFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder(){
@@ -103,7 +104,10 @@ public class SecurityConfig {
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(subscriptionFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // Runs after authentication so double-submit keys are scoped to
+                // the logged-in user and the resolved tenant.
+                .addFilterAfter(duplicateRequestFilter, JwtAuthFilter.class);
 
         return http.build();
     }

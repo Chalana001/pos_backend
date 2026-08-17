@@ -14,6 +14,7 @@ import com.chala.posapp.repository.*;
 import com.chala.posapp.util.SecurityUtils;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -92,7 +93,26 @@ public class ShiftService {
                 .openNote(request.getNote())
                 .build();
 
-        return map(cashShiftRepository.save(shift));
+        return map(persistNewShift(shift, "Shift already open"));
+    }
+
+    /**
+     * Saves a new OPEN shift and flushes immediately so that the
+     * uk_cash_shifts_open_lock unique index (migration V27) is evaluated here,
+     * inside this try block, rather than at commit time.
+     *
+     * The findBy...(status = OPEN) check above is a check-then-insert: two
+     * requests fired milliseconds apart (double-click) can both pass it before
+     * either one inserts. The unique index is what actually prevents the second
+     * row; this method just turns the resulting constraint violation back into
+     * the same friendly 409 the check-then-insert path produces.
+     */
+    private CashShift persistNewShift(CashShift shift, String duplicateMessage) {
+        try {
+            return cashShiftRepository.saveAndFlush(shift);
+        } catch (DataIntegrityViolationException ex) {
+            throw new AlreadyExistsException(duplicateMessage);
+        }
     }
 
     public ShiftResponse getMyCurrentShift() {
@@ -524,7 +544,7 @@ public class ShiftService {
                 .openNote(request.getNote())
                 .build();
 
-        return map(cashShiftRepository.save(shift));
+        return map(persistNewShift(shift, "You already have an open shift in this branch"));
     }
 
 //    @Transactional
