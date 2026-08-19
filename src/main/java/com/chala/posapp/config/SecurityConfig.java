@@ -65,9 +65,12 @@ public class SecurityConfig {
         // SECURITY FIX: enumerate allowed headers instead of wildcard "*"
         config.setAllowedHeaders(Arrays.asList(
                 "Authorization", "Content-Type", "X-Tenant-ID",
-                "X-Requested-With", "Accept", "Origin"
+                "X-Requested-With", "Accept", "Origin",
+                // checkout sends this on POST /orders; DuplicateRequestFilter reads it
+                "Idempotency-Key"
         ));
-        config.setExposedHeaders(Arrays.asList("X-Total-Count", "Content-Disposition"));
+        config.setExposedHeaders(Arrays.asList(
+                "X-Total-Count", "Content-Disposition", "X-Duplicate-Request"));
 
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
