@@ -266,11 +266,23 @@ public class NewReportService {
                             .netMovement(dayInflows - dayOutflows).build();
                 }).toList();
 
+        List<CashFlowResponse.CashDropsByAccount> dropsByAccount = reportRepository
+                .cashDropsByBankAccountRaw(qb(branchId), range.from(), range.to()).stream()
+                .map(row -> {
+                    double amount = toDouble(row[1]);
+                    return CashFlowResponse.CashDropsByAccount.builder()
+                            .accountName(row[0] != null ? row[0].toString() : "Unbanked")
+                            .amount(amount)
+                            .dropCount(toLong(row[2]))
+                            .percentageOfTotal(drops > 0 ? (amount / drops) * 100 : 0)
+                            .build();
+                }).toList();
+
         return CashFlowResponse.builder()
                 .cashSales(cashSales).creditCollections(collections).totalInflows(inflows)
                 .expenses(expenses).purchasePayments(purchases).supplierPayments(supplierPayments)
                 .cashRefunds(refunds).totalOutflows(outflows).netCashMovement(inflows - outflows)
-                .cashDrops(drops).dailyMovements(daily).build();
+                .cashDrops(drops).dailyMovements(daily).cashDropsByAccount(dropsByAccount).build();
     }
 
     public ProfitAndLossResponse profitAndLoss(Long requestedBranchId, LocalDate from, LocalDate to) {

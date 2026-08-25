@@ -24,6 +24,7 @@ public class CashFlowResponse {
     private double netCashMovement;
     private double cashDrops;
     private List<DailyMovement> dailyMovements;
+    private List<CashDropsByAccount> cashDropsByAccount;
 
     @Getter
     @Builder
@@ -34,5 +35,19 @@ public class CashFlowResponse {
         private double inflows;
         private double outflows;
         private double netMovement;
+    }
+
+    // "Unbanked" (accountName == null on the query row) means the drop was
+    // never assigned a bank account — cash pulled from the drawer that's
+    // still sitting in a safe, not a data-quality problem.
+    @Getter
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class CashDropsByAccount {
+        private String accountName;
+        private double amount;
+        private long dropCount;
+        private double percentageOfTotal;
     }
 }

@@ -42,6 +42,8 @@ public class ShiftService {
     private final BranchRepository branchRepository;
     private final CustomerRepository customerRepository;
     private final UserRepository userRepository;
+    private final PurchaseRepository purchaseRepository;
+    private final BankAccountRepository bankAccountRepository;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -191,6 +193,7 @@ public class ShiftService {
                 .cashierUserId(user.getId())
                 .amount(request.getAmount())
                 .reason(request.getReason().trim())
+                .bankAccountId(resolveActiveBankAccountId(request.getBankAccountId()))
                 .build();
 
         cashDropRepository.save(cashDrop);
@@ -200,6 +203,21 @@ public class ShiftService {
 
         return map(shift);
     }
+
+    // Validates the bank account (if provided) exists and is still active —
+    // returns null unchanged for "not banked yet, went to a safe".
+    private Long resolveActiveBankAccountId(Long bankAccountId) {
+        if (bankAccountId == null) {
+            return null;
+        }
+        BankAccount bankAccount = bankAccountRepository.findById(bankAccountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Bank account not found"));
+        if (!bankAccount.isActive()) {
+            throw new BadRequestException("This bank account is inactive");
+        }
+        return bankAccount.getId();
+    }
+
     @Transactional
     public ShiftResponse closeShiftById(Long shiftId, CloseShiftRequest request) {
 
@@ -432,6 +450,19 @@ public class ShiftService {
         return expenseRepository.findByShiftId(shift.getId(), pageable).map(this::mapExpenseSummary);
     }
 
+    // Purchases paid out of THIS shift's cash drawer. These already reduce
+    // Expected Cash (folded into totalExpenses by
+    // PurchaseService.applyDrawerCashOutIfNeeded) — this endpoint exists so the
+    // close-shift screen can show *which* purchases explain that number,
+    // instead of leaving them invisible inside a single lump "Expenses" total.
+    public Page<ShiftPurchaseSummaryResponse> getShiftPurchases(Long shiftId, int page, int size) {
+        User user = securityUtils.getCurrentUser();
+        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        Pageable pageable = PageRequest.of(page, size);
+        return purchaseRepository.findByCashShiftIdOrderByCreatedAtDesc(shift.getId(), pageable)
+                .map(this::mapPurchaseSummary);
+    }
+
     private CashShift getShiftForAdminOrManager(Long shiftId, User user) {
         if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
@@ -441,6 +472,18 @@ public class ShiftService {
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
         ensureManagerBranchAccess(user, shift.getBranchId());
         return shift;
+    }
+
+    private ShiftPurchaseSummaryResponse mapPurchaseSummary(Purchase purchase) {
+        String supplierName = purchase.getSupplier() != null ? purchase.getSupplier().getName() : "Unknown Supplier";
+        return ShiftPurchaseSummaryResponse.builder()
+                .purchaseId(purchase.getId())
+                .invoiceNo(purchase.getInvoiceNo())
+                .supplierName(supplierName)
+                .cashSourceAmount(purchase.getCashSourceAmount())
+                .status(purchase.getStatus())
+                .createdAt(purchase.getCreatedAt())
+                .build();
     }
 
     private ExpenseResponse mapExpenseSummary(Expense expense) {
@@ -603,6 +646,7 @@ public class ShiftService {
                 .cashierUserId(user.getId())
                 .amount(request.getAmount())
                 .reason(request.getReason().trim())
+                .bankAccountId(resolveActiveBankAccountId(request.getBankAccountId()))
                 .build();
 
         cashDropRepository.save(cashDrop);

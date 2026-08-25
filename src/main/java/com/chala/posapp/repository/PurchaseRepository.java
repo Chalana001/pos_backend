@@ -15,6 +15,12 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     Page<Purchase> findAllByOrderByIdDesc(Pageable pageable);
     List<Purchase> findAllByOrderByIdDesc();
 
+    // Purchases paid out of a specific shift's cash drawer (see
+    // PurchaseService.applyDrawerCashOutIfNeeded — cashShiftId is only ever
+    // set when cashSource == CASH_DRAWER, so this is already correctly scoped
+    // without needing to filter on cashSource here too).
+    Page<Purchase> findByCashShiftIdOrderByCreatedAtDesc(Long cashShiftId, Pageable pageable);
+
     List<Purchase> findBySupplierIdAndStatusAndDueAmountGreaterThanOrderByCreatedAtAscIdAsc(
             Long supplierId,
             PurchaseStatus status,

@@ -229,6 +229,23 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                      @Param("fromDate") LocalDateTime fromDate,
                                      @Param("toDate") LocalDateTime toDate);
 
+    // Same cash_drops rows as cashFlowTotalsRaw's last column, just grouped by
+    // destination — LEFT JOIN so drops with no bank account (bank_account_id
+    // IS NULL, i.e. not banked yet) still show up, as a row with a NULL name
+    // that the service layer labels "Unbanked".
+    @Query(value = """
+        SELECT ba.name AS account_name, SUM(cd.amount) AS total_amount, COUNT(*) AS drop_count
+        FROM cash_drops cd
+        LEFT JOIN bank_accounts ba ON ba.id = cd.bank_account_id
+        WHERE (:branchId = 0 OR cd.branch_id = :branchId)
+          AND cd.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY ba.id, ba.name
+        ORDER BY total_amount DESC
+        """, nativeQuery = true)
+    List<Object[]> cashDropsByBankAccountRaw(@Param("branchId") Long branchId,
+                                             @Param("fromDate") LocalDateTime fromDate,
+                                             @Param("toDate") LocalDateTime toDate);
+
     @Query(value = """
         SELECT COALESCE(SUM(o.grand_total),0) FROM orders o
         WHERE (:branchId = 0 OR o.branch_id = :branchId)

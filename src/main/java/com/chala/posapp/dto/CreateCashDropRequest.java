@@ -12,4 +12,8 @@ public class CreateCashDropRequest {
 
     @NotBlank
     private String reason;
+
+    // Optional — which bank account this cash went to. Null means it's not
+    // been banked yet (e.g. going to a safe).
+    private Long bankAccountId;
 }

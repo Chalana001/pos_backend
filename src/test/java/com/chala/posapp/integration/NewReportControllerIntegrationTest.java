@@ -17,6 +17,8 @@ import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Expense;
+import com.chala.posapp.entity.CashDrop;
+import com.chala.posapp.entity.BankAccount;
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.OrderItem;
 import com.chala.posapp.entity.GRN;
@@ -428,6 +430,24 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
                 .category("OPERATIONS").countInProfitReport(true).amount(40.0)
                 .description("Cash flow test expense").createdAt(today.atTime(11, 0)).build());
 
+        // Cash drops: one banked (tied to a BankAccount), one not (bankAccountId
+        // null — cash pulled from the drawer, not deposited yet). Neither prior
+        // fixture data nor this test exercised this path before V27/V28's
+        // CashDropsByAccount breakdown was added — this is the gap that let a
+        // 500 in cashDropsByBankAccountRaw ship unnoticed.
+        BankAccount account = bankAccountRepository.save(BankAccount.builder()
+                .name("Cash Flow Test Bank").active(true).build());
+        cashDropRepository.save(CashDrop.builder()
+                .shiftId(null).branchId(fixture.mainBranch().getId())
+                .cashierUserId(fixture.admin().getId()).amount(150.0)
+                .reason("Banked drop").bankAccountId(account.getId())
+                .build());
+        cashDropRepository.save(CashDrop.builder()
+                .shiftId(null).branchId(fixture.mainBranch().getId())
+                .cashierUserId(fixture.admin().getId()).amount(50.0)
+                .reason("Unbanked drop").bankAccountId(null)
+                .build());
+
         JsonNode response = getJson(
                 "/api/reports/v2/cash-flow?branchId=" + fixture.mainBranch().getId()
                         + "&from=" + today + "&to=" + today,
@@ -441,6 +461,24 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(360.0, response.path("netCashMovement").asDouble(), 0.001);
         assertEquals(1, response.path("dailyMovements").size());
         assertEquals(360.0, response.path("dailyMovements").get(0).path("netMovement").asDouble(), 0.001);
+
+        assertEquals(200.0, response.path("cashDrops").asDouble(), 0.001);
+        JsonNode byAccount = response.path("cashDropsByAccount");
+        assertEquals(2, byAccount.size());
+        boolean sawBanked = false;
+        boolean sawUnbanked = false;
+        for (JsonNode row : byAccount) {
+            if ("Cash Flow Test Bank".equals(row.path("accountName").asText())) {
+                assertEquals(150.0, row.path("amount").asDouble(), 0.001);
+                assertEquals(1, row.path("dropCount").asLong());
+                sawBanked = true;
+            } else if ("Unbanked".equals(row.path("accountName").asText())) {
+                assertEquals(50.0, row.path("amount").asDouble(), 0.001);
+                sawUnbanked = true;
+            }
+        }
+        assertTrue(sawBanked, "expected a row for the banked drop");
+        assertTrue(sawUnbanked, "expected a row for the unbanked drop, labelled 'Unbanked'");
     }
 
     @Test

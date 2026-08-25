@@ -2,7 +2,9 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.CashDropSummaryResponse;
 import com.chala.posapp.dto.CashDropResponse;
+import com.chala.posapp.dto.RecordOutsideShiftCashDropRequest;
 import com.chala.posapp.service.CashDropService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.data.domain.Page;
@@ -28,12 +30,13 @@ public class CashDropController {
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long shiftId,
             @RequestParam(required = false) Long cashierUserId,
+            @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to,
             @PageableDefault(sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        Page<CashDropResponse> result = cashDropService.getFilteredCashDrops(branchId, shiftId, cashierUserId, search, from, to, pageable);
+        Page<CashDropResponse> result = cashDropService.getFilteredCashDrops(branchId, shiftId, cashierUserId, bankAccountId, search, from, to, pageable);
         return ResponseEntity.ok(result);
     }
 
@@ -43,11 +46,21 @@ public class CashDropController {
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long shiftId,
             @RequestParam(required = false) Long cashierUserId,
+            @RequestParam(required = false) Long bankAccountId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to
     ) {
-        CashDropSummaryResponse result = cashDropService.getCashDropSummary(branchId, shiftId, cashierUserId, search, from, to);
+        CashDropSummaryResponse result = cashDropService.getCashDropSummary(branchId, shiftId, cashierUserId, bankAccountId, search, from, to);
         return ResponseEntity.ok(result);
+    }
+
+    // A drop recorded outside any shift — e.g. an owner banking
+    // already-collected cash after every shift for the day is closed. Never
+    // touches any shift's Expected Cash; pure record-keeping.
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/outside")
+    public ResponseEntity<CashDropResponse> recordOutsideShiftDrop(@Valid @RequestBody RecordOutsideShiftCashDropRequest request) {
+        return ResponseEntity.ok(cashDropService.addOutsideShiftDrop(request));
     }
 }
