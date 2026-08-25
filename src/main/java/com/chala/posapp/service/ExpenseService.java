@@ -39,7 +39,10 @@ public class ExpenseService {
              summaryExpression = "'Branch=' + #request.branchId + ' amount=' + #request.amount")
     @Transactional
     @Caching(evict = {
+        // Branch entry plus key 0 — the "All Branches" dashboard is a separate entry
+        // and nothing used to evict it, so it lagged behind every single-branch view.
         @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(0)"),
         @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY, allEntries = true),
         @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT,        allEntries = true)
     })

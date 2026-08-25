@@ -45,10 +45,21 @@ public class NewReportService {
 
     private Long resolveBranchId(User user, Long requested) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) return requested;
-        return user.getBranchId();
+        // requireAssignedBranch, not getBranchId(). users.branch_id is nullable, and a null
+        // returned here becomes qb(null) == 0 — which every report query reads as "all
+        // branches". An unassigned manager or cashier saw the whole company.
+        return securityUtils.requireAssignedBranch(user);
     }
 
+    /** "All branches" as most report SQL spells it: 0. */
     private static long qb(Long branchId) { return branchId == null ? 0L : branchId; }
+
+    /**
+     * "All branches" as a handful of JPQL queries spell it: NULL. Pass a branch through
+     * this before handing it to one of those, so 0 and null both mean all rather than 0
+     * matching a branch that does not exist and returning an empty page.
+     */
+    private static Long bf(Long branchId) { return (branchId == null || branchId == 0L) ? null : branchId; }
 
     private static double toDouble(Object v) { return v instanceof Number n ? n.doubleValue() : 0.0; }
     private static long toLong(Object v)     { return v instanceof Number n ? n.longValue()   : 0L;  }
@@ -71,7 +82,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-cashier-perf",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public List<CashierPerformanceResponse> cashierPerformance(
             Long requestedBranchId, LocalDate from, LocalDate to) {
 
@@ -130,7 +141,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-inventory-val",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #categoryId, #subCategoryId)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #categoryId, #subCategoryId)")
     public InventoryValuationSummary inventoryValuation(Long requestedBranchId, Long categoryId, Long subCategoryId) {
 
         User user = securityUtils.getCurrentUser();
@@ -187,8 +198,9 @@ public class NewReportService {
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(resolvedFrom, resolvedTo);
         Long effectiveCashierId = (user.getRole() == Role.CASHIER) ? user.getId() : cashierUserId;
 
+        // findShiftsForReport spells "all branches" as NULL, not 0 — see bf().
         Page<CashShift> shiftPage = cashShiftRepository.findShiftsForReport(
-                branchId, effectiveCashierId, range.from(), range.to(),
+                bf(branchId), effectiveCashierId, range.from(), range.to(),
                 PageRequest.of(page, size, Sort.by("openedAt").descending()));
 
         List<Long> cashierIds = shiftPage.getContent().stream()
@@ -536,7 +548,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-expenses",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public ExpenseReportSummary expenseReport(Long requestedBranchId, LocalDate from, LocalDate to) {
 
         User user = securityUtils.getCurrentUser();
@@ -565,7 +577,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-credit-aging",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId)")
     public List<CreditAgingResponse> creditAging(Long requestedBranchId) {
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, requestedBranchId);
@@ -633,7 +645,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-promotion-eff",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public List<PromotionEffectivenessResponse> promotionEffectiveness(
             Long requestedBranchId, LocalDate from, LocalDate to) {
 
@@ -657,7 +669,7 @@ public class NewReportService {
     // ═══════════════════════════════════════════════════════════════════════
 
     @Cacheable(value = "report-warranty",
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public WarrantyReportSummary warrantyReport(Long requestedBranchId, LocalDate from, LocalDate to) {
 
         User user = securityUtils.getCurrentUser();
@@ -705,8 +717,9 @@ public class NewReportService {
             }
         }
 
+        // findForReport spells "all branches" as NULL, not 0 — see bf().
         Page<StockTransfer> transferPage = stockTransferRepository.findForReport(
-                branchId, fromBranchId, toBranchId, statusEnum,
+                bf(branchId), bf(fromBranchId), bf(toBranchId), statusEnum,
                 range.from(), range.to(),
                 PageRequest.of(page, size, Sort.by("requestedAt").descending()));
 

@@ -405,7 +405,10 @@ public class ShiftService {
             }
         }
 
-        Long branchFilter = branchId;
+        // 0 is the "All Branches" selection, not a branch id. Left as-is it became
+        // branch_id = 0 below and returned an empty page. getAllActiveShiftsByBranch
+        // already treats 0 this way; these two now agree.
+        Long branchFilter = (branchId == null || branchId == 0L) ? null : branchId;
         Pageable pageable = PageRequest.of(page, size, Sort.by("openedAt").descending());
 
         Page<CashShift> shiftPage = cashShiftRepository.findAll((root, query, cb) -> {

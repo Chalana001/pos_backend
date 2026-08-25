@@ -91,15 +91,24 @@ public class OrderService {
     }
 
     // MISS-01: Evict all dashboard + report caches whenever a new order is placed.
-    // branchId comes from the request so we key-evict the right tenant+branch bucket.
+    //
+    // Two things to know about the dashboard entries below:
+    //   * KPIs are keyed on the branch alone, so they can be evicted precisely — but the
+    //     "All Branches" view lives under key 0 and a sale in branch 2 never touched it.
+    //     Both are evicted now.
+    //   * The chart caches are keyed on (branch, from, to). A key built from branchId
+    //     alone could never match one, so those evictions did nothing at all and the
+    //     charts sat stale for the whole 5-minute TTL after every sale. They evict
+    //     allEntries because the date range cannot be known here.
     // MISS-03: Audit every sale creation
     @Audited(entity = "ORDER", action = "CREATE",
              summaryExpression = "'Branch ' + #request.branchId + ' | items=' + #request.items.size()")
     @Transactional
     @Caching(evict = {
         @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_DAILY_SALES,      key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_MONTHLY_SALES,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
+        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(0)"),
+        @CacheEvict(value = CacheConfig.CACHE_DAILY_SALES,      allEntries = true),
+        @CacheEvict(value = CacheConfig.CACHE_MONTHLY_SALES,    allEntries = true),
         @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_SUMMARY, allEntries = true),
         @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_SELLING,  allEntries = true),
         @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,allEntries = true),

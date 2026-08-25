@@ -80,13 +80,25 @@ public class ReportService {
             return requestedBranchId;
         }
         if (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER) {
-            return user.getBranchId();
+            // requireAssignedBranch, not getBranchId(). users.branch_id is nullable, and a
+            // null returned here falls through toQueryBranchId() to 0 — which every report
+            // query reads as "all branches". An unassigned manager saw the whole company.
+            return securityUtils.requireAssignedBranch(user);
         }
         throw new BadRequestException("Not allowed");
     }
 
     private Long toQueryBranchId(Long branchId) {
         return branchId == null ? 0L : branchId;
+    }
+
+    /**
+     * The inverse of {@link #toQueryBranchId}. Most report queries spell "all branches"
+     * as {@code :branchId = 0}; a handful spell it {@code :branchId IS NULL}. Use this
+     * when handing a branch to one of the latter, so 0 and null both mean all.
+     */
+    private Long toBranchFilter(Long branchId) {
+        return (branchId == null || branchId == 0L) ? null : branchId;
     }
 
     // MISS-04 FIX: Guard against unbounded date ranges that would force full-table scans.
@@ -179,7 +191,7 @@ public class ReportService {
 
     // MISS-01: Cache sales summary per branch+date range for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_SALES_SUMMARY,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public SalesSummaryResponse salesSummary(Long requestedBranchId, LocalDate from, LocalDate to) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
@@ -211,7 +223,7 @@ public class ReportService {
 
     // MISS-01: Cache top-selling per branch+date+params for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_TOP_SELLING,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #limit, #itemType, #rankBy)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to, #limit, #itemType, #rankBy)")
     public List<TopSellingItemResponse> topSelling(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType, String rankBy) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
@@ -622,7 +634,7 @@ public class ReportService {
 
     // MISS-01: Cache profit report results for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_PROFIT,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #limit, #itemType)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to, #limit, #itemType)")
     public List<ProfitReportResponse> profitReport(Long requestedBranchId, LocalDate from, LocalDate to, int limit, String itemType) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
@@ -644,7 +656,7 @@ public class ReportService {
 
     // MISS-01: Cache sales trend for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_SALES_TREND,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #type)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to, #type)")
     public List<SalesTrendPoint> salesTrend(Long requestedBranchId, LocalDate from, LocalDate to, String type) {
         validateTrendDateRange(from, to);
         User user = securityUtils.getCurrentUser();
@@ -683,7 +695,7 @@ public class ReportService {
 
     // MISS-01: Cache sales-by-category for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_SALES_CATEGORY,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to, #itemType, #singleCategory)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to, #itemType, #singleCategory)")
     public List<CategorySalesResponse> salesByCategory(Long requestedBranchId, LocalDate from, LocalDate to, String itemType, boolean singleCategory) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
@@ -713,10 +725,14 @@ public class ReportService {
 
     // MISS-01: Cache low stock list for 5 minutes
     @Cacheable(value = CacheConfig.CACHE_LOW_STOCK,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId)")
     public List<LowStockResponse> lowStock(Long requestedBranchId) {
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
-        return stockBatchRepository.findLowStockItems(branchId);
+        // findLowStockItems reads NULL as "all branches"; 0 would be an exact match on a
+        // branch that does not exist and would come back empty. /stock/low already does
+        // this conversion — this path did not, so the same concept behaved differently
+        // depending on which endpoint you asked.
+        return stockBatchRepository.findLowStockItems(toBranchFilter(branchId));
     }
 
     public List<CreditDueResponse> creditDueList(Long requestedBranchId) {
@@ -734,7 +750,7 @@ public class ReportService {
     // Defaults to last 30 days when no range specified (sensible default for a dashboard widget).
     // MISS-01: Cache top-customers for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #limit, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #limit, #from, #to)")
     public List<TopCustomerResponse> topCustomers(Long requestedBranchId, int limit, LocalDate from, LocalDate to) {
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(30);
@@ -754,7 +770,7 @@ public class ReportService {
 
     // MISS-01: Cache top-suppliers for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_TOP_SUPPLIERS,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #limit, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #limit, #from, #to)")
     public List<TopSupplierResponse> topSuppliers(Long requestedBranchId, int limit, LocalDate from, LocalDate to) {
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         LocalDate resolvedFrom = from != null ? from : LocalDate.now().minusDays(30);
@@ -774,7 +790,7 @@ public class ReportService {
 
     // MISS-01: Cache profit summary for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public ProfitSummaryResponse getProfitSummary(Long requestedBranchId, LocalDate from, LocalDate to) {
         validateDateRange(from, to);
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
@@ -1032,7 +1048,7 @@ public class ReportService {
 
     // MISS-01: Cache returns summary for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_RETURNS_SUMMARY,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId, #from, #to)")
+               key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#branchId, #from, #to)")
     public ReturnsSummaryResponse getReturnsSummary(Long branchId, LocalDate from, LocalDate to) {
         validateDateRange(from, to);
         User user = securityUtils.getCurrentUser();

@@ -13,7 +13,7 @@ public interface StockProcessingRepository extends JpaRepository<StockProcessing
 
     @Query("""
             SELECT sp FROM StockProcessing sp
-            WHERE (:branchId IS NULL OR sp.branch.id = :branchId)
+            WHERE (:branchId IS NULL OR :branchId = 0 OR sp.branch.id = :branchId)
               AND (:sourceItemId IS NULL OR sp.sourceItem.id = :sourceItemId)
               AND (:fromDate IS NULL OR sp.processedAt >= :fromDate)
               AND (:toDate IS NULL OR sp.processedAt <= :toDate)

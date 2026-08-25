@@ -29,7 +29,7 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
     @Query("""
             SELECT st
             FROM StockTransfer st
-            WHERE (:branchId IS NULL OR st.fromBranchId = :branchId)
+            WHERE (:branchId IS NULL OR :branchId = 0 OR st.fromBranchId = :branchId)
               AND (:status IS NULL OR st.status = :status)
               AND (:fromDateTime IS NULL OR st.requestedAt >= :fromDateTime)
               AND (:toDateTime IS NULL OR st.requestedAt <= :toDateTime)
@@ -64,7 +64,7 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
     @Query("""
             SELECT st
             FROM StockTransfer st
-            WHERE (:branchId IS NULL OR st.toBranchId = :branchId)
+            WHERE (:branchId IS NULL OR :branchId = 0 OR st.toBranchId = :branchId)
               AND (:status IS NULL OR st.status = :status)
               AND (:fromDateTime IS NULL OR st.requestedAt >= :fromDateTime)
               AND (:toDateTime IS NULL OR st.requestedAt <= :toDateTime)
@@ -99,9 +99,9 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
     // RPT-10: Stock transfer report — all transfers for a date range
     @Query("""
         SELECT st FROM StockTransfer st
-        WHERE (:branchId IS NULL OR st.fromBranchId = :branchId OR st.toBranchId = :branchId)
-          AND (:fromBranchId IS NULL OR st.fromBranchId = :fromBranchId)
-          AND (:toBranchId   IS NULL OR st.toBranchId   = :toBranchId)
+        WHERE (:branchId IS NULL OR :branchId = 0 OR st.fromBranchId = :branchId OR st.toBranchId = :branchId)
+          AND (:fromBranchId IS NULL OR :fromBranchId = 0 OR st.fromBranchId = :fromBranchId)
+          AND (:toBranchId   IS NULL OR :toBranchId   = 0 OR st.toBranchId   = :toBranchId)
           AND (:status       IS NULL OR st.status        = :status)
           AND st.requestedAt BETWEEN :fromDate AND :toDate
         ORDER BY st.requestedAt DESC

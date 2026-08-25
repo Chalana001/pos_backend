@@ -20,7 +20,7 @@ public interface StockAdjustmentRepository extends JpaRepository<StockAdjustment
     @Query("""
             SELECT sa
             FROM StockAdjustment sa
-            WHERE (:branchId IS NULL OR sa.branchId = :branchId)
+            WHERE (:branchId IS NULL OR :branchId = 0 OR sa.branchId = :branchId)
               AND (:type IS NULL OR sa.type = :type)
               AND (:userId IS NULL OR sa.userId = :userId)
               AND (:fromDateTime IS NULL OR sa.createdAt >= :fromDateTime)

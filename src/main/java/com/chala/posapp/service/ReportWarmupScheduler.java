@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -98,25 +99,33 @@ public class ReportWarmupScheduler {
      * populates the Caffeine cache so the first real user gets a cache hit.
      */
     private void warmDashboardForTenant() {
-        List<Branch> branches = branchRepository.findAll().stream()
+        // Branch 0 is the "All Branches" view. It is a real cache entry that owners hit
+        // first thing in the morning, and warming only the individual branches left it
+        // permanently cold.
+        List<Long> branchIds = new ArrayList<>();
+        branchIds.add(0L);
+        branchRepository.findAll().stream()
                 .filter(Branch::isActive)
-                .toList();
+                .map(Branch::getId)
+                .forEach(branchIds::add);
 
         LocalDate today = LocalDate.now();
         LocalDate thirtyDaysAgo = today.minusDays(30);
 
-        for (Branch branch : branches) {
+        for (Long branchId : branchIds) {
             try {
-                // Warm today's KPIs
-                dashboardService.todayKpis(branch.getId());
+                // The *ForBranch variants take an already-resolved branch and do not read
+                // the SecurityContext. The public todayKpis()/dailySales() entry points do,
+                // via securityUtils.getCurrentUser() — and on a scheduled thread there is
+                // no authentication, so every branch used to fail here and get logged as
+                // "Skipped". The warm-up has never actually warmed anything.
+                dashboardService.todayKpisForBranch(branchId);
+                dashboardService.dailySalesForBranch(branchId, thirtyDaysAgo, today);
+                dashboardService.monthlySalesForBranch(branchId, thirtyDaysAgo, today);
 
-                // Warm last-30-day charts
-                dashboardService.dailySales(branch.getId(), thirtyDaysAgo, today);
-                dashboardService.monthlySales(branch.getId(), thirtyDaysAgo, today);
-
-                log.debug("[ReportWarmup] Warmed branch {} ({})", branch.getId(), branch.getName());
+                log.debug("[ReportWarmup] Warmed branch {}", branchId);
             } catch (Exception e) {
-                log.warn("[ReportWarmup] Skipped branch {}: {}", branch.getId(), e.getMessage());
+                log.warn("[ReportWarmup] Skipped branch {}: {}", branchId, e.getMessage());
             }
         }
     }

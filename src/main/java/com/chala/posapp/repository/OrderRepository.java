@@ -92,7 +92,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         FROM Order o
         LEFT JOIN Customer c ON c.id = o.customerId
         LEFT JOIN User u ON u.id = o.cashierUserId
-        WHERE (:branchId IS NULL OR o.branchId = :branchId)
+        WHERE (:branchId IS NULL OR :branchId = 0 OR o.branchId = :branchId)
           AND (:search IS NULL OR :search = ''
                OR LOWER(o.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))

@@ -14,9 +14,8 @@ import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.DateRangeUtils;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +32,12 @@ public class DashboardService {
     // DUP-03/04 FIX: dailySalesRaw/monthlySalesRaw now called from ReportRepository (single source of truth)
     private final ReportRepository reportRepository;
     private final SecurityUtils securityUtils;
+    /**
+     * Self-reference so the resolve step can call the cached step THROUGH the proxy.
+     * A plain this.todayKpisForBranch(...) would bypass @Cacheable entirely.
+     * Same pattern as ReportExportJobService's emailService provider.
+     */
+    private final ObjectProvider<DashboardService> self;
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {
@@ -52,13 +57,25 @@ public class DashboardService {
         throw new BadRequestException("Not allowed");
     }
 
+    /**
+     * Resolve first, then cache. The cache key must be the branch we actually queried,
+     * not the branch the caller asked for — a manager's request for someone else's
+     * branch is clamped to their own, and keying on the raw request stored that
+     * clamped payload under the branch they asked for.
+     */
+    public DashboardKpiResponse todayKpis(Long requestedBranchId) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        return self.getObject().todayKpisForBranch(branchId);
+    }
+
+    /**
+     * Cached on an already-resolved branch. Also callable without a SecurityContext,
+     * which is what lets ReportWarmupScheduler pre-warm it from a scheduled thread.
+     */
     // MISS-01: Cache dashboard KPIs per branch for 5 minutes
     @Cacheable(value = CacheConfig.CACHE_DASHBOARD_KPIS,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId)")
-    public DashboardKpiResponse todayKpis(Long requestedBranchId) {
-        User user = securityUtils.getCurrentUser();
-        Long branchId = resolveBranchId(user, requestedBranchId);
-
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId)")
+    public DashboardKpiResponse todayKpisForBranch(Long branchId) {
         LocalDate today = LocalDate.now();
         LocalDateTime from = today.atStartOfDay();
         LocalDateTime to = today.atTime(23, 59, 59);
@@ -81,18 +98,9 @@ public class DashboardService {
                 .build();
     }
 
-    /**
-     * MISS-01: Evict dashboard + sales caches when a new order is placed
-     * or an expense is saved (called from OrderService / ExpenseService).
-     */
-    @Caching(evict = {
-        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,  key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_DAILY_SALES,     key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_MONTHLY_SALES,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId)")
-    })
-    public void evictDashboardCaches(Long branchId) {
-        // eviction only — no body needed
-    }
+    // Eviction lives on the write paths themselves — see OrderService and ExpenseService.
+    // A method here was never called by anything, and its keys did not match the
+    // @Cacheable keys above, so it would have been a no-op even if it had been.
 
     private double toDouble(Object val) {
         return val instanceof Number ? ((Number) val).doubleValue() : 0.0;
@@ -102,12 +110,15 @@ public class DashboardService {
         return val instanceof Number ? ((Number) val).longValue() : 0L;
     }
 
+    public List<DailySalesResponse> dailySales(Long requestedBranchId, LocalDate from, LocalDate to) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        return self.getObject().dailySalesForBranch(branchId, from, to);
+    }
+
     // MISS-01: Cache daily sales chart per branch+range for 5 min
     @Cacheable(value = CacheConfig.CACHE_DAILY_SALES,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
-    public List<DailySalesResponse> dailySales(Long requestedBranchId, LocalDate from, LocalDate to) {
-        User user = securityUtils.getCurrentUser();
-        Long branchId = resolveBranchId(user, requestedBranchId);
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId, #from, #to)")
+    public List<DailySalesResponse> dailySalesForBranch(Long branchId, LocalDate from, LocalDate to) {
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         return reportRepository.dailySalesRaw(branchId, range.from(), range.to()).stream()
@@ -118,12 +129,15 @@ public class DashboardService {
                 .toList();
     }
 
+    public List<MonthlySalesResponse> monthlySales(Long requestedBranchId, LocalDate from, LocalDate to) {
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        return self.getObject().monthlySalesForBranch(branchId, from, to);
+    }
+
     // MISS-01: Cache monthly sales chart per branch+range for 5 min
     @Cacheable(value = CacheConfig.CACHE_MONTHLY_SALES,
-               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#requestedBranchId, #from, #to)")
-    public List<MonthlySalesResponse> monthlySales(Long requestedBranchId, LocalDate from, LocalDate to) {
-        User user = securityUtils.getCurrentUser();
-        Long branchId = resolveBranchId(user, requestedBranchId);
+               key = "T(com.chala.posapp.util.CacheKeyUtils).key(#branchId, #from, #to)")
+    public List<MonthlySalesResponse> monthlySalesForBranch(Long branchId, LocalDate from, LocalDate to) {
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
         // BUG-03 FIX: use monthlySalesRaw() SQL aggregation instead of loading all

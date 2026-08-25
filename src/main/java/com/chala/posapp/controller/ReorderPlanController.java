@@ -3,7 +3,7 @@ import com.chala.posapp.dto.reorder.*; import com.chala.posapp.service.ReorderPl
 @RestController @RequestMapping("/reorder-plans") @RequiredArgsConstructor @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
 public class ReorderPlanController {private final ReorderPlanService service;
  @PostMapping public ResponseEntity<ReorderPlanResponse> create(@RequestBody ReorderPlanRequest r){return ResponseEntity.ok(service.create(r));}
- @GetMapping public ResponseEntity<List<ReorderPlanResponse>> list(){return ResponseEntity.ok(service.list());}
+ @GetMapping public ResponseEntity<List<ReorderPlanResponse>> list(@RequestParam(required=false) Long branchId){return ResponseEntity.ok(service.list(branchId));}
  @GetMapping("/{id}") public ResponseEntity<ReorderPlanResponse> get(@PathVariable Long id){return ResponseEntity.ok(service.get(id));}
  @PatchMapping("/{id}/lines/{lineId}") public ResponseEntity<ReorderPlanResponse> update(@PathVariable Long id,@PathVariable Long lineId,@RequestBody ReorderLineUpdateRequest r){return ResponseEntity.ok(service.updateLine(id,lineId,r));}
  @PostMapping("/{id}/submit") public ResponseEntity<ReorderPlanResponse> submit(@PathVariable Long id){return ResponseEntity.ok(service.submit(id));}

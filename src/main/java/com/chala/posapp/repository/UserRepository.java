@@ -23,7 +23,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
         FROM User u
         WHERE u.enabled = true
           AND u.role IN :roles
-          AND (:branchId IS NULL OR u.branchId = :branchId OR u.role = com.chala.posapp.entity.Role.ADMIN)
+          AND (:branchId IS NULL OR :branchId = 0 OR u.branchId = :branchId OR u.role = com.chala.posapp.entity.Role.ADMIN)
         ORDER BY u.username ASC
     """)
     List<User> findSalesFilterUsers(@Param("roles") List<Role> roles, @Param("branchId") Long branchId);

@@ -40,7 +40,7 @@ public interface WarrantyClaimRepository extends JpaRepository<WarrantyClaim, Lo
         FROM WarrantyClaim c
         JOIN Warranty w ON w.id = c.warrantyId
         LEFT JOIN Item i ON i.id = w.itemId
-        WHERE (:branchId IS NULL OR c.branchId = :branchId)
+        WHERE (:branchId IS NULL OR :branchId = 0 OR c.branchId = :branchId)
           AND (:status IS NULL OR c.status = :status)
           AND (:search IS NULL OR :search = ''
                OR LOWER(c.claimNo) LIKE LOWER(CONCAT('%', :search, '%'))

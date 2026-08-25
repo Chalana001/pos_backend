@@ -28,7 +28,7 @@ public interface CashShiftRepository extends JpaRepository<CashShift, Long>, Jpa
     // RPT-03: Shift summary / Z-Report — fetch closed shifts in a date range
     @Query("""
         SELECT cs FROM CashShift cs
-        WHERE (:branchId IS NULL OR cs.branchId = :branchId)
+        WHERE (:branchId IS NULL OR :branchId = 0 OR cs.branchId = :branchId)
           AND (:cashierUserId IS NULL OR cs.cashierUserId = :cashierUserId)
           AND cs.openedAt >= :fromDate
           AND cs.openedAt <= :toDate
