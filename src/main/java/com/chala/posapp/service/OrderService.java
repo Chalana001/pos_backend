@@ -21,13 +21,10 @@ import com.chala.posapp.exception.StockOverrideRequiredException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.audit.Audited;
-import com.chala.posapp.config.CacheConfig;
 import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -74,6 +71,7 @@ public class OrderService {
     private final PlatformTransactionManager transactionManager;
     private final UserRepository userRepository;
     private final OrderReturnRepository orderReturnRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -90,34 +88,14 @@ public class OrderService {
         }
     }
 
-    // MISS-01: Evict all dashboard + report caches whenever a new order is placed.
-    //
-    // Two things to know about the dashboard entries below:
-    //   * KPIs are keyed on the branch alone, so they can be evicted precisely — but the
-    //     "All Branches" view lives under key 0 and a sale in branch 2 never touched it.
-    //     Both are evicted now.
-    //   * The chart caches are keyed on (branch, from, to). A key built from branchId
-    //     alone could never match one, so those evictions did nothing at all and the
-    //     charts sat stale for the whole 5-minute TTL after every sale. They evict
-    //     allEntries because the date range cannot be known here.
+    // Cache eviction is NOT annotated here. It used to be, and importOfflineSale() calls
+    // createOrderInternal() directly — so every sale synced back from an offline till
+    // walked straight past it and invalidated nothing. reportCacheInvalidator is called
+    // from createOrderInternal instead, which both paths go through.
     // MISS-03: Audit every sale creation
     @Audited(entity = "ORDER", action = "CREATE",
              summaryExpression = "'Branch ' + #request.branchId + ' | items=' + #request.items.size()")
     @Transactional
-    @Caching(evict = {
-        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,   key = "T(com.chala.posapp.util.CacheKeyUtils).key(0)"),
-        @CacheEvict(value = CacheConfig.CACHE_DAILY_SALES,      allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_MONTHLY_SALES,    allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_SUMMARY, allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_SELLING,  allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT,       allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY,allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_TREND,  allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_SALES_CATEGORY,allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_LOW_STOCK,        allEntries = true)
-    })
     public OrderResponse createOrder(CreateOrderRequest request) {
         return createOrderInternal(request, null);
     }
@@ -463,6 +441,10 @@ public class OrderService {
             finalizeDineInSession(diningTable);
         }
 
+        // Both the online checkout and the offline sync land here, which is why the
+        // invalidation lives at this level rather than on the public entry points.
+        reportCacheInvalidator.salesChanged(branchId);
+
         return buildOrderResponse(savedOrder, savedOrderItems);
     }
 
@@ -515,6 +497,10 @@ public class OrderService {
                 restoreStockToOriginalBatch(orderItem, order.getBranchId());
             }
         }
+
+        // A cancelled sale used to stay in every report until its TTL expired — nothing
+        // on this path evicted anything.
+        reportCacheInvalidator.salesChanged(order.getBranchId());
 
         return buildOrderResponse(saved, items);
     }
@@ -585,6 +571,9 @@ public class OrderService {
                 .paymentMethod(method)
                 .note(note)
                 .build());
+
+        // Settling a due changes credit aging and the dashboard's outstanding figure.
+        reportCacheInvalidator.salesChanged(savedOrder.getBranchId());
 
         return mapToOrderResponse(savedOrder, true);
     }

@@ -48,6 +48,7 @@ public class StockAdjustmentService {
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
     private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -148,6 +149,8 @@ public class StockAdjustmentService {
                 .build();
 
         StockAdjustment saved = adjustmentRepository.save(adjustment);
+        reportCacheInvalidator.stockChanged();
+
         return map(saved, item);
     }
 

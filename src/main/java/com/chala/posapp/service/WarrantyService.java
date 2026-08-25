@@ -42,6 +42,7 @@ public class WarrantyService {
     private final WarrantyClaimRepository warrantyClaimRepository;
     private final SecurityUtils securityUtils;
     private final ItemRepository itemRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     public Page<WarrantyResponse> list(String search, int page, int size, String branchId) {
         User user = securityUtils.getCurrentUser();
@@ -121,6 +122,8 @@ public class WarrantyService {
                 .build());
         warranty.setStatus(WarrantyStatus.CLAIMED);
         warrantyRepository.save(warranty);
+        reportCacheInvalidator.warrantyChanged();
+
         return mapClaim(claim);
     }
 
@@ -158,6 +161,8 @@ public class WarrantyService {
         }
 
         warrantyRepository.save(warranty);
+        reportCacheInvalidator.warrantyChanged();
+
         return mapClaim(warrantyClaimRepository.save(claim));
     }
 

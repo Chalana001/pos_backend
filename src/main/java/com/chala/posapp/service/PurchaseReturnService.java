@@ -33,6 +33,7 @@ public class PurchaseReturnService {
     private final StockBatchRepository          stockBatchRepository;
     private final ItemRepository                itemRepository;
     private final UserRepository                userRepository;
+    private final ReportCacheInvalidator        reportCacheInvalidator;
 
     // ---------------------------------------------------------------
     // Helpers — BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
@@ -184,6 +185,8 @@ public class PurchaseReturnService {
         // 10. Build response
         String processedByUsername = userRepository.findById(user.getId())
                 .map(User::getUsername).orElse(null);
+
+        reportCacheInvalidator.returnsChanged();
 
         return buildResponse(savedReturn, savedItems, purchase.getSupplier().getName(),
                 grn.getGrnNo(), grn.getBranch().getName(), processedByUsername);

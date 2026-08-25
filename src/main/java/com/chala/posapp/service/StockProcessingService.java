@@ -64,6 +64,7 @@ public class StockProcessingService {
     private final BranchRepository branchRepository;
     private final SecurityUtils securityUtils;
     private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -311,6 +312,8 @@ public class StockProcessingService {
             index++;
         }
 
+        reportCacheInvalidator.stockChanged();
+
         return mapResponse(processing, savedOutputs, user, branch);
     }
 
@@ -359,6 +362,8 @@ public class StockProcessingService {
         if (processing.getStatus() == StockProcessingStatus.CANCELED) {
             throw new BadRequestException("Stock processing already canceled");
         }
+
+        reportCacheInvalidator.stockChanged();
 
         List<StockProcessingOutput> outputs = stockProcessingOutputRepository.findByProcessingIdOrderByIdAsc(processing.getId());
         List<StockBatch> batchesToDelete = new ArrayList<>();

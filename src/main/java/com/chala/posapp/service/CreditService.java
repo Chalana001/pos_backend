@@ -25,6 +25,7 @@ public class CreditService {
     private final CustomerRepository customerRepository;
     private final CreditPaymentRepository creditPaymentRepository;
     private final SecurityUtils securityUtils;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
@@ -53,6 +54,8 @@ public class CreditService {
 
         customer.setDueAmount(newDue);
         customerRepository.save(customer); // BUG-10 FIX: was missing — without this, dueAmount update never persists
+
+        reportCacheInvalidator.creditChanged();
 
         CreditPayment payment = CreditPayment.builder()
                 .customerId(customer.getId())

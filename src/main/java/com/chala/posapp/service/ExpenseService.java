@@ -8,12 +8,9 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.audit.Audited;
-import com.chala.posapp.config.CacheConfig;
 import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,20 +29,17 @@ public class ExpenseService {
     private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // MISS-01: Evict dashboard KPIs + profit caches when a new expense is recorded
+    // Cache eviction is delegated to ReportCacheInvalidator (called at the end of this
+    // method) so that "what an expense dirties" is stated in one place alongside every
+    // other write. The annotation here also keyed on the request's branch, which the
+    // service then re-resolves — so a manager posting someone else's branch evicted the
+    // wrong entry.
     // MISS-03: Audit expense creation
     @Audited(entity = "EXPENSE", action = "CREATE",
              summaryExpression = "'Branch=' + #request.branchId + ' amount=' + #request.amount")
     @Transactional
-    @Caching(evict = {
-        // Branch entry plus key 0 — the "All Branches" dashboard is a separate entry
-        // and nothing used to evict it, so it lagged behind every single-branch view.
-        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(#request.branchId)"),
-        @CacheEvict(value = CacheConfig.CACHE_DASHBOARD_KPIS,    key = "T(com.chala.posapp.util.CacheKeyUtils).key(0)"),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT_SUMMARY, allEntries = true),
-        @CacheEvict(value = CacheConfig.CACHE_RPT_PROFIT,        allEntries = true)
-    })
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
@@ -86,6 +80,9 @@ public class ExpenseService {
             activeShift.setTotalExpenses(activeShift.getTotalExpenses() + request.getAmount());
             cashShiftRepository.save(activeShift);
         }
+        // branchId here is the resolved one, not request.getBranchId().
+        reportCacheInvalidator.expensesChanged(branchId);
+
         return mapToResponse(savedExpense);
     }
 

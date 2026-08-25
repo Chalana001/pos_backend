@@ -1,5 +1,6 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.config.CacheConfig;
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.entity.Branch;
@@ -81,7 +82,7 @@ public class NewReportService {
     // RPT-01: Cashier Performance
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-cashier-perf",
+    @Cacheable(value = CacheConfig.CACHE_RPT_CASHIER_PERF,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public List<CashierPerformanceResponse> cashierPerformance(
             Long requestedBranchId, LocalDate from, LocalDate to) {
@@ -140,7 +141,7 @@ public class NewReportService {
     // RPT-02: Inventory Valuation
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-inventory-val",
+    @Cacheable(value = CacheConfig.CACHE_RPT_INVENTORY_VAL,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #categoryId, #subCategoryId)")
     public InventoryValuationSummary inventoryValuation(Long requestedBranchId, Long categoryId, Long subCategoryId) {
 
@@ -547,7 +548,7 @@ public class NewReportService {
     // RPT-06: Expense Report by Category
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-expenses",
+    @Cacheable(value = CacheConfig.CACHE_RPT_EXPENSES,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public ExpenseReportSummary expenseReport(Long requestedBranchId, LocalDate from, LocalDate to) {
 
@@ -576,7 +577,7 @@ public class NewReportService {
     // RPT-07: Customer Credit Aging
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-credit-aging",
+    @Cacheable(value = CacheConfig.CACHE_RPT_CREDIT_AGING,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId)")
     public List<CreditAgingResponse> creditAging(Long requestedBranchId) {
         User user = securityUtils.getCurrentUser();
@@ -644,7 +645,7 @@ public class NewReportService {
     // RPT-08: Promotion Effectiveness
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-promotion-eff",
+    @Cacheable(value = CacheConfig.CACHE_RPT_PROMOTION_EFF,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public List<PromotionEffectivenessResponse> promotionEffectiveness(
             Long requestedBranchId, LocalDate from, LocalDate to) {
@@ -668,7 +669,7 @@ public class NewReportService {
     // RPT-09: Warranty Report
     // ═══════════════════════════════════════════════════════════════════════
 
-    @Cacheable(value = "report-warranty",
+    @Cacheable(value = CacheConfig.CACHE_RPT_WARRANTY,
                key = "T(com.chala.posapp.util.CacheKeyUtils).scopedKey(#requestedBranchId, #from, #to)")
     public WarrantyReportSummary warrantyReport(Long requestedBranchId, LocalDate from, LocalDate to) {
 

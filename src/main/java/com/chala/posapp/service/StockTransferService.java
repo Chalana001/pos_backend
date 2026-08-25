@@ -53,6 +53,7 @@ public class StockTransferService {
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
     private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -196,6 +197,8 @@ public class StockTransferService {
             stockBatchRepository.save(batch);
         }
 
+        reportCacheInvalidator.stockChanged();
+
         return buildResponse(savedTransfer, transferItems);
     }
 
@@ -232,6 +235,8 @@ public class StockTransferService {
         transfer.setReceivedByUserId(user.getId());
         transfer.setReceivedAt(LocalDateTime.now());
 
+        reportCacheInvalidator.stockChanged();
+
         return buildResponse(transferRepository.save(transfer), items);
     }
 
@@ -265,6 +270,8 @@ public class StockTransferService {
         transfer.setStatus(StockTransferStatus.CANCELED);
         transfer.setCancelReason(request.getReason() != null ? request.getReason().trim() : "Cancelled by User");
         transfer.setCanceledAt(LocalDateTime.now());
+
+        reportCacheInvalidator.stockChanged();
 
         return buildResponse(transferRepository.save(transfer), items);
     }

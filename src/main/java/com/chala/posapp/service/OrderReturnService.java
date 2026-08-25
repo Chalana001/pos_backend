@@ -37,6 +37,7 @@ public class OrderReturnService {
     private final CashShiftRepository           cashShiftRepository;
     private final WarrantyRepository            warrantyRepository;
     private final UserRepository                userRepository;
+    private final ReportCacheInvalidator        reportCacheInvalidator;
 
     // ---------------------------------------------------------------
     // Helpers — mirrors OrderService pattern exactly
@@ -194,6 +195,8 @@ public class OrderReturnService {
         String cashierName  = userRepository.findById(user.getId())
                 .map(User::getUsername).orElse(null);
         String customerName = resolveCustomerName(order.getCustomerId());
+        reportCacheInvalidator.returnsChanged();
+
         return buildResponse(savedReturn, savedReturnItems, cashierName, customerName);
     }
 

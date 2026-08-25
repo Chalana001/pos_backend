@@ -84,6 +84,7 @@ public class PurchaseService {
     private final SecurityUtils securityUtils;
     private final CashShiftRepository cashShiftRepository;
     private final StockAdjustmentRepository stockAdjustmentRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
@@ -318,6 +319,10 @@ public class PurchaseService {
             supplier.setDueAmount(normalizeMoney(supplier.getDueAmount()).add(dueAmount));
             supplierRepository.save(supplier);
         }
+
+        // Receiving goods moves stock and changes what is owed to the supplier. Neither
+        // report-top-suppliers nor report-inventory-val had any eviction before this.
+        reportCacheInvalidator.procurementChanged();
 
         return PurchaseResponse.builder()
                 .purchaseId(savedPurchase.getId())
