@@ -139,7 +139,12 @@ public class OrderService {
 
         OrderResponse response = createOrderInternal(
                 createOrderRequest,
-                new OfflineOrderMetadata(request.getClientSaleId(), request.getOfflineSoldAt())
+                new OfflineOrderMetadata(
+                        request.getClientSaleId(),
+                        request.getOfflineSoldAt(),
+                        request.getInvoiceNo(),
+                        request.getOfflineCashierUserId()
+                )
         );
 
         return OfflineSaleImportResponse.builder()
@@ -186,13 +191,45 @@ public class OrderService {
             throw new BadRequestException("Order items required");
         }
 
+        // An imported sale belongs to the cashier who made it, not to whoever pressed
+        // import. Attributing it to the importer also sent the cash to the wrong drawer,
+        // because addCashSaleToOpenShift resolves the shift by this same id.
+        Long cashierUserId = user.getId();
+        if (offlineOrderMetadata != null && offlineOrderMetadata.cashierUserId != null) {
+            User offlineCashier = userRepository.findById(offlineOrderMetadata.cashierUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Offline cashier not found: " + offlineOrderMetadata.cashierUserId));
+            if (offlineCashier.getBranchId() != null && !branchId.equals(offlineCashier.getBranchId())) {
+                throw new BadRequestException("Offline cashier belongs to another branch");
+            }
+            cashierUserId = offlineCashier.getId();
+        }
+
+        if (offlineOrderMetadata != null) {
+            // The cash from this sale has to land in a real drawer. Silently dropping it
+            // when nothing is open — which is what ifPresent did — is how offline revenue
+            // went missing. The queue page gates on this too, against the same rule.
+            final Long shiftCashierUserId = cashierUserId;
+            cashShiftRepository
+                    .findByBranchIdAndCashierUserIdAndStatus(branchId, shiftCashierUserId, ShiftStatus.OPEN)
+                    .orElseThrow(() -> new BadRequestException(
+                            "No open shift for the cashier who made this sale. Open a shift for them at this branch before importing."));
+        }
+
         SaleMode saleMode = request.getSaleMode() == null ? SaleMode.TAKEAWAY : request.getSaleMode();
         DiningTable diningTable = resolveDiningTable(user, branchId, saleMode, request.getTableId());
 
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
-        String invoiceNo = invoiceService.generateInvoiceNo(branchId);
+        // An offline sale was already printed with a number the customer is holding.
+        // Generating a fresh one here meant that receipt matched nothing in the system,
+        // so a return could not be looked up from it.
+        String invoiceNo = offlineOrderMetadata != null
+                && offlineOrderMetadata.invoiceNo != null
+                && !offlineOrderMetadata.invoiceNo.isBlank()
+                ? offlineOrderMetadata.invoiceNo.trim()
+                : invoiceService.generateInvoiceNo(branchId);
 
         double subTotal = 0;
         double promotionDiscountTotal = 0;
@@ -349,7 +386,7 @@ public class OrderService {
                 .receiptBranchAddress(branch.getAddress())
                 .receiptBranchPhone(branch.getPhone())
                 .receiptBranchLogo(branch.getLogo())
-                .cashierUserId(user.getId())
+                .cashierUserId(cashierUserId)
                 .customerId(request.getCustomerId())
                 .orderType(effectiveOrderType)
                 .paymentMethod(paymentMethod)
@@ -1446,10 +1483,19 @@ public class OrderService {
     private static final class OfflineOrderMetadata {
         private final String clientSaleId;
         private final LocalDateTime offlineSoldAt;
+        private final String invoiceNo;
+        private final Long cashierUserId;
 
-        private OfflineOrderMetadata(String clientSaleId, LocalDateTime offlineSoldAt) {
+        private OfflineOrderMetadata(
+                String clientSaleId,
+                LocalDateTime offlineSoldAt,
+                String invoiceNo,
+                Long cashierUserId
+        ) {
             this.clientSaleId = clientSaleId;
             this.offlineSoldAt = offlineSoldAt;
+            this.invoiceNo = invoiceNo;
+            this.cashierUserId = cashierUserId;
         }
     }
 
