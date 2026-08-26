@@ -659,4 +659,110 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
         // ...and the shortfall is audited, which is what makes it reconcilable later.
         assertEquals(initialAuditCount + 1, stockOverrideAuditRepository.count());
     }
+
+    @Test
+    void offlineImportBanksThePriceThatWasActuallyChargedRatherThanApplyingAPromotion() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("offline-promo"), 2);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+        long itemId = seedSellableItem(fixture, adminToken, "81005", "Promo Tea");
+
+        // A 50% bill promotion is running right now.
+        postJson(
+                "/promotions",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Half price everything",
+                  "scope": "BILL",
+                  "discountType": "PERCENT",
+                  "discountValue": 50,
+                  "minBillAmount": 0,
+                  "maxDiscountAmount": 0,
+                  "startAt": "2020-01-01T00:00:00",
+                  "endAt": "2099-01-01T00:00:00",
+                  "branchId": %d,
+                  "active": true,
+                  "priority": 1
+                }
+                """.formatted(fixture.mainBranch().getId())
+        );
+
+        postJson(
+                "/shifts/open",
+                tenantId,
+                cashierToken,
+                """
+                { "openingCash": 500, "note": "Promo drawer" }
+                """
+        );
+
+        // The till was offline: it never saw the promotion, so it printed and took 90.
+        JsonNode imported = postJson(
+                "/orders/offline-import",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "clientSaleId": "%s",
+                  "offlineSoldAt": "2026-05-04T10:15:00",
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "saleMode": "TAKEAWAY",
+                  "billDiscount": 0,
+                  "paidAmount": 90,
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 90,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ]
+                }
+                """.formatted(uniqueKey("client-sale"), fixture.mainBranch().getId(), itemId)
+        );
+
+        assertEquals(true, imported.path("success").asBoolean());
+
+        Order saved = orderRepository.findAll().getLast();
+
+        // The ledger says what the customer actually paid. Had the promotion been applied
+        // the grand total would be 45, min(paidAmount, grandTotal) would silently absorb
+        // the other 45 as change that was never handed over, and the receipt in the
+        // customer's hand would disagree with the books.
+        assertEquals(90.0, saved.getGrandTotal(), 0.001);
+        assertEquals(0.0, saved.getPromotionDiscountTotal(), 0.001);
+        assertEquals(90.0, saved.getSalePaidAmount(), 0.001);
+
+        // Proves the assertions above are not vacuous — the promotion really is live and
+        // really would have halved that sale — and that live checkout still applies it.
+        JsonNode liveOrder = postJson(
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "saleMode": "TAKEAWAY",
+                  "billDiscount": 0,
+                  "paidAmount": 90,
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 90,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ]
+                }
+                """.formatted(fixture.mainBranch().getId(), itemId)
+        );
+        assertEquals(45.0, liveOrder.path("grandTotal").asDouble(), 0.001);
+    }
 }

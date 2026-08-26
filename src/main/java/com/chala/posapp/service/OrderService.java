@@ -156,12 +156,27 @@ public class OrderService {
                 .build();
     }
 
-    @Transactional
+    /**
+     * Import many queued sales, each standing or falling on its own.
+     *
+     * This used to be @Transactional and call this.importOfflineSale() directly. Spring's
+     * transaction advice lives on the proxy, so a self-invocation never opened the inner
+     * transaction the annotation promised and every row shared one — the per-row
+     * success/failure this returns described an isolation the code did not have, and a
+     * failed row's partial work stayed in the same persistence context until commit.
+     *
+     * Each row now runs in its own REQUIRES_NEW transaction through the transaction
+     * manager, which does not depend on going through the proxy. A row that fails rolls
+     * back only itself.
+     */
     public List<OfflineSaleImportResponse> importOfflineSales(List<OfflineSaleImportRequest> requests) {
+        TransactionTemplate perRowTransaction = new TransactionTemplate(transactionManager);
+        perRowTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
         List<OfflineSaleImportResponse> results = new ArrayList<>();
         for (OfflineSaleImportRequest request : requests) {
             try {
-                results.add(importOfflineSale(request));
+                results.add(perRowTransaction.execute(status -> importOfflineSale(request)));
             } catch (Exception exception) {
                 results.add(OfflineSaleImportResponse.builder()
                         .clientSaleId(request.getClientSaleId())
@@ -241,7 +256,22 @@ public class OrderService {
         LocalDateTime soldAt = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
                 ? offlineOrderMetadata.offlineSoldAt
                 : LocalDateTime.now();
-        List<Promotion> activePromotions = promotionService.activePromotionsForBranch(branchId, soldAt);
+        // Promotions are deliberately NOT applied to an imported offline sale.
+        //
+        // The till was offline when it priced this. It could not know which promotions
+        // were running, so it charged and PRINTED list price, and that is what the
+        // customer handed over. Applying a discount here would make the ledger disagree
+        // with the receipt in their hand and book a discount nobody received — and
+        // min(paidAmount, grandTotal) below would quietly absorb the difference as change
+        // that was never given, showing up only as an unexplained cash surplus at day end.
+        //
+        // The alternative — caching promotions and pricing them in the browser — means a
+        // second implementation of scopes, targets, caps, priority and best-of selection.
+        // Any drift between the two reintroduces exactly this mismatch, so the sale is
+        // banked at the price it was actually sold for instead.
+        List<Promotion> activePromotions = offlineOrderMetadata != null
+                ? List.of()
+                : promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext =
@@ -266,7 +296,6 @@ public class OrderService {
                     itemReq,
                     normalizedQty,
                     batchesToUpdate,
-                    offlineOrderMetadata != null,
                     stockOverrideContext
             );
 
@@ -764,7 +793,6 @@ public class OrderService {
             OrderItemRequest itemReq,
             int normalizedQty,
             Map<Long, StockBatch> batchesToUpdate,
-            boolean allowAutomaticBatchSelection,
             StockOverrideContext stockOverrideContext
     ) {
         if (item.getItemType() == ItemType.SERVICE) {
