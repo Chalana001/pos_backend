@@ -3,6 +3,7 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -119,6 +120,14 @@ public class Order extends TenantEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    /**
+     * The trading day this sale belongs to, derived from createdAt on persist.
+     * Reporting keys off this rather than off createdAt so that an offline sale
+     * imported days later still lands on the day it was actually made.
+     */
+    @Column(name = "business_date")
+    private LocalDate businessDate;
+
     @Column(name = "offline_sold_at")
     private LocalDateTime offlineSoldAt;
 
@@ -135,6 +144,7 @@ public class Order extends TenantEntity {
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();
+        if (businessDate == null) businessDate = createdAt.toLocalDate();
         if (status == null) status = OrderStatus.COMPLETED;
     }
 }

@@ -196,10 +196,15 @@ public class OrderService {
 
         double subTotal = 0;
         double promotionDiscountTotal = 0;
-        LocalDateTime promotionTime = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
+        // The moment the sale actually happened: the queued timestamp for an offline
+        // import, now for a live checkout. Promotions were already evaluated against
+        // this, and created_at now uses it too — otherwise a sale made during an outage
+        // is booked on the day it was pushed rather than the day it was made.
+        // imported_at remains the record of when it reached the server.
+        LocalDateTime soldAt = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
                 ? offlineOrderMetadata.offlineSoldAt
                 : LocalDateTime.now();
-        List<Promotion> activePromotions = promotionService.activePromotionsForBranch(branchId, promotionTime);
+        List<Promotion> activePromotions = promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext = buildStockOverrideContext(request, user);
@@ -364,7 +369,9 @@ public class OrderService {
                 .salePaidAmount(paidTowardSale)
                 .saleDueAmount(dueAmount)
                 .note(request.getNote())
-                .createdAt(LocalDateTime.now())
+                // businessDate is derived from this in Order's @PrePersist, so every
+                // path that builds an Order gets the same rule.
+                .createdAt(soldAt)
                 .offlineSoldAt(offlineOrderMetadata != null ? offlineOrderMetadata.offlineSoldAt : null)
                 .importedAt(offlineOrderMetadata != null ? LocalDateTime.now() : null)
                 .offlineImported(offlineOrderMetadata != null)
