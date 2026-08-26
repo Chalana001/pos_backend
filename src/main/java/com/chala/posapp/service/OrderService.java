@@ -244,7 +244,8 @@ public class OrderService {
         List<Promotion> activePromotions = promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
-        StockOverrideContext stockOverrideContext = buildStockOverrideContext(request, user);
+        StockOverrideContext stockOverrideContext =
+                buildStockOverrideContext(request, user, offlineOrderMetadata != null);
 
         for (OrderItemRequest itemReq : request.getItems()) {
             validateWarrantySelection(itemReq, user.getRole(), branchId);
@@ -962,7 +963,24 @@ public class OrderService {
         );
     }
 
-    private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user) {
+    private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user, boolean offlineImport) {
+        // An offline sale has already happened: the goods left the shelf and the cash is
+        // in the drawer. Refusing it here un-sells nothing — it only keeps real revenue
+        // off the books and leaves a paid transaction stranded in the queue forever. So
+        // the shortfall is absorbed, stock is allowed to go negative, and the resulting
+        // StockOverrideAudit rows become the reconciliation trail for what went short.
+        if (offlineImport) {
+            String reason = request.getStockOverrideReason() == null || request.getStockOverrideReason().isBlank()
+                    ? "Offline sale imported after the fact"
+                    : request.getStockOverrideReason();
+            return new StockOverrideContext(
+                    StockOverrideMode.ALWAYS_ALLOW,
+                    true,
+                    true,
+                    normalizeOverrideReason(reason)
+            );
+        }
+
         StockOverrideMode mode = appConfigurationService.getStockOverrideMode(request.getBranchId());
         boolean requested = request.isAllowStockOverride();
         boolean roleAllowed = appConfigurationService.isStockOverrideAllowedForRole(user.getRole(), request.getBranchId());

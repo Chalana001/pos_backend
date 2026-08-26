@@ -12,6 +12,7 @@ import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.CashDropRepository;
 import com.chala.posapp.repository.BankAccountRepository;
 import com.chala.posapp.repository.CashShiftRepository;
+import com.chala.posapp.repository.StockOverrideAuditRepository;
 import com.chala.posapp.repository.CategoryRepository;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerNoteRepository;
@@ -115,6 +116,9 @@ abstract class ApiIntegrationTestSupport {
 
     @Autowired
     protected CashShiftRepository cashShiftRepository;
+
+    @Autowired
+    protected StockOverrideAuditRepository stockOverrideAuditRepository;
 
     @Autowired
     protected CashDropRepository cashDropRepository;

@@ -380,14 +380,17 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
                         itemId,
                         uniqueKey("bulk-fail"),
                         fixture.mainBranch().getId(),
-                        itemId
+                        // A missing item, not a stock shortfall: short stock no longer fails an
+                        // offline import, so it can no longer stand in for the failing row this
+                        // test needs to prove the successful one is not rolled back with it.
+                        999_999_999L
                 )
         );
 
         assertEquals(2, bulkResponse.size());
         assertEquals(true, bulkResponse.get(0).path("success").asBoolean());
         assertEquals(false, bulkResponse.get(1).path("success").asBoolean());
-        assertTrue(bulkResponse.get(1).path("message").asText().contains("Insufficient stock"));
+        assertTrue(bulkResponse.get(1).path("message").asText().contains("Item not found"));
         assertEquals(initialOrderCount + 1, orderRepository.count());
     }
 
@@ -586,5 +589,74 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
 
         assertTrue(rejected.path("message").asText().toLowerCase().contains("no open shift"));
         assertEquals(initialOrderCount, orderRepository.count());
+    }
+
+    @Test
+    void offlineImportAbsorbsAStockShortfallInsteadOfRefusingAPaidSale() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("offline-short"), 2);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+        // seedSellableItem stocks 6.
+        long itemId = seedSellableItem(fixture, adminToken, "81004", "Short Stock Tea");
+
+        postJson(
+                "/shifts/open",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "openingCash": 500,
+                  "note": "Short stock drawer"
+                }
+                """
+        );
+
+        long initialOrderCount = orderRepository.count();
+        long initialAuditCount = stockOverrideAuditRepository.count();
+
+        // Ten sold against six on hand. This sale already happened offline — the goods are
+        // gone and the cash is in the drawer — so refusing it would only keep real revenue
+        // off the books and strand a paid transaction in the queue.
+        JsonNode imported = postJson(
+                "/orders/offline-import",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "clientSaleId": "%s",
+                  "offlineSoldAt": "2026-05-04T10:15:00",
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "saleMode": "TAKEAWAY",
+                  "billDiscount": 0,
+                  "paidAmount": 900,
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 10,
+                      "unitPrice": 90,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ]
+                }
+                """.formatted(uniqueKey("client-sale"), fixture.mainBranch().getId(), itemId)
+        );
+
+        assertEquals(true, imported.path("success").asBoolean());
+        assertEquals(initialOrderCount + 1, orderRepository.count());
+
+        // Stock is allowed to go negative rather than the sale being lost. Batch
+        // quantities are held in base units (1000 per display unit), so six on hand less
+        // ten sold is -4 units, stored as -4000.
+        int remaining = stockBatchRepository.findBatchesForBranchItem(fixture.mainBranch().getId(), itemId)
+                .stream()
+                .mapToInt(batch -> batch.getQuantity() == null ? 0 : batch.getQuantity())
+                .sum();
+        assertEquals(-4000, remaining);
+
+        // ...and the shortfall is audited, which is what makes it reconcilable later.
+        assertEquals(initialAuditCount + 1, stockOverrideAuditRepository.count());
     }
 }
