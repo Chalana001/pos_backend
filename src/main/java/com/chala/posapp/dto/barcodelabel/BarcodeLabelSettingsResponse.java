@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.barcodelabel;
 
 import com.chala.posapp.entity.ItemNameSource;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -56,4 +57,13 @@ public class BarcodeLabelSettingsResponse {
     private int printerCopies;
 
     private String layoutJson;
+
+    private boolean scaleBarcodeEnabled;
+    private String scaleBarcodePresetKey;
+    private String scaleBarcodePrefix;
+    private int scaleBarcodePrefixLength;
+    private int scaleBarcodeItemCodeLength;
+    private int scaleBarcodeValueLength;
+    private ScaleBarcodeValueType scaleBarcodeValueType;
+    private boolean scaleBarcodeHasCheckDigit;
 }

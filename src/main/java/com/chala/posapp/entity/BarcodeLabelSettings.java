@@ -125,6 +125,39 @@ public class BarcodeLabelSettings extends TenantEntity {
     @Column(name = "layout_json", columnDefinition = "LONGTEXT")
     private String layoutJson;
 
+    // Scale-barcode decoding: lets a shop teach the backend the digit layout its
+    // own weighing-scale / label-printer device prints (prefix + item-code +
+    // weight-or-price + optional check digit), so ItemService.getByBarcode can
+    // decode it generically instead of any format being hardcoded.
+    @Column(name = "scale_barcode_enabled", nullable = false, columnDefinition = "boolean default false")
+    private boolean scaleBarcodeEnabled;
+
+    // Key of the ScaleBarcodeFormatPresets template the admin started from, or
+    // null/"CUSTOM" if every field below was filled in by hand. Informational
+    // only — decoding always uses the fields below, never this key.
+    @Column(name = "scale_barcode_preset_key", length = 50)
+    private String scaleBarcodePresetKey;
+
+    @Column(name = "scale_barcode_prefix", length = 4)
+    private String scaleBarcodePrefix;
+
+    @Column(name = "scale_barcode_prefix_length", nullable = false, columnDefinition = "int default 2")
+    private int scaleBarcodePrefixLength;
+
+    @Column(name = "scale_barcode_item_code_length", nullable = false, columnDefinition = "int default 5")
+    private int scaleBarcodeItemCodeLength;
+
+    @Column(name = "scale_barcode_value_length", nullable = false, columnDefinition = "int default 5")
+    private int scaleBarcodeValueLength;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scale_barcode_value_type", nullable = false, length = 20)
+    @Builder.Default
+    private ScaleBarcodeValueType scaleBarcodeValueType = ScaleBarcodeValueType.WEIGHT_GRAMS;
+
+    @Column(name = "scale_barcode_has_check_digit", nullable = false, columnDefinition = "boolean default true")
+    private boolean scaleBarcodeHasCheckDigit;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

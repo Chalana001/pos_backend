@@ -5,6 +5,7 @@ import com.chala.posapp.dto.barcodelabel.BarcodeLabelSettingsResponse;
 import com.chala.posapp.entity.BarcodeLabelSettings;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.ItemNameSource;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BarcodeLabelSettingsRepository;
 import com.chala.posapp.repository.BranchRepository;
@@ -81,6 +82,15 @@ public class BarcodeLabelSettingsService {
         settings.setPrinterName(normalizeNullableText(request.getPrinterName(), 160));
         settings.setPrinterCopies(clamp(request.getPrinterCopies(), 1, 10));
         settings.setLayoutJson(normalizeLayoutJson(request.getLayoutJson()));
+        settings.setScaleBarcodeEnabled(request.isScaleBarcodeEnabled());
+        settings.setScaleBarcodePresetKey(normalizeNullableText(request.getScaleBarcodePresetKey(), 50));
+        settings.setScaleBarcodePrefix(normalizeNullableText(request.getScaleBarcodePrefix(), 4));
+        settings.setScaleBarcodePrefixLength(clamp(request.getScaleBarcodePrefixLength(), 0, 4));
+        settings.setScaleBarcodeItemCodeLength(clamp(request.getScaleBarcodeItemCodeLength(), 1, 20));
+        settings.setScaleBarcodeValueLength(clamp(request.getScaleBarcodeValueLength(), 1, 20));
+        settings.setScaleBarcodeValueType(request.getScaleBarcodeValueType() == null
+                ? ScaleBarcodeValueType.WEIGHT_GRAMS : request.getScaleBarcodeValueType());
+        settings.setScaleBarcodeHasCheckDigit(request.isScaleBarcodeHasCheckDigit());
 
         BarcodeLabelSettings saved = barcodeLabelSettingsRepository.save(settings);
         return mapToResponse(saved, branch);
@@ -124,6 +134,14 @@ public class BarcodeLabelSettingsService {
                 .directPrintEnabled(false)
                 .printerName(null)
                 .printerCopies(1)
+                .scaleBarcodeEnabled(false)
+                .scaleBarcodePresetKey(null)
+                .scaleBarcodePrefix(null)
+                .scaleBarcodePrefixLength(2)
+                .scaleBarcodeItemCodeLength(5)
+                .scaleBarcodeValueLength(5)
+                .scaleBarcodeValueType(ScaleBarcodeValueType.WEIGHT_GRAMS)
+                .scaleBarcodeHasCheckDigit(true)
                 .build();
     }
 
@@ -228,6 +246,15 @@ public class BarcodeLabelSettingsService {
                 .printerName(settings.getPrinterName())
                 .printerCopies(clamp(settings.getPrinterCopies(), 1, 10))
                 .layoutJson(settings.getLayoutJson())
+                .scaleBarcodeEnabled(settings.isScaleBarcodeEnabled())
+                .scaleBarcodePresetKey(settings.getScaleBarcodePresetKey())
+                .scaleBarcodePrefix(settings.getScaleBarcodePrefix())
+                .scaleBarcodePrefixLength(settings.getScaleBarcodePrefixLength())
+                .scaleBarcodeItemCodeLength(settings.getScaleBarcodeItemCodeLength())
+                .scaleBarcodeValueLength(settings.getScaleBarcodeValueLength())
+                .scaleBarcodeValueType(settings.getScaleBarcodeValueType() != null
+                        ? settings.getScaleBarcodeValueType() : ScaleBarcodeValueType.WEIGHT_GRAMS)
+                .scaleBarcodeHasCheckDigit(settings.isScaleBarcodeHasCheckDigit())
                 .build();
     }
 }

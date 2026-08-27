@@ -1,5 +1,7 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.barcode.DecodedScaleBarcode;
+import com.chala.posapp.barcode.ScaleBarcodeDecoder;
 import com.chala.posapp.dto.item.ItemCreateRequest;
 import com.chala.posapp.dto.item.ItemDeleteCheckResponse;
 import com.chala.posapp.dto.item.ItemIngredientRequest;
@@ -9,6 +11,7 @@ import com.chala.posapp.dto.item.ItemUpdateRequest;
 import com.chala.posapp.dto.item.StockProcessingOutputLinkRequest;
 import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
 import com.chala.posapp.dto.stock.StockBatchResponse;
+import com.chala.posapp.entity.BarcodeLabelSettings;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.BranchServiceItem;
 import com.chala.posapp.entity.Category;
@@ -18,6 +21,7 @@ import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
 import com.chala.posapp.entity.StockProcessingOutputLink;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.TenantSubscription;
@@ -27,6 +31,7 @@ import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.BarcodeLabelSettingsRepository;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
@@ -60,6 +65,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -72,6 +78,7 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final BarcodeLabelSettingsRepository barcodeLabelSettingsRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
@@ -269,8 +276,27 @@ public class ItemService {
     }
 
     public ItemResponse getByBarcode(String barcode, Long branchId) {
-        Item item = itemRepository.findByBarcode(barcode.trim())
-                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        String trimmedBarcode = barcode.trim();
+        Optional<Item> exactMatch = itemRepository.findByBarcode(trimmedBarcode);
+
+        Item item;
+        DecodedScaleBarcode decoded = null;
+        if (exactMatch.isPresent()) {
+            item = exactMatch.get();
+        } else {
+            // No plain item carries this barcode as-is. Before giving up, see if
+            // it decodes as a scale barcode under this branch's configured
+            // format (weight/price-embedded, per BarcodeLabelSettings) — if so,
+            // the item's own short `barcode` field doubles as the embedded
+            // item/PLU code, so we look that up instead of adding a new field.
+            decoded = decodeScaleBarcode(trimmedBarcode, branchId);
+            item = decoded == null
+                    ? null
+                    : itemRepository.findByBarcode(decoded.itemCode()).orElse(null);
+            if (item == null) {
+                throw new ResourceNotFoundException("Item not found");
+            }
+        }
 
         if (!item.isActive() || !item.isPosVisible()) {
             throw new ResourceNotFoundException("Item not available in POS");
@@ -285,15 +311,80 @@ public class ItemService {
             throw new ResourceNotFoundException("Service item not available in this branch");
         }
 
+        // Existing exact-barcode-match behavior is completely unchanged: this is
+        // only non-null when the plain lookup missed and a scale barcode decoded.
+        ScaleBarcodeResolution scaleResolution = decoded == null ? null : resolveScaleBarcodeResolution(item, decoded);
+
         if (branchId == null || item.getItemType() == ItemType.RECIPE || item.getItemType() == ItemType.SERVICE) {
-            return mapToResponse(item, null, List.of(), branchId);
+            return mapToResponse(item, null, List.of(), branchId, scaleResolution);
         }
 
         List<StockBatch> batches = branchId == 0L
                 ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
                 : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
 
-        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches), branchId);
+        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches), branchId, scaleResolution);
+    }
+
+    /** Empty (no decode) whenever branchId is unset or the branch has scale-barcode decoding turned off. */
+    private DecodedScaleBarcode decodeScaleBarcode(String barcode, Long branchId) {
+        if (branchId == null) {
+            return null;
+        }
+        BarcodeLabelSettings settings = barcodeLabelSettingsRepository.findByBranchId(branchId).orElse(null);
+        return ScaleBarcodeDecoder.tryDecode(barcode, settings).orElse(null);
+    }
+
+    /**
+     * Resolves the sale quantity/amount implied by a decoded scale barcode against
+     * the matched item's own pricing, reusing QuantityConversionUtil so this never
+     * diverges from the rest of the pricing engine. Only meaningful for WEIGHT
+     * items with a positive selling price — returns null otherwise (the item is
+     * still returned, just without the extra scale-resolved fields populated).
+     */
+    private ScaleBarcodeResolution resolveScaleBarcodeResolution(Item item, DecodedScaleBarcode decoded) {
+        if (item.getItemType() != ItemType.WEIGHT) {
+            return null;
+        }
+
+        BigDecimal sellingPrice = item.getSellingPrice();
+        if (sellingPrice == null || sellingPrice.signum() <= 0) {
+            return null;
+        }
+
+        try {
+            int grams;
+            BigDecimal amount;
+
+            if (decoded.valueType() == ScaleBarcodeValueType.WEIGHT_GRAMS) {
+                grams = decoded.rawValue();
+                amount = QuantityConversionUtil.calculateActualAmount(item, sellingPrice, grams);
+            } else {
+                // PRICE_CENTS: the amount is embedded directly in the barcode; the
+                // weight is derived from it at this item's configured (per-kg)
+                // selling price — the inverse of calculateActualAmount's own math,
+                // so the two value types stay consistent with each other.
+                amount = BigDecimal.valueOf(decoded.rawValue(), 2);
+                BigDecimal gramsExact = amount
+                        .multiply(BigDecimal.valueOf(1000))
+                        .divide(sellingPrice, 0, RoundingMode.HALF_UP);
+                grams = gramsExact.intValueExact();
+            }
+
+            if (grams <= 0) {
+                return null;
+            }
+
+            BigDecimal quantity = QuantityConversionUtil.toDisplayQuantity(item, grams);
+            MeasurementUnit unit = QuantityConversionUtil.normalizeItemUnit(item.getItemType(), item.getDefaultUnit());
+            return new ScaleBarcodeResolution(quantity, unit, amount);
+        } catch (ArithmeticException | BadRequestException e) {
+            return null;
+        }
+    }
+
+    /** Sale quantity/amount resolved from a decoded scale barcode. See {@link #resolveScaleBarcodeResolution}. */
+    private record ScaleBarcodeResolution(BigDecimal quantity, MeasurementUnit unit, BigDecimal amount) {
     }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
@@ -645,7 +736,18 @@ public class ItemService {
     }
 
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId) {
-        return mapToResponse(item, availableBaseQty, batches, branchId, null);
+        return mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches,
+                                        Long branchId, ScaleBarcodeResolution scaleResolution) {
+        ItemResponse response = mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
+        if (scaleResolution != null) {
+            response.setScaleResolvedQuantity(scaleResolution.quantity());
+            response.setScaleResolvedUnit(scaleResolution.unit());
+            response.setScaleResolvedAmount(scaleResolution.amount());
+        }
+        return response;
     }
 
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId, LocalDateTime labelExpiry) {
