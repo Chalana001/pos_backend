@@ -21,4 +21,9 @@ public class ShopSummaryResponse {
     private long currentBranchCount;
     private LocalDateTime validUntil;
     private LocalDateTime createdAt;
+
+    private String businessType;
+
+    /** Non-zero means the shop deviates from its plan; the list shows a "custom" badge. */
+    private int moduleOverrideCount;
 }

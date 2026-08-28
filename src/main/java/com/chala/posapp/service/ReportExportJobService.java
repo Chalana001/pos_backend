@@ -11,6 +11,7 @@ import com.chala.posapp.repository.ReportExportJobRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.SecurityUtils;
+import com.chala.posapp.util.StorageClock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -73,7 +74,7 @@ public class ReportExportJobService {
             return repository.save(ReportExportJob.builder().requestedByUserId(userId).requestedByUsername(username)
                     .reportType(request.reportType().trim().toUpperCase()).status(ReportExportStatus.QUEUED)
                     .parametersJson(objectMapper.writeValueAsString(request)).emailTo(blankToNull(emailTo))
-                    .maxAttempts(maxAttempts).nextAttemptAt(LocalDateTime.now()).scheduleId(scheduleId).build());
+                    .maxAttempts(maxAttempts).nextAttemptAt(StorageClock.now()).scheduleId(scheduleId).build());
         } catch (JsonProcessingException error) {
             throw new BadRequestException("Invalid export parameters");
         }
@@ -110,7 +111,7 @@ public class ReportExportJobService {
         ReportExportJob job = getOwnedJob(id);
         if (job.getStatus() != ReportExportStatus.QUEUED) throw new BadRequestException("Only queued exports can be cancelled");
         job.setStatus(ReportExportStatus.CANCELLED);
-        job.setCompletedAt(LocalDateTime.now());
+        job.setCompletedAt(StorageClock.now());
         ReportExportJob saved = repository.save(job);
         metrics.increment("cancelled");
         return toResponse(saved);
@@ -121,7 +122,7 @@ public class ReportExportJobService {
         ReportExportJob job = getOwnedJob(id);
         if (job.getStatus() != ReportExportStatus.FAILED) throw new BadRequestException("Only failed exports can be retried");
         job.setStatus(ReportExportStatus.QUEUED); job.setAttemptCount(0); job.setErrorMessage(null);
-        job.setStartedAt(null); job.setCompletedAt(null); job.setNextAttemptAt(LocalDateTime.now());
+        job.setStartedAt(null); job.setCompletedAt(null); job.setNextAttemptAt(StorageClock.now());
         ReportExportJob saved = repository.save(job);
         metrics.increment("manual_retry");
         return toResponse(saved);
@@ -137,22 +138,22 @@ public class ReportExportJobService {
     }
 
     public void processQueuedJobs() {
-        var jobs = repository.findTop5ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(ReportExportStatus.QUEUED, LocalDateTime.now());
+        var jobs = repository.findTop5ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(ReportExportStatus.QUEUED, StorageClock.now());
         if (!jobs.isEmpty()) log.info("Processing {} report export job(s) for tenant {}", jobs.size(), TenantContext.getTenant());
         jobs.forEach(this::process);
     }
 
     @Transactional
     public void recoverStaleJobs() {
-        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(staleAfterMinutes);
+        LocalDateTime cutoff = StorageClock.now().minusMinutes(staleAfterMinutes);
         for (ReportExportJob job : repository.findByStatusAndStartedAtBefore(ReportExportStatus.PROCESSING, cutoff)) {
             if (repository.recover(job.getId(), ReportExportStatus.PROCESSING, ReportExportStatus.QUEUED,
-                    cutoff, LocalDateTime.now(), "Recovered after worker timeout") == 1) metrics.increment("recovered");
+                    cutoff, StorageClock.now(), "Recovered after worker timeout") == 1) metrics.increment("recovered");
         }
     }
 
     public void cleanupExpiredJobs() {
-        for (ReportExportJob job : repository.findByCompletedAtBefore(LocalDateTime.now().minusDays(retentionDays))) {
+        for (ReportExportJob job : repository.findByCompletedAtBefore(StorageClock.now().minusDays(retentionDays))) {
             if (job.getStatus() == ReportExportStatus.PROCESSING || job.getStatus() == ReportExportStatus.QUEUED) continue;
             deleteStoredFile(job);
             repository.delete(job);
@@ -163,7 +164,7 @@ public class ReportExportJobService {
     private void process(ReportExportJob job) {
         Long jobId = job.getId();
         if (!Boolean.TRUE.equals(transactionTemplate.execute(status -> repository.claim(jobId, ReportExportStatus.QUEUED,
-                ReportExportStatus.PROCESSING, LocalDateTime.now()) == 1))) return;
+                ReportExportStatus.PROCESSING, StorageClock.now()) == 1))) return;
         job = repository.findById(jobId).orElseThrow();
         var previousContext = SecurityContextHolder.getContext();
         try {
@@ -194,20 +195,22 @@ public class ReportExportJobService {
             if (job.getEmailTo() != null) {
                 ReportExportEmailService sender = emailService.getIfAvailable();
                 if (sender == null) throw new IllegalStateException("Report email delivery is not configured");
-                sender.send(job.getEmailTo(), fileName, bytes); job.setEmailDeliveredAt(LocalDateTime.now());
+                sender.send(job.getEmailTo(), fileName, bytes); job.setEmailDeliveredAt(StorageClock.now());
                 metrics.increment("emailed");
             }
-            job.setStatus(ReportExportStatus.COMPLETED); job.setCompletedAt(LocalDateTime.now());
+            job.setStatus(ReportExportStatus.COMPLETED); job.setCompletedAt(StorageClock.now());
             metrics.increment("completed");
         } catch (Exception error) {
             String message = error.getMessage() == null ? "Export generation failed" : error.getMessage();
+            log.warn("Report export job {} (tenant {}) failed on attempt {}/{}", job.getId(), TenantContext.getTenant(),
+                    job.getAttemptCount(), job.getMaxAttempts(), error);
             job.setErrorMessage(message.substring(0, Math.min(message.length(), 500)));
             if (job.getAttemptCount() < job.getMaxAttempts()) {
                 job.setStatus(ReportExportStatus.QUEUED); job.setStartedAt(null);
-                job.setNextAttemptAt(LocalDateTime.now().plus(Duration.ofSeconds(retryDelaySeconds * job.getAttemptCount())));
+                job.setNextAttemptAt(StorageClock.now().plus(Duration.ofSeconds(retryDelaySeconds * job.getAttemptCount())));
                 metrics.increment("automatic_retry");
             } else {
-                job.setStatus(ReportExportStatus.FAILED); job.setCompletedAt(LocalDateTime.now());
+                job.setStatus(ReportExportStatus.FAILED); job.setCompletedAt(StorageClock.now());
                 metrics.increment("failed");
             }
         } finally {

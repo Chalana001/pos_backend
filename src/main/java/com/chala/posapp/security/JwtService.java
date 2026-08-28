@@ -60,6 +60,49 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * A support session token: it authenticates as a shop user, but carries who really issued
+     * it and whether writes are allowed.
+     *
+     * <p>Its lifetime is set by the caller rather than {@code app.jwt.expiration}, because a
+     * support session should last minutes, not the day a normal login gets. The {@code jti} is
+     * checked against {@code impersonation_sessions} on every request, so revoking the row ends
+     * the session before the token expires.
+     */
+    public String generateImpersonationToken(String username, String role, String tenantId,
+                                             String tokenId, String issuedByActor,
+                                             boolean readOnly, long ttlMillis) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + ttlMillis);
+
+        return Jwts.builder()
+                .subject(username)
+                .id(tokenId)
+                .claim("role", role)
+                .claim("tenantId", tenantId)
+                .claim("impersonatedBy", issuedByActor)
+                .claim("readOnly", readOnly)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(key)
+                .compact();
+    }
+
+    /** Non-null only for a support session token. */
+    public String extractImpersonatedBy(String token) {
+        Object value = parseClaims(token).get("impersonatedBy");
+        return value == null ? null : value.toString();
+    }
+
+    public boolean extractReadOnly(String token) {
+        Object value = parseClaims(token).get("readOnly");
+        return value != null && Boolean.parseBoolean(value.toString());
+    }
+
+    public String extractTokenId(String token) {
+        return parseClaims(token).getId();
+    }
+
     public Claims parseClaims(String token) {
         return Jwts.parser()
                 .verifyWith(key)

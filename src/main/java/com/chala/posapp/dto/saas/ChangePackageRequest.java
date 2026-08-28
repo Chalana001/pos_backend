@@ -17,4 +17,15 @@ public class ChangePackageRequest {
 
     @Size(max = 255)
     private String note;
+
+    @Size(max = 40)
+    private String discountCode;
+
+    /**
+     * Credit the unused part of the current plan against the new one. Off by default so an
+     * upgrade never silently bills less than the operator expected.
+     */
+    private Boolean prorate;
+
+    private Boolean generateInvoice;
 }

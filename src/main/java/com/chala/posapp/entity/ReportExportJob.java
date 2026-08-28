@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.util.StorageClock;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -83,7 +84,7 @@ public class ReportExportJob extends TenantEntity {
 
     @PrePersist
     void onPersist() {
-        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = StorageClock.now();
         if (status == null) status = ReportExportStatus.QUEUED;
         if (maxAttempts <= 0) maxAttempts = 3;
         if (nextAttemptAt == null) nextAttemptAt = createdAt;

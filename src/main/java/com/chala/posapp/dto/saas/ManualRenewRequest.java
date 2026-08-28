@@ -17,4 +17,11 @@ public class ManualRenewRequest {
 
     @Size(max = 255)
     private String note;
+
+    /** Optional discount code. Validated and consumed inside the same transaction. */
+    @Size(max = 40)
+    private String discountCode;
+
+    /** Issue a subscription invoice for this payment straight away. */
+    private Boolean generateInvoice;
 }

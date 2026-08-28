@@ -1,5 +1,6 @@
 package com.chala.posapp.entity;
 
+import com.chala.posapp.util.StorageClock;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -50,6 +51,6 @@ public class ReportSchedule extends TenantEntity {
 
     @PrePersist
     void onPersist() {
-        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = StorageClock.now();
     }
 }

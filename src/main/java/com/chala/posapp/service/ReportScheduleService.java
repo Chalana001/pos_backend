@@ -6,6 +6,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.ReportScheduleRepository;
 import com.chala.posapp.util.SecurityUtils;
+import com.chala.posapp.util.StorageClock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,7 @@ public class ReportScheduleService {
                     .reportType(request.report().reportType().trim().toUpperCase())
                     .parametersJson(objectMapper.writeValueAsString(request.report()))
                     .frequency(request.frequency()).emailTo(request.emailTo())
-                    .enabled(true).nextRunAt(request.nextRunAt()).build()));
+                    .enabled(true).nextRunAt(StorageClock.toStorage(request.nextRunAt())).build()));
         } catch (JsonProcessingException error) {
             throw new BadRequestException("Invalid schedule parameters");
         }
@@ -66,7 +67,7 @@ public class ReportScheduleService {
 
     @Transactional
     public void enqueueDueSchedules() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = StorageClock.now();
         for (ReportSchedule schedule : repository.findTop20ByEnabledTrueAndNextRunAtLessThanEqualOrderByNextRunAtAsc(now)) {
             exportJobService.createScheduled(schedule);
             schedule.setLastRunAt(now);

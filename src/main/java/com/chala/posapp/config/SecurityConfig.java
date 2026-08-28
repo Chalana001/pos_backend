@@ -31,6 +31,7 @@ public class SecurityConfig {
     private final SubscriptionFilter subscriptionFilter;
     private final RateLimitFilter rateLimitFilter; // MISS-02
     private final DuplicateRequestFilter duplicateRequestFilter;
+    private final ImpersonationFilter impersonationFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder(){
@@ -70,7 +71,11 @@ public class SecurityConfig {
                 "Idempotency-Key"
         ));
         config.setExposedHeaders(Arrays.asList(
-                "X-Total-Count", "Content-Disposition", "X-Duplicate-Request"));
+                "X-Total-Count", "Content-Disposition", "X-Duplicate-Request",
+                // Let the POS app show a "support session" banner when an operator is inside.
+                "X-Impersonated-By", "X-Impersonation-Read-Only",
+                // Lets the POS app warn a shop that it is trading on borrowed time.
+                "X-Subscription-Grace", "X-Subscription-Access-Ends"));
 
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
@@ -108,6 +113,9 @@ public class SecurityConfig {
                 .addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(subscriptionFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                // Runs after authentication so a revoked support session is rejected before
+                // any controller sees the request, and read-only sessions cannot write.
+                .addFilterAfter(impersonationFilter, JwtAuthFilter.class)
                 // Runs after authentication so double-submit keys are scoped to
                 // the logged-in user and the resolved tenant.
                 .addFilterAfter(duplicateRequestFilter, JwtAuthFilter.class);
