@@ -40,7 +40,9 @@ import jakarta.servlet.Filter;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
@@ -66,6 +68,32 @@ import com.chala.posapp.tenant.TenantContext;
 abstract class ApiIntegrationTestSupport {
 
     protected static final String DEFAULT_PASSWORD = "Pass@123";
+
+    @Autowired
+    private JdbcTemplate resetJdbcTemplate;
+
+    @Autowired
+    private Environment environment;
+
+    // In the container suite every tenant shares the legacy pos_db (that is
+    // what legacy fallback means), so one test's categories, branches and
+    // stock leak into the next - 'Stock' subcategory collided, branch counts
+    // drifted. Each test starts from a pristine shop instead: truncate every
+    // tenant table except the migration history. Master rows are already
+    // per-test unique (TEST_PLAN_<key>, tenant ids) and stay.
+    @BeforeEach
+    void resetLegacyTenantState() {
+        if (!java.util.Arrays.asList(environment.getActiveProfiles()).contains("tc")) return;
+        java.util.List<String> tables = resetJdbcTemplate.queryForList(
+                "SELECT table_name FROM information_schema.tables "
+                        + "WHERE table_schema = 'pos_db' AND table_name <> 'flyway_schema_history'",
+                String.class);
+        resetJdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=0");
+        for (String table : tables) {
+            resetJdbcTemplate.execute("TRUNCATE TABLE pos_db.`" + table + "`");
+        }
+        resetJdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
+    }
 
     protected final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
