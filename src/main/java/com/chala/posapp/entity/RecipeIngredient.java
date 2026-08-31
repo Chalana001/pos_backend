@@ -7,11 +7,11 @@ import lombok.*;
 @Table(
         name = "recipe_ingredients",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "parent_item_id", "ingredient_id"})
+                @UniqueConstraint(columnNames = {"parent_item_id", "ingredient_id"})
         },
         indexes = {
-                @Index(name = "idx_tenant_recipe_parent", columnList = "tenant_id, parent_item_id"),
-                @Index(name = "idx_tenant_recipe_ingredient", columnList = "tenant_id, ingredient_id")
+                @Index(name = "idx_recipe_parent", columnList = "parent_item_id"),
+                @Index(name = "idx_recipe_ingredient", columnList = "ingredient_id")
         }
 )
 @Getter

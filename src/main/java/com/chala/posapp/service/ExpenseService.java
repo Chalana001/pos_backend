@@ -7,10 +7,12 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.audit.Audited;
+import com.chala.posapp.util.CacheKeyUtils;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,13 +24,24 @@ import java.time.LocalDateTime;
 public class ExpenseService {
 
     private final ExpenseRepository expenseRepository;
+    private final ExpenseTypeRepository expenseTypeRepository;
     private final CashShiftRepository cashShiftRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
+    private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
+    // Cache eviction is delegated to ReportCacheInvalidator (called at the end of this
+    // method) so that "what an expense dirties" is stated in one place alongside every
+    // other write. The annotation here also keyed on the request's branch, which the
+    // service then re-resolves — so a manager posting someone else's branch evicted the
+    // wrong entry.
+    // MISS-03: Audit expense creation
+    @Audited(entity = "EXPENSE", action = "CREATE",
+             summaryExpression = "'Branch=' + #request.branchId + ' amount=' + #request.amount")
     @Transactional
     public ExpenseResponse addExpense(CreateExpenseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
 
         if (!branchRepository.existsById(branchId)) {
@@ -38,17 +51,26 @@ public class ExpenseService {
         CashShift activeShift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
                 branchId, user.getId(), ShiftStatus.OPEN).orElse(null);
 
-        if (activeShift == null) {
-            throw new BadRequestException("An open shift is required to record an expense.");
+        boolean requiresOpenShift = request.isFromDrawer() || user.getRole() == Role.CASHIER;
+        if (requiresOpenShift && activeShift == null) {
+            throw new BadRequestException("An open shift is required to record a drawer expense.");
+        }
+
+        ExpenseType expenseType = expenseTypeRepository.findById(request.getExpenseTypeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Expense type not found"));
+        if (!expenseType.isActive()) {
+            throw new BadRequestException("Selected expense type is inactive");
         }
 
         Expense expense = Expense.builder()
                 .amount(request.getAmount())
-                .category(request.getCategory())
+                .expenseTypeId(expenseType.getId())
+                .category(expenseType.getName())
+                .countInProfitReport(expenseType.isCountInProfitReport())
                 .description(request.getDescription().trim())
                 .branchId(branchId)
                 .cashierUserId(user.getId())
-                .shiftId(activeShift.getId())
+                .shiftId(activeShift != null ? activeShift.getId() : null)
                 .createdAt(LocalDateTime.now())
                 .build();
 
@@ -58,13 +80,16 @@ public class ExpenseService {
             activeShift.setTotalExpenses(activeShift.getTotalExpenses() + request.getAmount());
             cashShiftRepository.save(activeShift);
         }
+        // branchId here is the resolved one, not request.getBranchId().
+        reportCacheInvalidator.expensesChanged(branchId);
+
         return mapToResponse(savedExpense);
     }
 
     public Page<ExpenseResponse> getFilteredExpenses(
             Long requestedBranchId,
             Long requestedCashierId,
-            ExpenseCategory category,
+            Long expenseTypeId,
             Long shiftId,
             String search,
             LocalDateTime from,
@@ -72,7 +97,7 @@ public class ExpenseService {
             Pageable pageable
     ) {
 
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         Long finalBranchId = requestedBranchId;
         Long cashierUserId = requestedCashierId;
 
@@ -87,7 +112,7 @@ public class ExpenseService {
         Page<Expense> expenses = expenseRepository.findWithFilters(
                 finalBranchId,
                 cashierUserId,
-                category,
+                expenseTypeId,
                 shiftId,
                 trimmedSearch,
                 from,
@@ -99,7 +124,7 @@ public class ExpenseService {
     }
 
     public Page<ExpenseResponse> getShiftExpenses(Long shiftId, Pageable pageable) {
-        User currentUser = getLoggedUser();
+        User currentUser = securityUtils.getCurrentUser();
         CashShift shift = cashShiftRepository.findById(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
 
@@ -128,7 +153,9 @@ public class ExpenseService {
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .amount(expense.getAmount())
-                .category(expense.getCategory().name())
+                .expenseTypeId(expense.getExpenseTypeId())
+                .category(expense.getCategory())
+                .countInProfitReport(expense.isCountInProfitReport())
                 .description(expense.getDescription())
                 .branchId(expense.getBranchId())
                 .branchName(branchName)
@@ -139,11 +166,7 @@ public class ExpenseService {
                 .build();
     }
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {

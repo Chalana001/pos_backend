@@ -19,12 +19,13 @@ import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.audit.Audited;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,41 +44,15 @@ public class StockAdjustmentService {
 
     private final StockAdjustmentRepository adjustmentRepository;
     private final ItemRepository itemRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final UserRepository userRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long enforceBranchAccess(Long branchId) {
-        User user = getLoggedUser();
-
-        if (isAdminLike(user)) {
-            return branchId;
-        }
-
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-
-        if (branchId == null || branchId == 0L) {
-            return user.getBranchId();
-        }
-
-        if (!user.getBranchId().equals(branchId)) {
-            throw new BadRequestException("Cannot access another branch");
-        }
-
-        return branchId;
-    }
+    // DUP-05 FIX: securityUtils.enforceBranchAccess() centralised in SecurityUtils
 
     private int computeQtyChange(StockAdjustmentType type, StockAdjustmentDirection direction, int qty) {
         StockAdjustmentDirection effectiveDirection = direction != null ? direction : defaultDirection(type);
@@ -96,9 +71,11 @@ public class StockAdjustmentService {
         return StockAdjustmentDirection.ADD;
     }
 
+    @Audited(entity = "STOCK_ADJUSTMENT", action = "CREATE",
+             summaryExpression = "'Branch=' + #request.branchId + ' item=' + #request.itemId + ' qty=' + #request.quantity")
     @Transactional
     public StockAdjustmentResponse create(CreateStockAdjustmentRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         if (user.getRole() == Role.CASHIER) {
             throw new BadRequestException("Cashier cannot adjust stock");
@@ -163,7 +140,7 @@ public class StockAdjustmentService {
                 .type(request.getType())
                 .qtyChange(qtyChange)
                 .displayQtyChange(signedDisplayQty.stripTrailingZeros())
-                .qtyUnit(item.getItemType() == ItemType.WEIGHT
+                .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
                         ? (request.getQtyUnit() == null ? item.getDefaultUnit() : request.getQtyUnit())
                         : item.getDefaultUnit())
                 .reason(request.getReason().trim())
@@ -172,11 +149,13 @@ public class StockAdjustmentService {
                 .build();
 
         StockAdjustment saved = adjustmentRepository.save(adjustment);
+        reportCacheInvalidator.stockChanged();
+
         return map(saved, item);
     }
 
     public List<StockAdjustmentResponse> historyByBranch(Long branchId) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         List<StockAdjustment> adjustments = adjustmentRepository.findByBranchIdOrderByCreatedAtDesc(allowedBranchId);
 
         List<Long> itemIds = adjustments.stream().map(StockAdjustment::getItemId).distinct().toList();
@@ -191,7 +170,7 @@ public class StockAdjustmentService {
     }
 
     public List<StockAdjustmentResponse> historyByItem(Long branchId, Long itemId) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         return adjustmentRepository.findByBranchIdAndItemIdOrderByCreatedAtDesc(allowedBranchId, itemId).stream()
                 .map(this::map)
                 .toList();
@@ -207,7 +186,7 @@ public class StockAdjustmentService {
             int page,
             int size
     ) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
@@ -260,6 +239,7 @@ public class StockAdjustmentService {
                 .itemId(adjustment.getItemId())
                 .itemBarcode(item != null ? item.getBarcode() : "UNKNOWN")
                 .itemName(item != null ? item.getName() : "Unknown Item")
+                .altName(item != null ? item.getAltName() : null)
                 .type(adjustment.getType())
                 .qtyChange(adjustment.getQtyChange())
                 .displayQtyChange(adjustment.getDisplayQtyChange())

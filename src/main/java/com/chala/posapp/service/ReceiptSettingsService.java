@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.receipt.ReceiptSettingsRequest;
 import com.chala.posapp.dto.receipt.ReceiptSettingsResponse;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.ItemNameSource;
 import com.chala.posapp.entity.PrintTemplateType;
 import com.chala.posapp.entity.ReceiptTemplateSettings;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -18,11 +19,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class ReceiptSettingsService {
 
     private static final String DEFAULT_THANKS_MESSAGE = "Thank You, Come Again!";
-    private static final String DEFAULT_CREDITS_LINE_1 = "SOFTWARE BY CHALA";
-    private static final String DEFAULT_CREDITS_LINE_2 = "Smart Retail Solutions | 0704589764";
+    private static final String CREDITS_LINE_1 = "SOFTWARE BY ZENSYS SOLUTIONS";
+    private static final String CREDITS_LINE_2 = "Smart Retail Solutions | 0704589764";
     private static final int DEFAULT_LOGO_WIDTH_PERCENT = 78;
+    private static final int DEFAULT_LOGO_TOP_SPACING = 4;
     private static final int DEFAULT_THERMAL_WIDTH_MM = 80;
     private static final int DEFAULT_A4_WIDTH_MM = 210;
+    private static final String DEFAULT_RECEIPT_FONT_FAMILY = "COURIER_NEW";
 
     private final BranchRepository branchRepository;
     private final ReceiptTemplateSettingsRepository receiptTemplateSettingsRepository;
@@ -67,11 +70,19 @@ public class ReceiptSettingsService {
         settings.setShowThanksMessage(request.isShowThanksMessage());
         settings.setShowCredits(true);
         settings.setLogoWidthPercent(request.getLogoWidthPercent());
+        settings.setLogoTopSpacing(request.getLogoTopSpacing());
         settings.setInvoiceLogoWidthPercent(request.getInvoiceLogoWidthPercent());
+        settings.setReceiptFontFamily(normalizeFontFamily(request.getReceiptFontFamily()));
         settings.setPaperWidthMm(request.getPaperWidthMm());
+        settings.setDirectPrintEnabled(request.isDirectPrintEnabled());
+        settings.setPrinterName(normalizeNullableText(request.getPrinterName()));
+        settings.setPrinterCopies(normalizeCopies(request.getPrinterCopies()));
         settings.setThanksMessage(normalizeMessage(request.getThanksMessage(), DEFAULT_THANKS_MESSAGE));
-        settings.setCreditsLine1(DEFAULT_CREDITS_LINE_1);
-        settings.setCreditsLine2(DEFAULT_CREDITS_LINE_2);
+        settings.setCreditsLine1(CREDITS_LINE_1);
+        settings.setCreditsLine2(CREDITS_LINE_2);
+        settings.setItemNameSource(request.getItemNameSource() == null ? ItemNameSource.PRIMARY : request.getItemNameSource());
+        settings.setTemplateLines(normalizeTemplateLines(request.getTemplateLines()));
+        settings.setCurrencySymbol(normalizeCurrencySymbol(request.getCurrencySymbol()));
 
         ReceiptTemplateSettings saved = receiptTemplateSettingsRepository.save(settings);
         return mapToResponse(saved, branch);
@@ -108,11 +119,19 @@ public class ReceiptSettingsService {
                 .showThanksMessage(true)
                 .showCredits(true)
                 .logoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
+                .logoTopSpacing(DEFAULT_LOGO_TOP_SPACING)
                 .invoiceLogoWidthPercent(DEFAULT_LOGO_WIDTH_PERCENT)
+                .receiptFontFamily(DEFAULT_RECEIPT_FONT_FAMILY)
                 .paperWidthMm(defaultPaperWidth(templateType))
+                .directPrintEnabled(false)
+                .printerName(null)
+                .printerCopies(1)
                 .thanksMessage(DEFAULT_THANKS_MESSAGE)
-                .creditsLine1(DEFAULT_CREDITS_LINE_1)
-                .creditsLine2(DEFAULT_CREDITS_LINE_2)
+                .creditsLine1(CREDITS_LINE_1)
+                .creditsLine2(CREDITS_LINE_2)
+                .itemNameSource(ItemNameSource.PRIMARY)
+                .templateLines(null)
+                .currencySymbol("LKR")
                 .build();
     }
 
@@ -125,6 +144,49 @@ public class ReceiptSettingsService {
             return defaultValue;
         }
         return value.trim();
+    }
+
+    private String normalizeFontFamily(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_RECEIPT_FONT_FAMILY;
+        }
+
+        return switch (value.trim().toUpperCase()) {
+            case "ARIAL", "VERDANA", "TAHOMA", "COURIER_NEW" -> value.trim().toUpperCase();
+            default -> DEFAULT_RECEIPT_FONT_FAMILY;
+        };
+    }
+
+    private String normalizeNullableText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private String normalizeCurrencySymbol(String value) {
+        if (value == null || value.isBlank()) return "LKR";
+        String trimmed = value.trim();
+        return trimmed.length() > 6 ? trimmed.substring(0, 6) : trimmed;
+    }
+
+    private String normalizeTemplateLines(String templateLines) {
+        if (templateLines == null || templateLines.isBlank()) {
+            return null;
+        }
+        String trimmed = templateLines.trim();
+        // Accept only JSON arrays; reject anything that doesn't start with '['
+        if (!trimmed.startsWith("[")) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    private int normalizeCopies(int copies) {
+        if (copies < 1) {
+            return 1;
+        }
+        return Math.min(copies, 10);
     }
 
     private ReceiptSettingsResponse mapToResponse(ReceiptTemplateSettings settings, Branch branch) {
@@ -154,11 +216,19 @@ public class ReceiptSettingsService {
                 .showThanksMessage(settings.isShowThanksMessage())
                 .showCredits(true)
                 .logoWidthPercent(settings.getLogoWidthPercent())
+                .logoTopSpacing(settings.getLogoTopSpacing())
                 .invoiceLogoWidthPercent(settings.getInvoiceLogoWidthPercent())
+                .receiptFontFamily(normalizeFontFamily(settings.getReceiptFontFamily()))
                 .paperWidthMm(settings.getPaperWidthMm())
+                .directPrintEnabled(settings.isDirectPrintEnabled())
+                .printerName(settings.getPrinterName())
+                .printerCopies(normalizeCopies(settings.getPrinterCopies()))
                 .thanksMessage(settings.getThanksMessage())
-                .creditsLine1(DEFAULT_CREDITS_LINE_1)
-                .creditsLine2(DEFAULT_CREDITS_LINE_2)
+                .creditsLine1(CREDITS_LINE_1)
+                .creditsLine2(CREDITS_LINE_2)
+                .itemNameSource(settings.getItemNameSource() != null ? settings.getItemNameSource() : ItemNameSource.PRIMARY)
+                .templateLines(settings.getTemplateLines())
+                .currencySymbol(settings.getCurrencySymbol() != null ? settings.getCurrencySymbol() : "LKR")
                 .build();
     }
 }

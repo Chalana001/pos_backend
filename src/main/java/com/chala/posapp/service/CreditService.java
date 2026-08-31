@@ -10,9 +10,8 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
-import com.chala.posapp.repository.UserRepository;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,17 +24,14 @@ public class CreditService {
 
     private final CustomerRepository customerRepository;
     private final CreditPaymentRepository creditPaymentRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
 
     @Transactional
     public CreditPaymentResponse settleCredit(CreditPaymentRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         if (user.getBranchId() == null)
             throw new NotAssignedException("User branch not assigned");
@@ -57,6 +53,9 @@ public class CreditService {
         if (newDue < 0) newDue = 0;
 
         customer.setDueAmount(newDue);
+        customerRepository.save(customer); // BUG-10 FIX: was missing — without this, dueAmount update never persists
+
+        reportCacheInvalidator.creditChanged();
 
         CreditPayment payment = CreditPayment.builder()
                 .customerId(customer.getId())

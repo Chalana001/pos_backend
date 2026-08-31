@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.receipt;
 
+import com.chala.posapp.entity.ItemNameSource;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -34,13 +35,29 @@ public class ReceiptSettingsRequest {
     @Max(200)
     private int logoWidthPercent;
 
+    @Min(0)
+    @Max(20)
+    private int logoTopSpacing;
+
     @Min(20)
     @Max(200)
     private int invoiceLogoWidthPercent;
 
+    @Size(max = 40)
+    private String receiptFontFamily;
+
     @Min(48)
     @Max(210)
     private int paperWidthMm;
+
+    private boolean directPrintEnabled;
+
+    @Size(max = 160)
+    private String printerName;
+
+    @Min(1)
+    @Max(10)
+    private int printerCopies;
 
     @Size(max = 160)
     private String thanksMessage;
@@ -50,4 +67,13 @@ public class ReceiptSettingsRequest {
 
     @Size(max = 160)
     private String creditsLine2;
+
+    private ItemNameSource itemNameSource;
+
+    // JSON array string for the line-by-line receipt template editor.
+    // When present and non-empty, this drives the receipt layout instead of the boolean toggles.
+    private String templateLines;
+
+    @Size(max = 10)
+    private String currencySymbol;
 }

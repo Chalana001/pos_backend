@@ -11,6 +11,7 @@ import java.util.List;
 public class GrnResponse {
     private Long id;
     private String grnNo;
+    private Long branchId;
     private String supplierName;
     private String branchName;
     private BigDecimal totalAmount;

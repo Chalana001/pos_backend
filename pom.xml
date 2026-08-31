@@ -6,7 +6,7 @@
 
     <groupId>com.chala.posapp</groupId>
     <artifactId>POS.System</artifactId>
-    <version>1.6.0</version>
+    <version>2.4.0</version>
 
 
     <parent>
@@ -19,6 +19,7 @@
         <java.version>21</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <testcontainers.version>1.20.4</testcontainers.version>
     </properties>
 
     <dependencies>
@@ -90,9 +91,98 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>mysql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>io.github.openhtmltopdf</groupId>
             <artifactId>openhtmltopdf-pdfbox</artifactId>
             <version>1.1.37</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.31.54</version>
+        </dependency>
+
+        <!-- MISS-01: Spring Cache + Caffeine in-memory caching -->
+        <!--
+            spring-boot-starter-cache is NOT separately deployed for Spring Boot 4.x custom builds.
+            spring-context-support provides CaffeineCacheManager; it is transitively pulled in
+            by spring-boot-starter-web through spring-context, but we declare it explicitly
+            so the Caffeine integration classes are guaranteed on the classpath.
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context-support</artifactId>
+            <version>7.0.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.2.0</version>
+        </dependency>
+
+        <!-- MISS-02: Bucket4j token-bucket rate limiting.
+             bucket4j-core 8.x is the last version published to Maven Central.
+             Using 8.10.1 which is confirmed in Central. -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j-core</artifactId>
+            <version>8.10.1</version>
+        </dependency>
+
+        <!-- MISS-03: AspectJ weaver for @Aspect AOP support.
+             spring-boot-starter-aop is not available for this custom 4.0.1 build,
+             so we reference the underlying jars directly. -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>1.9.25.1</version>
+        </dependency>
+
+        <!-- MISS-09: Swagger / OpenAPI UI -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.8.9</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
     </dependencies>
@@ -109,6 +199,17 @@
                 <version>3.13.0</version>
                 <configuration>
                     <release>${maven.compiler.release}</release>
+                    <!-- PERF-BUILD FIX: Explicit Lombok annotation processor path required
+                         for reliable Lombok processing with Java 21 + Spring Boot 4.
+                         Without this, Maven sometimes skips Lombok's APT pass, causing
+                         "cannot find symbol: method getX()" errors on Lombok-generated methods. -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>1.18.42</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>

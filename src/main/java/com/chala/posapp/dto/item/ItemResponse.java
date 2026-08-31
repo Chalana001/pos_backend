@@ -3,6 +3,7 @@ package com.chala.posapp.dto.item;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.dto.stock.StockBatchResponse;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.MeasurementUnit;
 import lombok.*;
 
@@ -18,6 +19,7 @@ public class ItemResponse {
     private Long id;
     private String barcode;
     private String name;
+    private String altName;
 
     private Long categoryId;
     private String categoryName;
@@ -38,8 +40,23 @@ public class ItemResponse {
     private boolean kotEnabled;
 
     private boolean active;
+    private boolean posVisible;
+    private boolean stockProcessingEnabled;
+    private ItemOverheadCostMode overheadCostMode;
+    private BigDecimal overheadCostValue;
     private LocalDateTime createdAt;
     private List<Long> branchIds;
     private List<ItemIngredientResponse> ingredients;
+    private List<StockProcessingOutputLinkResponse> processingOutputs;
     private List<StockBatchResponse> batches;
+
+    /** Earliest-expiry sellable batch (FEFO) — populated only by barcode-print endpoints. */
+    private LocalDateTime labelExpiry;
+
+    // Populated only when GET /items/barcode/{barcode} matched via a decoded
+    // scale barcode (weight/price-embedded), not a plain exact barcode match.
+    // Null for every other lookup — existing callers see no behavior change.
+    private BigDecimal scaleResolvedQuantity;
+    private MeasurementUnit scaleResolvedUnit;
+    private BigDecimal scaleResolvedAmount;
 }

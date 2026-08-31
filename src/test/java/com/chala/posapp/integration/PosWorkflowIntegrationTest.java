@@ -3,21 +3,871 @@ package com.chala.posapp.integration;
 import com.chala.posapp.entity.BillingCycle;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.Category;
-import com.chala.posapp.entity.ExpenseCategory;
+import com.chala.posapp.entity.OrderItem;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.SubscriptionPlan;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
+import com.chala.posapp.repository.StockOverrideAuditRepository;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// Runs on real MySQL (not H2) — this test exercises the FULLTEXT-backed
+// item search (MATCH...AGAINST), which H2 cannot execute.
+@ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("pos_master")
+            .withUsername("posapp")
+            .withPassword("posapp");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () ->
+                "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
+                + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
+
+    @Autowired
+    private StockOverrideAuditRepository stockOverrideAuditRepository;
+
+    @Test
+    void stockProcessingConsumesSourceCreatesOutputsAndTracksWaste() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("process"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Processing Grocery");
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName("Kitchen Prep");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        Supplier supplier = new Supplier();
+        supplier.setName("Processing Supplier");
+        supplier.setPhone("0713333333");
+        supplier.setAddress("Supplier address");
+        supplier.setActive(true);
+        supplier = supplierRepository.save(supplier);
+
+        JsonNode drumstick = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-DRUM",
+                  "name": "Chicken Drumstick",
+                  "subCategoryId": %d,
+                  "costPrice": 0,
+                  "sellingPrice": 180,
+                  "reorderLevel": 0,
+                  "posVisible": false
+                }
+                """.formatted(subCategory.getId())
+        );
+        long drumstickItemId = drumstick.path("id").asLong();
+
+        JsonNode waste = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-WASTE",
+                  "name": "Chicken Waste",
+                  "subCategoryId": %d,
+                  "costPrice": 0,
+                  "sellingPrice": 0,
+                  "reorderLevel": 0,
+                  "itemType": "WEIGHT",
+                  "defaultUnit": "G",
+                  "posVisible": false
+                }
+                """.formatted(subCategory.getId())
+        );
+        long wasteItemId = waste.path("id").asLong();
+
+        JsonNode rice = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-RICE",
+                  "name": "Rice",
+                  "subCategoryId": %d,
+                  "costPrice": 300,
+                  "sellingPrice": 360,
+                  "reorderLevel": 0,
+                  "itemType": "WEIGHT",
+                  "defaultUnit": "KG",
+                  "posVisible": false
+                }
+                """.formatted(subCategory.getId())
+        );
+        long riceItemId = rice.path("id").asLong();
+
+        JsonNode onion = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-ONION",
+                  "name": "Onion",
+                  "subCategoryId": %d,
+                  "costPrice": 200,
+                  "sellingPrice": 260,
+                  "reorderLevel": 0,
+                  "itemType": "WEIGHT",
+                  "defaultUnit": "KG",
+                  "posVisible": false
+                }
+                """.formatted(subCategory.getId())
+        );
+        long onionItemId = onion.path("id").asLong();
+
+        JsonNode chicken = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-CHICKEN",
+                  "name": "Whole Chicken",
+                  "subCategoryId": %d,
+                  "costPrice": 1200,
+                  "sellingPrice": 1500,
+                  "reorderLevel": 0,
+                  "stockProcessingEnabled": true,
+                  "posVisible": false,
+                  "processingOutputs": [
+                    { "outputItemId": %d, "defaultQty": 2, "waste": false },
+                    { "outputItemId": %d, "defaultQty": 0.15, "waste": true }
+                  ]
+                }
+                """.formatted(subCategory.getId(), drumstickItemId, wasteItemId)
+        );
+        long chickenItemId = chicken.path("id").asLong();
+        assertTrue(chicken.path("stockProcessingEnabled").asBoolean());
+        assertEquals(2, chicken.path("processingOutputs").size());
+
+        postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "PROC-GRN-001",
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 2,
+                          "costPrice": 1200,
+                          "sellingPrice": 1500
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.getId(), fixture.mainBranch().getId(), chickenItemId)
+        );
+        long sourceBatchId = firstBatchFor(fixture.mainBranch().getId(), chickenItemId).getId();
+        assertEquals(2000, firstBatchFor(fixture.mainBranch().getId(), chickenItemId).getQuantity());
+
+        JsonNode processed = postJson(
+                "/stock-processing",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "sourceItemId": %d,
+                  "sourceBatchId": %d,
+                  "sourceQty": 1,
+                  "sourceQtyUnit": "PCS",
+                  "note": "Cut one chicken",
+                  "outputs": [
+                    { "outputItemId": %d, "qty": 2, "qtyUnit": "PCS" },
+                    { "outputItemId": %d, "qty": 150, "qtyUnit": "G" }
+                  ]
+                }
+                """.formatted(fixture.mainBranch().getId(), chickenItemId, sourceBatchId, drumstickItemId, wasteItemId)
+        );
+
+        assertEquals(1000, firstBatchFor(fixture.mainBranch().getId(), chickenItemId).getQuantity());
+        assertEquals(2000, firstBatchFor(fixture.mainBranch().getId(), drumstickItemId).getQuantity());
+        assertTrue(stockBatchRepository.findByBranchIdAndItemId(fixture.mainBranch().getId(), wasteItemId).isEmpty());
+        assertEquals(1200.0, processed.path("sourceCost").asDouble(), 0.001);
+        assertFalse(processed.path("outputs").get(0).path("waste").asBoolean());
+        assertTrue(processed.path("outputs").get(0).path("createdBatchId").isNumber());
+        assertTrue(processed.path("outputs").get(1).path("waste").asBoolean());
+        assertTrue(processed.path("outputs").get(1).path("createdBatchId").isNull());
+
+        long processedDrumstickBatchId = processed.path("outputs").get(0).path("createdBatchId").asLong();
+        StockBatch processedDrumstickBatch = stockBatchRepository.findById(processedDrumstickBatchId).orElseThrow();
+        assertEquals(StockBatchSourceType.PROCESSING, processedDrumstickBatch.getSourceType());
+
+        postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "PROC-GRN-002",
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 130,
+                          "sellingPrice": 180
+                        },
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 300,
+                          "sellingPrice": 360
+                        },
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 200,
+                          "sellingPrice": 260
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.getId(), fixture.mainBranch().getId(), drumstickItemId, riceItemId, onionItemId)
+        );
+
+        List<StockBatch> availableDrumstickBatches = stockBatchRepository.findAvailableBatches(
+                fixture.mainBranch().getId(),
+                drumstickItemId
+        );
+        assertEquals(processedDrumstickBatchId, availableDrumstickBatches.get(0).getId());
+        assertEquals(StockBatchSourceType.PROCESSING, availableDrumstickBatches.get(0).getSourceType());
+        assertEquals(StockBatchSourceType.PURCHASE, availableDrumstickBatches.get(1).getSourceType());
+        long purchasedDrumstickBatchId = availableDrumstickBatches.get(1).getId();
+
+        JsonNode chickenRice = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "PROC-CHICKEN-RICE",
+                  "name": "Chicken Rice",
+                  "subCategoryId": %d,
+                  "costPrice": 0,
+                  "sellingPrice": 750,
+                  "reorderLevel": 0,
+                  "itemType": "RECIPE",
+                  "posVisible": true,
+                  "overheadCostMode": "FIXED",
+                  "overheadCostValue": 20,
+                  "ingredients": [
+                    {
+                      "ingredientItemId": %d,
+                      "quantity": 2,
+                      "qtyUnit": "PCS"
+                    },
+                    {
+                      "ingredientItemId": %d,
+                      "quantity": 100,
+                      "qtyUnit": "G"
+                    },
+                    {
+                      "ingredientItemId": %d,
+                      "quantity": 50,
+                      "qtyUnit": "G"
+                    }
+                  ]
+                }
+                """.formatted(subCategory.getId(), drumstickItemId, riceItemId, onionItemId)
+        );
+        long chickenRiceItemId = chickenRice.path("id").asLong();
+        assertEquals("FIXED", chickenRice.path("overheadCostMode").asText());
+        assertEquals(20.0, chickenRice.path("overheadCostValue").asDouble(), 0.001);
+
+        JsonNode recipeSale = postJson(
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 750,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 750,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), chickenRiceItemId)
+        );
+
+        assertEquals(750.0, recipeSale.path("grandTotal").asDouble(), 0.001);
+        OrderItem recipeSaleLine = orderItemRepository.findByOrderId(recipeSale.path("id").asLong()).get(0);
+        assertEquals(750.0, recipeSaleLine.getLineTotal(), 0.001);
+        assertEquals(1260.0, recipeSaleLine.getLineCost(), 0.001);
+        assertEquals(1260.0, recipeSaleLine.getCostPrice(), 0.001);
+        assertEquals(0, stockBatchRepository.findById(processedDrumstickBatchId).orElseThrow().getQuantity());
+        assertEquals(1000, stockBatchRepository.findById(purchasedDrumstickBatchId).orElseThrow().getQuantity());
+        assertEquals(900, firstBatchFor(fixture.mainBranch().getId(), riceItemId).getQuantity());
+        assertEquals(950, firstBatchFor(fixture.mainBranch().getId(), onionItemId).getQuantity());
+
+        JsonNode history = getJson(
+                "/stock-processing?branchId=" + fixture.mainBranch().getId() + "&sourceItemId=" + chickenItemId,
+                tenantId,
+                adminToken
+        );
+        assertEquals(1, history.path("content").size());
+    }
+
+    @Test
+    void managerStockOverrideAllowsNegativeStockAndWritesAudit() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("override"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Override Grocery");
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName("Override Stock");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        Supplier supplier = new Supplier();
+        supplier.setName("Override Supplier");
+        supplier.setPhone("0711111111");
+        supplier.setAddress("Supplier address");
+        supplier.setActive(true);
+        supplier = supplierRepository.save(supplier);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "OVR-001",
+                  "name": "Override Coke",
+                  "subCategoryId": %d,
+                  "costPrice": 80,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0
+                }
+                """.formatted(subCategory.getId())
+        );
+        long itemId = item.path("id").asLong();
+
+        postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "OVR-GRN-001",
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 80,
+                          "sellingPrice": 120
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.getId(), fixture.mainBranch().getId(), itemId)
+        );
+        long batchId = firstBatchFor(fixture.mainBranch().getId(), itemId).getId();
+
+        JsonNode blocked = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 2,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 240,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), itemId, batchId),
+                409
+        );
+        assertEquals("STOCK_OVERRIDE_REQUIRED", blocked.path("code").asText());
+        assertTrue(blocked.path("overrideAvailable").asBoolean());
+
+        JsonNode order = postJson(
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "allowStockOverride": true,
+                  "stockOverrideReason": "Kitchen physical stock verified",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 2,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 240,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), itemId, batchId)
+        );
+        assertEquals(240.0, order.path("grandTotal").asDouble(), 0.001);
+
+        int totalStock = stockBatchRepository.getTotalQuantityByItemAndBranch(fixture.mainBranch().getId(), itemId);
+        assertEquals(-1000, totalStock);
+        assertEquals(1, stockOverrideAuditRepository.findAll().size());
+        assertEquals(1000, stockOverrideAuditRepository.findAll().get(0).getShortageQuantity());
+    }
+
+    @Test
+    void cashierStockOverrideRequiresRolePermissionWhenAllBatchesAreZero() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("cashier-override-deny"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Cashier Override Denied");
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName("Stock");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "COD-001",
+                  "name": "Cashier Denied Coke",
+                  "subCategoryId": %d,
+                  "costPrice": 80,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0
+                }
+                """.formatted(subCategory.getId())
+        );
+        long itemId = item.path("id").asLong();
+
+        StockBatch zeroBatch = StockBatch.builder()
+                .branch(fixture.mainBranch())
+                .item(itemRepository.findById(itemId).orElseThrow())
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(java.math.BigDecimal.valueOf(80))
+                .sellingPrice(java.math.BigDecimal.valueOf(120))
+                .build();
+        stockBatchRepository.save(zeroBatch);
+
+        JsonNode blocked = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "allowStockOverride": true,
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId),
+                400
+        );
+        assertEquals("Stock override permission denied for this role", blocked.path("message").asText());
+        assertEquals(0, stockBatchRepository.getTotalQuantityByItemAndBranch(fixture.mainBranch().getId(), itemId));
+    }
+
+    @Test
+    void cashierStockOverridePermissionAllowsAllZeroBatchesToGoNegative() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("cashier-override-allow"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+        String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
+
+        putJson(
+                "/app-configuration",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "recipeItemsEnabled": true,
+                  "weightItemsEnabled": true,
+                  "servicesEnabled": true,
+                  "tableManagementEnabled": true,
+                  "dineInEnabled": true,
+                  "categoryMode": "MAIN_AND_SUB",
+                  "stockOverrideMode": "MANAGER_OVERRIDE",
+                  "adminStockOverrideAllowed": true,
+                  "managerStockOverrideAllowed": true,
+                  "cashierStockOverrideAllowed": true
+                }
+                """
+        );
+
+        Category category = new Category();
+        category.setName("Cashier Override Allowed");
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName("Stock");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "COA-001",
+                  "name": "Cashier Allowed Coke",
+                  "subCategoryId": %d,
+                  "costPrice": 80,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0
+                }
+                """.formatted(subCategory.getId())
+        );
+        long itemId = item.path("id").asLong();
+
+        StockBatch zeroBatch = StockBatch.builder()
+                .branch(fixture.mainBranch())
+                .item(itemRepository.findById(itemId).orElseThrow())
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(java.math.BigDecimal.valueOf(80))
+                .sellingPrice(java.math.BigDecimal.valueOf(120))
+                .build();
+        stockBatchRepository.save(zeroBatch);
+        int auditCountBefore = stockOverrideAuditRepository.findAll().size();
+
+        JsonNode needsConfirmation = jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId),
+                409
+        );
+        assertEquals("STOCK_OVERRIDE_REQUIRED", needsConfirmation.path("code").asText());
+        assertTrue(needsConfirmation.path("overrideAvailable").asBoolean());
+
+        JsonNode order = postJson(
+                "/orders",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "orderType": "CASH",
+                  "allowStockOverride": true,
+                  "stockOverrideReason": "Cashier confirmed zero stock sale",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(itemId)
+        );
+        assertEquals(120.0, order.path("grandTotal").asDouble(), 0.001);
+        assertEquals(-1000, stockBatchRepository.getTotalQuantityByItemAndBranch(fixture.mainBranch().getId(), itemId));
+        assertEquals(auditCountBefore + 1, stockOverrideAuditRepository.findAll().size());
+        assertEquals(1000, stockOverrideAuditRepository.findAll().get(auditCountBefore).getShortageQuantity());
+    }
+
+    @Test
+    void appConfigurationPersistsStockOverrideRolePermissions() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("override-config"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        JsonNode saved = putJson(
+                "/app-configuration",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "recipeItemsEnabled": true,
+                  "weightItemsEnabled": true,
+                  "servicesEnabled": true,
+                  "tableManagementEnabled": true,
+                  "dineInEnabled": true,
+                  "categoryMode": "MAIN_AND_SUB",
+                  "stockOverrideMode": "MANAGER_OVERRIDE",
+                  "adminStockOverrideAllowed": false,
+                  "managerStockOverrideAllowed": true,
+                  "cashierStockOverrideAllowed": true
+                }
+                """
+        );
+
+        assertFalse(saved.path("adminStockOverrideAllowed").asBoolean());
+        assertTrue(saved.path("managerStockOverrideAllowed").asBoolean());
+        assertTrue(saved.path("cashierStockOverrideAllowed").asBoolean());
+
+        JsonNode reloaded = getJson("/app-configuration", tenantId, adminToken);
+        assertFalse(reloaded.path("adminStockOverrideAllowed").asBoolean());
+        assertTrue(reloaded.path("managerStockOverrideAllowed").asBoolean());
+        assertTrue(reloaded.path("cashierStockOverrideAllowed").asBoolean());
+    }
+
+    @Test
+    void recipeIngredientCanUseFractionalPcsWithoutAllowingFractionalDirectSale() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("halfpcs"), 3);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        Category category = new Category();
+        category.setName("Half PCS");
+        category = categoryRepository.save(category);
+
+        SubCategory subCategory = new SubCategory();
+        subCategory.setName("Kitchen");
+        subCategory.setCategory(category);
+        subCategory = subCategoryRepository.save(subCategory);
+
+        Supplier supplier = new Supplier();
+        supplier.setName("Half Supplier");
+        supplier.setPhone("0712222222");
+        supplier.setAddress("Supplier address");
+        supplier.setActive(true);
+        supplier = supplierRepository.save(supplier);
+
+        JsonNode egg = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "HALF-EGG",
+                  "name": "Half Test Egg",
+                  "subCategoryId": %d,
+                  "costPrice": 40,
+                  "sellingPrice": 50,
+                  "reorderLevel": 1
+                }
+                """.formatted(subCategory.getId())
+        );
+        long eggItemId = egg.path("id").asLong();
+
+        postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "HALF-GRN-001",
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 1,
+                          "costPrice": 40,
+                          "sellingPrice": 50
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.getId(), fixture.mainBranch().getId(), eggItemId)
+        );
+        assertEquals(1000, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+
+        JsonNode recipe = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "HALF-OMELETTE",
+                  "name": "Half Egg Omelette",
+                  "subCategoryId": %d,
+                  "costPrice": 0,
+                  "sellingPrice": 120,
+                  "reorderLevel": 0,
+                  "itemType": "RECIPE",
+                  "ingredients": [
+                    {
+                      "ingredientItemId": %d,
+                      "quantity": 0.5,
+                      "qtyUnit": "PCS"
+                    }
+                  ]
+                }
+                """.formatted(subCategory.getId(), eggItemId)
+        );
+        long recipeItemId = recipe.path("id").asLong();
+        assertEquals(0.5, recipe.path("ingredients").get(0).path("quantity").asDouble(), 0.001);
+        assertEquals(500, recipe.path("ingredients").get(0).path("baseQuantity").asInt());
+
+        postJson(
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "qty": 1,
+                      "unitPrice": 120,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 120,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), recipeItemId)
+        );
+        assertEquals(500, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+
+        long batchId = firstBatchFor(fixture.mainBranch().getId(), eggItemId).getId();
+        jsonRequest(
+                org.springframework.http.HttpMethod.POST,
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 0.5,
+                      "unitPrice": 50,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 25,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), eggItemId, batchId),
+                400
+        );
+    }
 
     @Test
     void standardPlanCreatesZeroStockBatchesForNewStockItems() throws Exception {
@@ -29,7 +879,6 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         tenantSubscriptionRepository.save(fixture.subscription());
 
         Branch secondBranch = new Branch();
-        secondBranch.setTenantId(tenantId);
         secondBranch.setCode("B2");
         secondBranch.setName("Branch 2");
         secondBranch.setActive(true);
@@ -39,11 +888,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Grocery");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Dry Goods");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -84,17 +931,14 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Beverages");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Tea");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Ops Supplier");
         supplier.setPhone("0111111111");
         supplier.setEmail("ops@supplier.local");
@@ -259,21 +1103,46 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode salesFilterUsers = getJson("/users/sales-filter?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertTrue(salesFilterUsers.toString().contains(fixture.cashier().getUsername()));
 
+        JsonNode expenseTypes = getJson("/expense-types", tenantId, adminToken);
+        long teaExpenseTypeId = 0L;
+        for (JsonNode expenseType : expenseTypes) {
+            if ("Tea".equalsIgnoreCase(expenseType.path("name").asText())) {
+                teaExpenseTypeId = expenseType.path("id").asLong();
+                break;
+            }
+        }
+        assertTrue(teaExpenseTypeId > 0);
+
+        JsonNode otherExpenseType = postJson(
+                "/expense-types",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Recovered Oil",
+                  "countInProfitReport": false,
+                  "active": true
+                }
+                """
+        );
+        long otherExpenseTypeId = otherExpenseType.path("id").asLong();
+
         JsonNode createdExpense = postJson(
                 "/expenses",
                 tenantId,
                 adminToken,
                 """
                 {
-                  "category": "%s",
+                  "expenseTypeId": %d,
                   "amount": 100,
                   "branchId": %d,
                   "fromDrawer": true,
                   "description": "Tea counter electricity"
                 }
-                """.formatted(ExpenseCategory.TEA.name(), fixture.mainBranch().getId())
+                """.formatted(teaExpenseTypeId, fixture.mainBranch().getId())
         );
         assertEquals(100.0, createdExpense.path("amount").asDouble(), 0.001);
+        assertTrue(createdExpense.path("countInProfitReport").asBoolean());
 
         JsonNode nonDrawerExpense = postJson(
                 "/expenses",
@@ -281,15 +1150,16 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 adminToken,
                 """
                 {
-                  "category": "%s",
+                  "expenseTypeId": %d,
                   "amount": 200,
                   "branchId": %d,
                   "isFromDrawer": false,
                   "description": "200"
                 }
-                """.formatted(ExpenseCategory.OTHER.name(), fixture.mainBranch().getId())
+                """.formatted(otherExpenseTypeId, fixture.mainBranch().getId())
         );
         assertEquals(200.0, nonDrawerExpense.path("amount").asDouble(), 0.001);
+        assertFalse(nonDrawerExpense.path("countInProfitReport").asBoolean());
 
         JsonNode adminShiftAfterExpenses = getJson("/shifts/admin-current?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(100.0, adminShiftAfterExpenses.path("totalExpenses").asDouble(), 0.001);
@@ -324,7 +1194,7 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(2, expensePage.path("content").size());
 
         JsonNode teaExpensePage = getJson(
-                "/expenses?branchId=" + fixture.mainBranch().getId() + "&category=" + ExpenseCategory.TEA.name() + "&page=0&size=10",
+                "/expenses?branchId=" + fixture.mainBranch().getId() + "&expenseTypeId=" + teaExpenseTypeId + "&page=0&size=10",
                 tenantId,
                 adminToken
         );
@@ -523,7 +1393,7 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
         );
         assertEquals("CANCELED", canceledOrder.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(fixture.mainBranch().getId(), itemId).size());
-        assertEquals(7, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
+        assertEquals(7000, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
 
         JsonNode shiftAfterCancel = getJson("/shifts/me", tenantId, cashierToken);
         assertEquals(0.0, shiftAfterCancel.path("cashSales").asDouble(), 0.001);
@@ -617,11 +1487,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Services");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Repairs");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);
@@ -757,11 +1625,9 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         Category category = new Category();
         category.setName("Services");
-        category.setTenantId(tenantId);
         category = categoryRepository.save(category);
 
         SubCategory subCategory = new SubCategory();
-        subCategory.setTenantId(tenantId);
         subCategory.setName("Delivery");
         subCategory.setCategory(category);
         subCategory = subCategoryRepository.save(subCategory);

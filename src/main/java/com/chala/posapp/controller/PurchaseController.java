@@ -3,15 +3,22 @@ package com.chala.posapp.controller;
 import com.chala.posapp.dto.CreatePurchaseRequest;
 import com.chala.posapp.dto.PurchaseResponse;
 import com.chala.posapp.dto.CancelPurchaseRequest;
+import com.chala.posapp.dto.purchase.PurchaseImportLookupRequest;
+import com.chala.posapp.dto.purchase.PurchaseImportLookupResponse;
+import com.chala.posapp.dto.purchase.PurchaseImportPreviewResponse;
 import com.chala.posapp.entity.PurchaseStatus;
+import com.chala.posapp.service.PurchaseExcelImportService;
 import com.chala.posapp.service.PurchaseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 
@@ -21,6 +28,7 @@ import java.time.LocalDate;
 public class PurchaseController {
 
     private final PurchaseService purchaseService;
+    private final PurchaseExcelImportService purchaseExcelImportService;
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @PostMapping
@@ -55,5 +63,28 @@ public class PurchaseController {
             @Valid @RequestBody CancelPurchaseRequest request
     ) {
         return ResponseEntity.ok(purchaseService.cancelPurchase(id, request));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/import/template")
+    public ResponseEntity<byte[]> downloadImportTemplate() {
+        byte[] bytes = purchaseExcelImportService.generateTemplate();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDispositionFormData("attachment", "purchase-import-template.xlsx");
+        return ResponseEntity.ok().headers(headers).body(bytes);
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping(value = "/import/preview", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<PurchaseImportPreviewResponse> previewImport(@RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(purchaseExcelImportService.previewFromFile(file));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/import/lookup")
+    public ResponseEntity<PurchaseImportLookupResponse> lookupImportRow(@RequestBody PurchaseImportLookupRequest request) {
+        return ResponseEntity.ok(purchaseExcelImportService.lookupSingleRow(request));
     }
 }

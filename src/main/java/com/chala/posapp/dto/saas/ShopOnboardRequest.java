@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.saas;
 
+import com.chala.posapp.util.validation.PasswordComplexity;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Max;
@@ -25,8 +26,10 @@ public class ShopOnboardRequest {
     @Size(min = 3, max = 50)
     private String adminUsername;
 
+    // MISS-08: enforce password complexity. This is the shop's very first ADMIN
+    // credential and often never changed, so it was the weakest password in the system.
     @NotBlank
-    @Size(min = 6, max = 100)
+    @PasswordComplexity
     private String adminPassword;
 
     @NotNull
@@ -52,4 +55,30 @@ public class ShopOnboardRequest {
     @Max(12)
     @JsonAlias({"subscriptionMonths", "subscriptionYears"})
     private Integer subscriptionCycles = 1;
+
+    /**
+     * RETAIL, RESTAURANT or HYBRID. Decides which module overrides are applied on top of the
+     * plan template at onboarding — a retail shop does not want the table map, a restaurant
+     * does. Defaults to RETAIL when the panel does not send one.
+     */
+    private String businessType;
+
+    @Size(max = 40)
+    private String contactPhone;
+
+    @Size(max = 120)
+    private String contactEmail;
+
+    @Size(max = 40)
+    private String discountCode;
+
+    /** Start on a trial instead of a paid period. Length comes from the plan's trialDays. */
+    private Boolean startTrial;
+
+    /** Days the shop keeps working after expiry before being cut off. */
+    @Min(0)
+    @Max(60)
+    private Integer graceDays;
+
+    private Boolean generateInvoice;
 }

@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface AppConfigurationRepository extends JpaRepository<AppConfiguration, Long> {
     Optional<AppConfiguration> findFirstByOrderByIdAsc();
+    Optional<AppConfiguration> findByBranchId(Long branchId);
+    Optional<AppConfiguration> findByBranchIdIsNull();
 }

@@ -24,10 +24,9 @@ import com.chala.posapp.repository.DiningTableRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.PendingOrderItemRepository;
 import com.chala.posapp.repository.PendingOrderRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,33 +45,20 @@ public class PendingOrderService {
     private final DiningTableRepository diningTableRepository;
     private final ItemRepository itemRepository;
     private final CustomerRepository customerRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final AppConfigurationService appConfigurationService;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureBranchAccess(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Cannot access another branch");
         }
@@ -80,40 +66,35 @@ public class PendingOrderService {
 
     @Transactional
     public PendingOrderResponse saveForTable(Long tableId, PendingOrderSaveRequest request) {
-        validateDineInEnabled();
-
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Pending order items required");
         }
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
 
         List<PendingOrderItem> itemsToSave = new ArrayList<>();
         double subTotal = 0.0;
 
         for (OrderItemRequest itemRequest : request.getItems()) {
-            validateWarrantySelection(itemRequest);
+            validateWarrantySelection(itemRequest, user.getRole(), table.getBranchId());
             Item item = itemRepository.findById(itemRequest.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemRequest.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
-            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), table.getBranchId())) {
                 throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
             if (item.getItemType() == ItemType.SERVICE
                     && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(table.getBranchId(), item.getId())) {
                 throw new BadRequestException("Service item is not assigned to this branch: " + item.getName());
             }
-            if (item.getItemType() != ItemType.SERVICE && item.getItemType() != ItemType.RECIPE && itemRequest.getBatchId() == null) {
-                throw new BadRequestException("Batch ID is missing for item: " + item.getName());
-            }
-
-            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
+            int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
             DiscountType discountType = itemRequest.getDiscountType() == null ? DiscountType.NONE : itemRequest.getDiscountType();
             double discountValue = itemRequest.getDiscountValue();
             double finalUnitPrice = calculateFinalUnitPrice(itemRequest.getUnitPrice(), discountType, discountValue);
@@ -173,21 +154,20 @@ public class PendingOrderService {
     }
 
     public PendingOrderResponse getByTable(Long tableId) {
-        validateDineInEnabled();
-
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         PendingOrder pendingOrder = pendingOrderRepository.findByTableId(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pending order not found"));
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
         return buildResponse(pendingOrder, table, pendingOrderItemRepository.findByPendingOrderId(pendingOrder.getId()));
     }
 
     public List<PendingOrderResponse> listByBranch(Long branchId) {
-        validateDineInEnabled();
+        validateDineInEnabled(branchId);
 
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         ensureBranchAccess(user, branchId);
 
         return pendingOrderRepository.findByBranchIdOrderByUpdatedAtDesc(branchId).stream()
@@ -201,11 +181,10 @@ public class PendingOrderService {
 
     @Transactional
     public void clearTable(Long tableId) {
-        validateDineInEnabled();
-
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(tableId)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
+        validateDineInEnabled(table.getBranchId());
         ensureBranchAccess(user, table.getBranchId());
 
         pendingOrderRepository.findByTableId(tableId).ifPresent(pendingOrder -> {
@@ -251,7 +230,7 @@ public class PendingOrderService {
     private PendingOrderItemResponse mapItem(PendingOrderItem pendingOrderItem) {
         Item item = itemRepository.findById(pendingOrderItem.getItemId())
                 .orElse(null);
-        int normalizedQty = item == null ? 0 : QuantityConversionUtil.normalizeQuantity(item, pendingOrderItem.getDisplayQty(), pendingOrderItem.getQtyUnit());
+        int normalizedQty = item == null ? 0 : QuantityConversionUtil.normalizeSaleQuantity(item, pendingOrderItem.getDisplayQty(), pendingOrderItem.getQtyUnit());
         double finalUnitPrice = calculateFinalUnitPrice(
                 pendingOrderItem.getUnitPrice(),
                 pendingOrderItem.getDiscountType(),
@@ -294,7 +273,7 @@ public class PendingOrderService {
     }
 
     private com.chala.posapp.entity.MeasurementUnit resolveQtyUnit(Item item, OrderItemRequest itemRequest) {
-        if (item.getItemType() == ItemType.WEIGHT) {
+        if (QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
             return itemRequest.getQtyUnit() == null ? item.getDefaultUnit() : itemRequest.getQtyUnit();
         }
         if (item.getItemType() == ItemType.SERVICE) {
@@ -303,7 +282,7 @@ public class PendingOrderService {
         return item.getDefaultUnit();
     }
 
-    private void validateWarrantySelection(OrderItemRequest itemRequest) {
+    private void validateWarrantySelection(OrderItemRequest itemRequest, Role role, Long branchId) {
         boolean hasLabel = itemRequest.getWarrantyLabel() != null && !itemRequest.getWarrantyLabel().isBlank();
         boolean hasPeriodValue = itemRequest.getWarrantyPeriodValue() != null;
         boolean hasPeriodUnit = itemRequest.getWarrantyPeriodUnit() != null;
@@ -311,10 +290,13 @@ public class PendingOrderService {
         if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
             throw new BadRequestException("Warranty selection is incomplete");
         }
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !appConfigurationService.isWarrantyAllowedForRole(role, branchId)) {
+            throw new BadRequestException("Warranty selection is disabled for this role");
+        }
     }
 
-    private void validateDineInEnabled() {
-        if (!appConfigurationService.isDineInEnabled()) {
+    private void validateDineInEnabled(Long branchId) {
+        if (!appConfigurationService.isDineInEnabled(branchId)) {
             throw new BadRequestException("Dine-in is disabled in app configuration");
         }
     }

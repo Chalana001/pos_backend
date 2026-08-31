@@ -72,6 +72,16 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getShiftExpenses(shiftId, page, size));
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/{shiftId}/purchases")
+    public ResponseEntity<Page<ShiftPurchaseSummaryResponse>> getShiftPurchases(
+            @PathVariable(name = "shiftId") Long shiftId,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "10") int size
+    ) {
+        return ResponseEntity.ok(shiftService.getShiftPurchases(shiftId, page, size));
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/me")
     public ResponseEntity<ShiftResponse> myShift() {

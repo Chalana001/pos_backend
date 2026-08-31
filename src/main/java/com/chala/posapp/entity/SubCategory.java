@@ -8,10 +8,10 @@ import lombok.Setter;
 @Table(
         name = "sub_categories",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "name"})
+                @UniqueConstraint(columnNames = {"name"})
         },
         indexes = {
-                @Index(name = "idx_tenant_subcategory_name", columnList = "tenant_id, name")
+                @Index(name = "idx_subcategory_name", columnList = "name")
         }
 )
 @Getter

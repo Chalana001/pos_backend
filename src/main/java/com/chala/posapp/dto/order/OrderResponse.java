@@ -33,6 +33,10 @@ public class OrderResponse {
 
     private double subTotal;
     private double billDiscount;
+    private double promotionDiscountTotal;
+    private Long billPromotionId;
+    private String billPromotionName;
+    private double billPromotionDiscountAmount;
     private double grandTotal;
     private double paidAmount;
     private double dueAmount;
@@ -42,4 +46,10 @@ public class OrderResponse {
     private LocalDateTime createdAt;
 
     private List<OrderItemResponse> items;
+
+    // Return summary — populated when fetching a single order (includeItems = true)
+    // Lets the frontend show a "1 Return" badge and "Process Return" button state
+    private boolean hasReturns;
+    private double totalReturnedAmount;
+    private int returnCount;
 }

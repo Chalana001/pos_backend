@@ -37,4 +37,8 @@ public class CreateOrderRequest {
     private String paymentMethod;
 
     private String note;
+
+    private boolean allowStockOverride;
+
+    private String stockOverrideReason;
 }

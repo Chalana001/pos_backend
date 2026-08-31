@@ -1,6 +1,7 @@
 package com.chala.posapp.dto;
 
 import com.chala.posapp.dto.grn.GrnResponse;
+import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.PurchaseStatus;
 import lombok.Builder;
 import lombok.Data;
@@ -19,10 +20,20 @@ public class PurchaseResponse {
     private BigDecimal discountAmount;
     private BigDecimal paidAmount;
     private String paymentMethod;
+    private CashSource cashSource;
+    private Long cashShiftId;
+    private Long cashierUserId;
+    private BigDecimal cashSourceAmount;
+    private Long cashSourceBranchId;
     private BigDecimal dueAmount;
     private PurchaseStatus status;
     private String cancelReason;
     private LocalDateTime createdAt;
     private LocalDateTime canceledAt;
     private List<GrnResponse> grnList;
+
+    // Return summary — populated on detail fetch
+    private boolean hasReturns;
+    private int returnCount;
+    private BigDecimal totalReturnedAmount;
 }

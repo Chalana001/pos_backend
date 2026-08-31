@@ -11,10 +11,10 @@ import java.math.BigDecimal;
 @Table(
         name = "stock_transfer_items",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "transfer_id", "batch_id"})
+                @UniqueConstraint(columnNames = {"transfer_id", "batch_id"})
         },
         indexes = {
-                @Index(name = "idx_tenant_transfer_items_fast", columnList = "tenant_id, transfer_id")
+                @Index(name = "idx_transfer_items_fast", columnList = "transfer_id")
         }
 )
 @Getter @Setter

@@ -36,6 +36,15 @@ public class GlobalExceptionHandler {
         return buildProblem(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    @ExceptionHandler(StockOverrideRequiredException.class)
+    public ProblemDetail handleStockOverrideRequired(StockOverrideRequiredException ex) {
+        ProblemDetail problemDetail = buildProblem(HttpStatus.CONFLICT, ex.getMessage());
+        problemDetail.setProperty("code", "STOCK_OVERRIDE_REQUIRED");
+        problemDetail.setProperty("overrideAvailable", ex.isOverrideAvailable());
+        problemDetail.setProperty("shortages", ex.getShortages());
+        return problemDetail;
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
         return buildProblem(HttpStatus.FORBIDDEN, "You do not have permission to access this resource.");
@@ -56,6 +65,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         return buildProblem(HttpStatus.BAD_REQUEST, "Request could not be completed because of invalid or duplicate data.");
+    }
+
+    @ExceptionHandler(TooManyAttemptsException.class)
+    public ProblemDetail handleTooManyAttempts(TooManyAttemptsException ex) {
+        return buildProblem(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
     }
 
     @ExceptionHandler(Exception.class)

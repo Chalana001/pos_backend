@@ -10,7 +10,9 @@ import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.repository.BillingRecordRepository;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.CashDropRepository;
+import com.chala.posapp.repository.BankAccountRepository;
 import com.chala.posapp.repository.CashShiftRepository;
+import com.chala.posapp.repository.StockOverrideAuditRepository;
 import com.chala.posapp.repository.CategoryRepository;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerNoteRepository;
@@ -58,7 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @ActiveProfiles("test")
-@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_EACH_TEST_METHOD)
 abstract class ApiIntegrationTestSupport {
 
     protected static final String DEFAULT_PASSWORD = "Pass@123";
@@ -116,7 +118,13 @@ abstract class ApiIntegrationTestSupport {
     protected CashShiftRepository cashShiftRepository;
 
     @Autowired
+    protected StockOverrideAuditRepository stockOverrideAuditRepository;
+
+    @Autowired
     protected CashDropRepository cashDropRepository;
+
+    @Autowired
+    protected BankAccountRepository bankAccountRepository;
 
     @Autowired
     protected ExpenseRepository expenseRepository;
@@ -191,9 +199,8 @@ abstract class ApiIntegrationTestSupport {
                 .build());
 
         Branch mainBranch = new Branch();
-        mainBranch.setTenantId(tenantId);
-        mainBranch.setCode("MAIN");
-        mainBranch.setName("Main Branch");
+        mainBranch.setCode(tenantId.toUpperCase(Locale.ROOT).replace("-", "_"));
+        mainBranch.setName("Main Branch " + tenantId);
         mainBranch.setAddress("Main address");
         mainBranch.setPhone("0770000000");
         mainBranch.setActive(true);
@@ -214,7 +221,6 @@ abstract class ApiIntegrationTestSupport {
                 .enabled(enabled)
                 .branchId(branchId)
                 .build();
-        user.setTenantId(tenantId);
         return userRepository.save(user);
     }
 

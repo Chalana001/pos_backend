@@ -5,13 +5,40 @@ import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.time.LocalDate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// Runs on real MySQL (not H2) — this test exercises the FULLTEXT-backed
+// item search (MATCH...AGAINST), which H2 cannot execute.
+@ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("pos_master")
+            .withUsername("posapp")
+            .withPassword("posapp");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () ->
+                "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
+                + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
 
     @Test
     void recipeItemsSupportPendingDineInFlowAndIngredientStockRollback() throws Exception {
@@ -21,29 +48,24 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
         String cashierToken = login(tenantId, fixture.cashier().getUsername(), DEFAULT_PASSWORD);
 
         Category groceryCategory = new Category();
-        groceryCategory.setTenantId(tenantId);
         groceryCategory.setName("Groceries");
         groceryCategory = categoryRepository.save(groceryCategory);
 
         SubCategory grocerySubCategory = new SubCategory();
-        grocerySubCategory.setTenantId(tenantId);
         grocerySubCategory.setName("Kitchen Stock");
         grocerySubCategory.setCategory(groceryCategory);
         grocerySubCategory = subCategoryRepository.save(grocerySubCategory);
 
         Category foodCategory = new Category();
-        foodCategory.setTenantId(tenantId);
         foodCategory.setName("Foods");
         foodCategory = categoryRepository.save(foodCategory);
 
         SubCategory foodSubCategory = new SubCategory();
-        foodSubCategory.setTenantId(tenantId);
         foodSubCategory.setName("Short Eats");
         foodSubCategory.setCategory(foodCategory);
         foodSubCategory = subCategoryRepository.save(foodSubCategory);
 
         Supplier supplier = new Supplier();
-        supplier.setTenantId(tenantId);
         supplier.setName("Kitchen Supplier");
         supplier.setPhone("0712345678");
         supplier.setAddress("Supplier address");
@@ -310,7 +332,7 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(1, recipeProfit.size());
         assertEquals("RECIPE", recipeProfit.get(0).path("itemType").asText());
 
-        assertEquals(16, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+        assertEquals(16000, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
         assertEquals(1800, firstBatchFor(fixture.mainBranch().getId(), cheeseItemId).getQuantity());
 
         JsonNode canceledOrder = postJson(
@@ -324,7 +346,7 @@ class FoodRecipeDineInIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
         assertEquals("CANCELED", canceledOrder.path("status").asText());
-        assertEquals(20, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
+        assertEquals(20000, firstBatchFor(fixture.mainBranch().getId(), eggItemId).getQuantity());
         assertEquals(2000, firstBatchFor(fixture.mainBranch().getId(), cheeseItemId).getQuantity());
     }
 }

@@ -15,12 +15,12 @@ import java.time.LocalDateTime;
 @Table(
         name = "stock_batches",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "batch_code"})
+                @UniqueConstraint(columnNames = {"batch_code"})
         },
         indexes = {
-                @Index(name = "idx_tenant_batch_item_branch", columnList = "tenant_id, item_id, branch_id"),
-                @Index(name = "idx_tenant_batch_expiry", columnList = "tenant_id, expire_date"),
-                @Index(name = "idx_tenant_batch_origin_branch", columnList = "tenant_id, origin_batch_id, branch_id")
+                @Index(name = "idx_batch_item_branch", columnList = "item_id, branch_id"),
+                @Index(name = "idx_batch_expiry", columnList = "expire_date"),
+                @Index(name = "idx_batch_origin_branch", columnList = "origin_batch_id, branch_id")
         }
 )
 @Getter @Setter
@@ -50,6 +50,11 @@ public class StockBatch extends TenantEntity {
 
     @Column(name = "origin_batch_id")
     private Long originBatchId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_type", nullable = false, length = 20, columnDefinition = "varchar(20) default 'PURCHASE'")
+    @Builder.Default
+    private StockBatchSourceType sourceType = StockBatchSourceType.PURCHASE;
 
     @Column(name = "cost_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal costPrice;

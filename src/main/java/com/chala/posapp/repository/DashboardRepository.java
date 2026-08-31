@@ -10,169 +10,81 @@ import java.util.List;
 
 public interface DashboardRepository extends JpaRepository<Order, Long> {
 
+    /**
+     * PERF FIX: Single consolidated query that fetches all dashboard KPIs in ONE round-trip.
+     * Previously: 9 separate queries were fired from DashboardService.todayKpis().
+     * Now:  one sub-select per metric, but only ONE network round-trip to the DB.
+     *
+     * Returns Object[] with indices:
+     *  [0] todaySales, [1] cashSales, [2] creditSales, [3] todayDiscount,
+     *  [4] todayOrders, [5] todayExpenses, [6] todayCashDrops,
+     *  [7] lowStockCount, [8] totalDue
+     */
     @Query(value = """
-        SELECT COALESCE(SUM(o.grand_total),0)
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double todaySales(@Param("tenantId") String tenantId,
-                      @Param("branchId") Long branchId,
-                      @Param("fromDate") LocalDateTime fromDate,
-                      @Param("toDate") LocalDateTime toDate);
+        SELECT
+          COALESCE((SELECT SUM(o.grand_total) FROM orders o
+                    WHERE (:branchId = 0 OR o.branch_id = :branchId)
+                      AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS todaySales,
 
-    @Query(value = """
-        SELECT COALESCE(SUM(
-            COALESCE(
-                o.sale_paid_amount,
-                CASE
-                    WHEN o.order_type = 'CASH' THEN
-                        CASE
-                            WHEN o.paid_amount < o.grand_total THEN o.paid_amount
-                            ELSE o.grand_total
-                        END
-                    ELSE 0
-                END
-            )
-        ),0)
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double cashSales(@Param("tenantId") String tenantId,
-                     @Param("branchId") Long branchId,
-                     @Param("fromDate") LocalDateTime fromDate,
-                     @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT SUM(
+              COALESCE(o.sale_paid_amount,
+                CASE WHEN o.order_type = 'CASH' THEN
+                  CASE WHEN o.paid_amount < o.grand_total THEN o.paid_amount ELSE o.grand_total END
+                ELSE 0 END))
+            FROM orders o
+            WHERE (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS cashSales,
 
-    @Query(value = """
-        SELECT COALESCE(SUM(
-            COALESCE(
-                o.sale_due_amount,
-                CASE
-                    WHEN o.order_type = 'CREDIT' THEN o.grand_total
-                    ELSE 0
-                END
-            )
-        ),0)
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double creditSales(@Param("tenantId") String tenantId,
-                       @Param("branchId") Long branchId,
-                       @Param("fromDate") LocalDateTime fromDate,
-                       @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT SUM(
+              COALESCE(o.sale_due_amount,
+                CASE WHEN o.order_type = 'CREDIT' THEN o.grand_total ELSE 0 END))
+            FROM orders o
+            WHERE (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS creditSales,
 
-    @Query(value = """
-        SELECT COALESCE(SUM(o.bill_discount),0)
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double todayDiscount(@Param("tenantId") String tenantId,
-                         @Param("branchId") Long branchId,
-                         @Param("fromDate") LocalDateTime fromDate,
-                         @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT SUM(o.bill_discount) FROM orders o
+                    WHERE (:branchId = 0 OR o.branch_id = :branchId)
+                      AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS todayDiscount,
 
-    @Query(value = """
-        SELECT COUNT(*)
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    long todayOrders(@Param("tenantId") String tenantId,
-                     @Param("branchId") Long branchId,
-                     @Param("fromDate") LocalDateTime fromDate,
-                     @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT COUNT(*) FROM orders o
+                    WHERE (:branchId = 0 OR o.branch_id = :branchId)
+                      AND o.status = 'COMPLETED' AND o.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS todayOrders,
 
-    // ✅ Expenses today
-    @Query(value = """
-        SELECT COALESCE(SUM(e.amount),0)
-        FROM expenses e
-        WHERE e.tenant_id = :tenantId
-          AND (:branchId = 0 OR e.branch_id = :branchId)
-          AND e.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double todayExpenses(@Param("tenantId") String tenantId,
-                         @Param("branchId") Long branchId,
-                         @Param("fromDate") LocalDateTime fromDate,
-                         @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT SUM(e.amount) FROM expenses e
+                    WHERE (:branchId = 0 OR e.branch_id = :branchId)
+                      AND COALESCE(e.count_in_profit_report, TRUE) = TRUE
+                      AND e.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS todayExpenses,
 
-    // ✅ Cash drops today
-    @Query(value = """
-        SELECT COALESCE(SUM(cd.amount),0)
-        FROM cash_drops cd
-        WHERE cd.tenant_id = :tenantId
-          AND (:branchId = 0 OR cd.branch_id = :branchId)
-          AND cd.created_at BETWEEN :fromDate AND :toDate
-    """, nativeQuery = true)
-    double todayCashDrops(@Param("tenantId") String tenantId,
-                          @Param("branchId") Long branchId,
-                          @Param("fromDate") LocalDateTime fromDate,
-                          @Param("toDate") LocalDateTime toDate);
+          COALESCE((SELECT SUM(cd.amount) FROM cash_drops cd
+                    WHERE (:branchId = 0 OR cd.branch_id = :branchId)
+                      AND cd.created_at BETWEEN :fromDate AND :toDate), 0)
+            AS todayCashDrops,
 
-    // ✅ Low stock count
-    @Query(value = """
-        SELECT COUNT(*)
-        FROM stock s
-        JOIN items i ON i.id = s.item_id
-        WHERE s.tenant_id = :tenantId
-          AND (:branchId = 0 OR s.branch_id = :branchId)
-          AND s.quantity <= i.reorder_level
-    """, nativeQuery = true)
-    long lowStockCount(@Param("tenantId") String tenantId,
-                       @Param("branchId") Long branchId);
+          COALESCE((SELECT COUNT(*) FROM stock s
+                    JOIN items i ON i.id = s.item_id
+                    WHERE (:branchId = 0 OR s.branch_id = :branchId)
+                      AND s.quantity <= i.reorder_level), 0)
+            AS lowStockCount,
 
-    // ✅ Total due (all customers for this tenant)
-    @Query(value = """
-        SELECT COALESCE(SUM(c.due_amount),0)
-        FROM customers c
-        WHERE c.tenant_id = :tenantId
-          AND c.due_amount > 0
+          COALESCE((SELECT SUM(c.due_amount) FROM customers c WHERE c.due_amount > 0), 0)
+            AS totalDue
     """, nativeQuery = true)
-    double totalDue(@Param("tenantId") String tenantId);
+    List<Object[]> todayKpisAllInOne(@Param("branchId") Long branchId,
+                                     @Param("fromDate") LocalDateTime fromDate,
+                                     @Param("toDate") LocalDateTime toDate);
 
-    // ✅ Daily Sales
-    @Query(value = """
-        SELECT DATE(o.created_at) AS sales_date, COALESCE(SUM(o.grand_total),0) AS sales
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY DATE(o.created_at)
-        ORDER BY sales_date
-    """, nativeQuery = true)
-    List<Object[]> dailySalesRaw(@Param("tenantId") String tenantId,
-                                 @Param("branchId") Long branchId,
-                                 @Param("fromDate") LocalDateTime fromDate,
-                                 @Param("toDate") LocalDateTime toDate);
+    // DUP-01 FIX: Removed 9 individual KPI query methods (todaySales, cashSales, creditSales,
+    // todayDiscount, todayOrders, todayExpenses, todayCashDrops, lowStockCount, totalDue).
+    // All had ZERO callers — todayKpisAllInOne() above replaced all 9 in one DB round-trip.
 
-
-    // ✅ Monthly Sales
-    @Query(value = """
-        SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS sales_month, COALESCE(SUM(o.grand_total),0) AS sales
-        FROM orders o
-        WHERE o.tenant_id = :tenantId
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY DATE_FORMAT(o.created_at, '%Y-%m')
-        ORDER BY sales_month
-    """, nativeQuery = true)
-    List<Object[]> monthlySalesRaw(@Param("tenantId") String tenantId,
-                                   @Param("branchId") Long branchId,
-                                   @Param("fromDate") LocalDateTime fromDate,
-                                   @Param("toDate") LocalDateTime toDate);
+    // DUP-03/04 FIX: dailySalesRaw() and monthlySalesRaw() removed from here.
+    // Canonical versions live in ReportRepository. DashboardService now injects ReportRepository
+    // directly to call them — one source of truth for both chart types.
 
 }

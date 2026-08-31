@@ -1,46 +1,71 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.barcode.DecodedScaleBarcode;
+import com.chala.posapp.barcode.ScaleBarcodeDecoder;
 import com.chala.posapp.dto.item.ItemCreateRequest;
+import com.chala.posapp.dto.item.ItemDeleteCheckResponse;
 import com.chala.posapp.dto.item.ItemIngredientRequest;
 import com.chala.posapp.dto.item.ItemIngredientResponse;
 import com.chala.posapp.dto.item.ItemResponse;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
+import com.chala.posapp.dto.item.StockProcessingOutputLinkRequest;
+import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
 import com.chala.posapp.dto.stock.StockBatchResponse;
+import com.chala.posapp.entity.BarcodeLabelSettings;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.BranchServiceItem;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.Item;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
+import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
+import com.chala.posapp.entity.StockProcessingOutputLink;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.entity.TenantSubscription;
+import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.BarcodeLabelSettingsRepository;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.RecipeIngredientRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockProcessingOutputLinkRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -53,18 +78,25 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final BarcodeLabelSettingsRepository barcodeLabelSettingsRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
+    private final StockProcessingOutputLinkRepository stockProcessingOutputLinkRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final AppConfigurationService appConfigurationService;
+    private final SecurityUtils securityUtils;
+    private final PlatformTransactionManager transactionManager;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     @Transactional
     public ItemResponse createItem(ItemCreateRequest request) {
         String barcode = request.getBarcode() != null ? request.getBarcode().trim() : "";
 
         if (barcode.isEmpty()) {
-            barcode = generateFiveDigitBarcode();
+            barcode = generateUniqueBarcode(new HashSet<>());
         } else if (itemRepository.existsByBarcode(barcode)) {
             throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
         }
@@ -75,10 +107,13 @@ public class ItemService {
         ItemType itemType = request.getItemType() != null ? request.getItemType() : ItemType.NORMAL;
         validateItemTypeAllowed(itemType);
         MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, request.getDefaultUnit());
+        ItemOverheadCostMode overheadCostMode = normalizeOverheadCostMode(itemType, request.getOverheadCostMode());
+        BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, request.getOverheadCostValue());
 
         Item item = Item.builder()
                 .barcode(barcode)
                 .name(request.getName().trim())
+                .altName(normalizeAltName(request.getAltName()))
                 .subCategory(subCategory)
                 .costPrice(request.getCostPrice())
                 .sellingPrice(request.getSellingPrice())
@@ -86,22 +121,34 @@ public class ItemService {
                 .itemType(itemType)
                 .defaultUnit(defaultUnit)
                 .imageUrl(request.getImageUrl())
-                .kotEnabled(Boolean.TRUE.equals(request.getIsKotEnabled()))
+                .kotEnabled(resolveKotEnabled(request.getIsKotEnabled()))
                 .active(request.getActive() == null || request.getActive())
+                .posVisible(request.getPosVisible() == null || request.getPosVisible())
+                .stockProcessingEnabled(Boolean.TRUE.equals(request.getStockProcessingEnabled()))
+                .overheadCostMode(overheadCostMode)
+                .overheadCostValue(overheadCostValue)
                 .build();
 
         Item savedItem = itemRepository.save(item);
         syncServiceBranches(savedItem, request.getBranchIds());
         syncRecipeIngredients(savedItem, request.getIngredients());
+        syncProcessingOutputs(savedItem, request.getProcessingOutputs());
         createZeroStockBatchesIfRequired(savedItem);
         return mapToResponse(savedItem, null, List.of());
     }
 
     @Transactional
     public List<ItemResponse> bulkCreate(List<ItemCreateRequest> requestList) {
+        Set<String> reservedBarcodes = requestList.stream()
+                .map(ItemCreateRequest::getBarcode)
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(barcode -> !barcode.isEmpty())
+                .collect(Collectors.toCollection(HashSet::new));
+
         requestList.forEach(req -> {
             if (req.getBarcode() == null || req.getBarcode().trim().isEmpty()) {
-                req.setBarcode(generateFiveDigitBarcode());
+                req.setBarcode(generateUniqueBarcode(reservedBarcodes));
             } else {
                 req.setBarcode(req.getBarcode().trim());
             }
@@ -125,9 +172,12 @@ public class ItemService {
                     ItemType itemType = req.getItemType() != null ? req.getItemType() : ItemType.NORMAL;
                     validateItemTypeAllowed(itemType);
                     MeasurementUnit defaultUnit = QuantityConversionUtil.normalizeItemUnit(itemType, req.getDefaultUnit());
+                    ItemOverheadCostMode overheadCostMode = normalizeOverheadCostMode(itemType, req.getOverheadCostMode());
+                    BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, req.getOverheadCostValue());
 
                     return Item.builder()
                             .name(req.getName().trim())
+                            .altName(normalizeAltName(req.getAltName()))
                             .barcode(req.getBarcode())
                             .subCategory(subCategory)
                             .costPrice(req.getCostPrice())
@@ -136,8 +186,12 @@ public class ItemService {
                             .itemType(itemType)
                             .defaultUnit(defaultUnit)
                             .imageUrl(req.getImageUrl())
-                            .kotEnabled(Boolean.TRUE.equals(req.getIsKotEnabled()))
+                            .kotEnabled(resolveKotEnabled(req.getIsKotEnabled()))
                             .active(req.getActive() == null || req.getActive())
+                            .posVisible(req.getPosVisible() == null || req.getPosVisible())
+                            .stockProcessingEnabled(Boolean.TRUE.equals(req.getStockProcessingEnabled()))
+                            .overheadCostMode(overheadCostMode)
+                            .overheadCostValue(overheadCostValue)
                             .build();
                 })
                 .toList();
@@ -150,6 +204,7 @@ public class ItemService {
                             .orElse(null);
                     syncServiceBranches(item, sourceRequest != null ? sourceRequest.getBranchIds() : null);
                     syncRecipeIngredients(item, sourceRequest != null ? sourceRequest.getIngredients() : null);
+                    syncProcessingOutputs(item, sourceRequest != null ? sourceRequest.getProcessingOutputs() : null);
                     createZeroStockBatchesIfRequired(item);
                     return mapToResponse(item, null, List.of());
                 })
@@ -221,10 +276,33 @@ public class ItemService {
     }
 
     public ItemResponse getByBarcode(String barcode, Long branchId) {
-        Item item = itemRepository.findByBarcode(barcode.trim())
-                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        String trimmedBarcode = barcode.trim();
+        Optional<Item> exactMatch = itemRepository.findByBarcode(trimmedBarcode);
 
-        if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+        Item item;
+        DecodedScaleBarcode decoded = null;
+        if (exactMatch.isPresent()) {
+            item = exactMatch.get();
+        } else {
+            // No plain item carries this barcode as-is. Before giving up, see if
+            // it decodes as a scale barcode under this branch's configured
+            // format (weight/price-embedded, per BarcodeLabelSettings) — if so,
+            // the item's own short `barcode` field doubles as the embedded
+            // item/PLU code, so we look that up instead of adding a new field.
+            decoded = decodeScaleBarcode(trimmedBarcode, branchId);
+            item = decoded == null
+                    ? null
+                    : itemRepository.findByBarcode(decoded.itemCode()).orElse(null);
+            if (item == null) {
+                throw new ResourceNotFoundException("Item not found");
+            }
+        }
+
+        if (!item.isActive() || !item.isPosVisible()) {
+            throw new ResourceNotFoundException("Item not available in POS");
+        }
+
+        if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
             throw new ResourceNotFoundException("Item type is disabled");
         }
 
@@ -233,15 +311,80 @@ public class ItemService {
             throw new ResourceNotFoundException("Service item not available in this branch");
         }
 
+        // Existing exact-barcode-match behavior is completely unchanged: this is
+        // only non-null when the plain lookup missed and a scale barcode decoded.
+        ScaleBarcodeResolution scaleResolution = decoded == null ? null : resolveScaleBarcodeResolution(item, decoded);
+
         if (branchId == null || item.getItemType() == ItemType.RECIPE || item.getItemType() == ItemType.SERVICE) {
-            return mapToResponse(item, null, List.of());
+            return mapToResponse(item, null, List.of(), branchId, scaleResolution);
         }
 
         List<StockBatch> batches = branchId == 0L
-                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
 
-        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches));
+        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches), branchId, scaleResolution);
+    }
+
+    /** Empty (no decode) whenever branchId is unset or the branch has scale-barcode decoding turned off. */
+    private DecodedScaleBarcode decodeScaleBarcode(String barcode, Long branchId) {
+        if (branchId == null) {
+            return null;
+        }
+        BarcodeLabelSettings settings = barcodeLabelSettingsRepository.findByBranchId(branchId).orElse(null);
+        return ScaleBarcodeDecoder.tryDecode(barcode, settings).orElse(null);
+    }
+
+    /**
+     * Resolves the sale quantity/amount implied by a decoded scale barcode against
+     * the matched item's own pricing, reusing QuantityConversionUtil so this never
+     * diverges from the rest of the pricing engine. Only meaningful for WEIGHT
+     * items with a positive selling price — returns null otherwise (the item is
+     * still returned, just without the extra scale-resolved fields populated).
+     */
+    private ScaleBarcodeResolution resolveScaleBarcodeResolution(Item item, DecodedScaleBarcode decoded) {
+        if (item.getItemType() != ItemType.WEIGHT) {
+            return null;
+        }
+
+        BigDecimal sellingPrice = item.getSellingPrice();
+        if (sellingPrice == null || sellingPrice.signum() <= 0) {
+            return null;
+        }
+
+        try {
+            int grams;
+            BigDecimal amount;
+
+            if (decoded.valueType() == ScaleBarcodeValueType.WEIGHT_GRAMS) {
+                grams = decoded.rawValue();
+                amount = QuantityConversionUtil.calculateActualAmount(item, sellingPrice, grams);
+            } else {
+                // PRICE_CENTS: the amount is embedded directly in the barcode; the
+                // weight is derived from it at this item's configured (per-kg)
+                // selling price — the inverse of calculateActualAmount's own math,
+                // so the two value types stay consistent with each other.
+                amount = BigDecimal.valueOf(decoded.rawValue(), 2);
+                BigDecimal gramsExact = amount
+                        .multiply(BigDecimal.valueOf(1000))
+                        .divide(sellingPrice, 0, RoundingMode.HALF_UP);
+                grams = gramsExact.intValueExact();
+            }
+
+            if (grams <= 0) {
+                return null;
+            }
+
+            BigDecimal quantity = QuantityConversionUtil.toDisplayQuantity(item, grams);
+            MeasurementUnit unit = QuantityConversionUtil.normalizeItemUnit(item.getItemType(), item.getDefaultUnit());
+            return new ScaleBarcodeResolution(quantity, unit, amount);
+        } catch (ArithmeticException | BadRequestException e) {
+            return null;
+        }
+    }
+
+    /** Sale quantity/amount resolved from a decoded scale barcode. See {@link #resolveScaleBarcodeResolution}. */
+    private record ScaleBarcodeResolution(BigDecimal quantity, MeasurementUnit unit, BigDecimal amount) {
     }
 
     public List<ItemResponse> searchByName(String name, Long branchId) {
@@ -250,7 +393,7 @@ public class ItemService {
 
         return items.stream()
                 .map(item -> {
-                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                         return null;
                     }
 
@@ -259,28 +402,78 @@ public class ItemService {
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         batches = branchId == 0L
-                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
+                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
                         totalQty = availableQuantity(batches);
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
     }
 
-    public List<ItemResponse> searchForPos(String name, Long branchId) {
+    public List<ItemResponse> searchForPurchase(String name, Long branchId) {
+        Long scopedBranchId = resolvePurchaseSearchBranchId(branchId);
         String searchTerm = name.trim();
-        List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+        // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars (fast), fall back to LIKE for short terms
+        List<Item> items = searchTerm.length() >= 3
+                ? itemRepository.searchForPurchaseFt(searchTerm + "*")
+                : itemRepository.searchForPurchase(searchTerm);
 
         return items.stream()
                 .map(item -> {
-                    if (!item.isActive()) {
+                    if (!item.isActive() || !isStockTrackedItem(item)) {
                         return null;
                     }
 
-                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), scopedBranchId)) {
+                        return null;
+                    }
+
+                    List<StockBatch> batches = List.of();
+                    Integer totalQty = null;
+
+                    if (scopedBranchId != null) {
+                        Long scopeId = scopedBranchId == 0L ? null : scopedBranchId;
+                        batches = stockBatchRepository.findAvailableBatchesForScope(scopeId, item.getId());
+                        totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeId, item.getId());
+                    }
+
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), scopedBranchId);
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private Long resolvePurchaseSearchBranchId(Long requestedBranchId) {
+        User user = securityUtils.getOptionalCurrentUser();
+        if (user != null && (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER)) {
+            if (user.getBranchId() == null) {
+                throw new BadRequestException("User branch not assigned");
+            }
+            return user.getBranchId();
+        }
+        return requestedBranchId;
+    }
+
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getOptionalCurrentUser() — use SecurityUtils instead
+    // Note: uses getOptionalCurrentUser() because item-search endpoints may be called without auth
+
+    public List<ItemResponse> searchForPos(String name, Long branchId) {
+        String searchTerm = name.trim();
+        // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars, fall back to LIKE for 1-2 char inputs
+        List<Item> items = searchTerm.length() >= 3
+                ? itemRepository.searchForPosFt(searchTerm + "*")
+                : itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
+
+        return items.stream()
+                .map(item -> {
+                    if (!item.isActive() || !item.isPosVisible()) {
+                        return null;
+                    }
+
+                    if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                         return null;
                     }
 
@@ -291,21 +484,23 @@ public class ItemService {
 
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
+                    boolean everStocked = true;
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
-                        batches = branchId == 0L
-                                ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findBatchesForScope(branchId, item.getId());
+                        Long scopeBranchId = branchId == 0L ? null : branchId;
+                        batches = stockBatchRepository.findAvailableBatchesForScope(scopeBranchId, item.getId());
                         totalQty = availableQuantity(batches);
+                        everStocked = batches != null && !batches.isEmpty()
+                                || stockBatchRepository.existsBatchForScope(scopeBranchId, item.getId());
                     }
 
                     if (item.getItemType() != ItemType.SERVICE
                             && item.getItemType() != ItemType.RECIPE
-                            && (batches == null || batches.isEmpty())) {
+                            && !everStocked) {
                         return null;
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches));
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -320,12 +515,12 @@ public class ItemService {
         }
     }
 
-    public List<ItemResponse> searchForBarcodePrint(String query) {
+    public List<ItemResponse> searchForBarcodePrint(String query, Long branchId) {
         String searchTerm = query.trim();
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream()
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
                 .collect(Collectors.toList());
     }
 
@@ -346,6 +541,10 @@ public class ItemService {
             item.setName(request.getName().trim());
         }
 
+        if (request.getAltName() != null) {
+            item.setAltName(normalizeAltName(request.getAltName()));
+        }
+
         if (request.getSubCategoryId() != null) {
             SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
                     .orElseThrow(() -> new ResourceNotFoundException("SubCategory not found"));
@@ -360,6 +559,15 @@ public class ItemService {
 
         item.setItemType(itemType);
         item.setDefaultUnit(defaultUnit);
+        ItemOverheadCostMode overheadCostMode = request.getOverheadCostMode() != null
+                ? normalizeOverheadCostMode(itemType, request.getOverheadCostMode())
+                : normalizeOverheadCostMode(itemType, item.getOverheadCostMode());
+        BigDecimal requestedOverheadValue = request.getOverheadCostValue() != null
+                ? request.getOverheadCostValue()
+                : item.getOverheadCostValue();
+        BigDecimal overheadCostValue = normalizeOverheadCostValue(itemType, overheadCostMode, requestedOverheadValue);
+        item.setOverheadCostMode(overheadCostMode);
+        item.setOverheadCostValue(overheadCostValue);
 
         if (request.getCostPrice() != null) item.setCostPrice(request.getCostPrice());
         if (request.getSellingPrice() != null) item.setSellingPrice(request.getSellingPrice());
@@ -367,8 +575,12 @@ public class ItemService {
             item.setReorderLevel(QuantityConversionUtil.normalizeReorderLevel(itemType, defaultUnit, request.getReorderLevel()));
         }
         if (request.getImageUrl() != null) item.setImageUrl(request.getImageUrl());
-        if (request.getIsKotEnabled() != null) item.setKotEnabled(request.getIsKotEnabled());
+        if (request.getIsKotEnabled() != null) item.setKotEnabled(resolveKotEnabled(request.getIsKotEnabled()));
         if (request.getActive() != null) item.setActive(request.getActive());
+        if (request.getPosVisible() != null) item.setPosVisible(request.getPosVisible());
+        if (request.getStockProcessingEnabled() != null) {
+            item.setStockProcessingEnabled(request.getStockProcessingEnabled());
+        }
 
         Item savedItem = itemRepository.save(item);
         if (request.getBranchIds() != null || previousItemType != itemType) {
@@ -377,7 +589,119 @@ public class ItemService {
         if (request.getIngredients() != null || previousItemType != itemType) {
             syncRecipeIngredients(savedItem, request.getIngredients());
         }
+        if (request.getProcessingOutputs() != null || previousItemType != itemType || request.getStockProcessingEnabled() != null) {
+            syncProcessingOutputs(savedItem, request.getProcessingOutputs());
+        }
         return mapToResponse(savedItem, null, List.of());
+    }
+
+    public ItemDeleteCheckResponse checkDelete(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        List<String> reasons = collectDeleteBlockers(id);
+        return ItemDeleteCheckResponse.builder()
+                .itemId(item.getId())
+                .itemName(item.getName())
+                .canDelete(reasons.isEmpty())
+                .reasons(reasons)
+                .build();
+    }
+
+    @Transactional
+    public void deleteItem(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        List<String> reasons = collectDeleteBlockers(id);
+        if (!reasons.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Item cannot be deleted because it has history or active references");
+        }
+
+        branchServiceItemRepository.deleteByItemId(id);
+        recipeIngredientRepository.deleteByParentItemId(id);
+        recipeIngredientRepository.flush();
+        stockProcessingOutputLinkRepository.deleteBySourceItemId(id);
+        stockProcessingOutputLinkRepository.flush();
+
+        List<StockBatch> stockBatches = stockBatchRepository.findByItemId(id);
+        if (!stockBatches.isEmpty()) {
+            stockBatchRepository.deleteAll(stockBatches);
+            stockBatchRepository.flush();
+        }
+
+        itemRepository.delete(item);
+    }
+
+    @Transactional
+    public void deactivateItem(Long id) {
+        Item item = itemRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+        item.setActive(false);
+        item.setPosVisible(false);
+        itemRepository.save(item);
+    }
+
+    private List<String> collectDeleteBlockers(Long itemId) {
+        List<String> reasons = new ArrayList<>();
+
+        addReason(reasons, countRefs("order_items", "item_id", itemId), "Item has order history");
+        addReason(reasons, countRefs("order_item_stock_usages", "item_id", itemId), "Item has stock usage history");
+        addReason(reasons, countStockBatchBlockers(itemId), "Item has real stock batches");
+        addReason(reasons, countRefs("grn_items", "item_id", itemId), "Item has purchase/GRN history");
+        addReason(reasons, countRefs("pending_order_items", "item_id", itemId), "Item is used in pending table orders");
+        addReason(reasons, countRefs("recipe_ingredients", "ingredient_id", itemId), "Item is used as a recipe ingredient");
+        addReason(reasons, countRefs("stock_processing_output_links", "output_item_id", itemId), "Item is linked as a stock processing output");
+        addReason(reasons, countRefs("stock_processings", "source_item_id", itemId), "Item has stock processing history as a source");
+        addReason(reasons, countRefs("stock_processing_outputs", "output_item_id", itemId), "Item has stock processing output history");
+        addReason(reasons, countRefs("stock_adjustments", "item_id", itemId), "Item has stock adjustment history");
+        addReason(reasons, countRefs("stock_transfer_items", "item_id", itemId), "Item has stock transfer history");
+        addReason(reasons, countRefs("promotion_targets", "item_id", itemId), "Item is used in promotion rules");
+        addReason(reasons, countRefs("warranties", "item_id", itemId), "Item has warranty history");
+        addReason(reasons, countRefs("stock_override_audits", "sale_item_id", itemId), "Item has stock override sale history");
+        addReason(reasons, countRefs("stock_override_audits", "stock_item_id", itemId), "Item has stock override ingredient history");
+        addReason(reasons, countSupplierItemRefs(itemId), "Item is linked to suppliers");
+
+        return reasons;
+    }
+
+    private void addReason(List<String> reasons, long count, String message) {
+        if (count > 0) {
+            reasons.add(message + " (" + count + ")");
+        }
+    }
+
+    private long countRefs(String tableName, String columnName, Long itemId) {
+        Number count = (Number) entityManager.createNativeQuery(
+                        "SELECT COUNT(*) FROM " + tableName + " WHERE " + columnName + " = :itemId")
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
+    }
+
+    private long countStockBatchBlockers(Long itemId) {
+        Number count = (Number) entityManager.createNativeQuery("""
+                        SELECT COUNT(*)
+                        FROM stock_batches
+                        WHERE item_id = :itemId
+                          AND (
+                            COALESCE(quantity, 0) <> 0
+                            OR COALESCE(original_quantity, 0) <> 0
+                            OR COALESCE(source_type, 'PURCHASE') <> 'AUTO'
+                          )
+                        """)
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
+    }
+
+    private long countSupplierItemRefs(Long itemId) {
+        Number count = (Number) entityManager.createNativeQuery("""
+                        SELECT COUNT(*)
+                        FROM supplier_items
+                        WHERE item_id = :itemId
+                        """)
+                .setParameter("itemId", itemId)
+                .getSingleResult();
+        return count.longValue();
     }
 
     private List<StockBatchResponse> batchesToResponse(Item item, List<StockBatch> batches) {
@@ -408,6 +732,25 @@ public class ItemService {
     }
 
     private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches) {
+        return mapToResponse(item, availableBaseQty, batches, null);
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId) {
+        return mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches,
+                                        Long branchId, ScaleBarcodeResolution scaleResolution) {
+        ItemResponse response = mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
+        if (scaleResolution != null) {
+            response.setScaleResolvedQuantity(scaleResolution.quantity());
+            response.setScaleResolvedUnit(scaleResolution.unit());
+            response.setScaleResolvedAmount(scaleResolution.amount());
+        }
+        return response;
+    }
+
+    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId, LocalDateTime labelExpiry) {
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
         List<Long> branchIds = item.getItemType() == ItemType.SERVICE
@@ -421,6 +764,9 @@ public class ItemService {
         List<ItemIngredientResponse> ingredients = item.getItemType() == ItemType.RECIPE
                 ? mapRecipeIngredientResponses(recipeIngredientRepository.findByParentItemId(item.getId()))
                 : List.of();
+        List<StockProcessingOutputLinkResponse> processingOutputs = item.isStockProcessingEnabled()
+                ? mapProcessingOutputResponses(stockProcessingOutputLinkRepository.findBySourceItemIdOrderByIdAsc(item.getId()))
+                : List.of();
 
         BigDecimal availableQty = availableBaseQty == null
                 ? null
@@ -430,6 +776,7 @@ public class ItemService {
                 .id(item.getId())
                 .barcode(item.getBarcode())
                 .name(item.getName())
+                .altName(item.getAltName())
                 .subCategoryId(subCategory != null ? subCategory.getId() : null)
                 .subCategoryName(subCategory != null ? subCategory.getName() : "N/A")
                 .categoryId(category != null ? category.getId() : null)
@@ -443,12 +790,18 @@ public class ItemService {
                 .itemType(item.getItemType())
                 .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
-                .kotEnabled(item.isKotEnabled())
+                .kotEnabled(appConfigurationService.isKotEnabled(branchId) && item.isKotEnabled())
                 .active(item.isActive())
+                .posVisible(item.isPosVisible())
+                .stockProcessingEnabled(item.isStockProcessingEnabled())
+                .overheadCostMode(item.getOverheadCostMode())
+                .overheadCostValue(item.getOverheadCostValue())
                 .createdAt(item.getCreatedAt())
                 .branchIds(branchIds)
                 .ingredients(ingredients)
+                .processingOutputs(processingOutputs)
                 .batches(batches)
+                .labelExpiry(labelExpiry)
                 .build();
     }
 
@@ -501,6 +854,7 @@ public class ItemService {
                         .originalQuantity(0)
                         .costPrice(item.getCostPrice())
                         .sellingPrice(item.getSellingPrice())
+                        .sourceType(StockBatchSourceType.AUTO)
                         .batchCode("AUTO-ZERO-" + branch.getId() + "-" + item.getId())
                         .build())
                 .toList();
@@ -517,16 +871,23 @@ public class ItemService {
             return false;
         }
 
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .map(planName -> planName.equals("FREE")
-                        || planName.equals("STANDARD")
-                        || planName.equals("MONTHLY_DEMO")
-                        || planName.equals("MONTHLY_LITE")
-                        || planName.equals("YEARLY_LITE")
-                        || planName.equals("MONTHLY_BASIC"))
-                .orElse(false);
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        Boolean result = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                                .map(planName -> planName.equals("FREE")
+                                        || planName.equals("STANDARD")
+                                        || planName.equals("MONTHLY_DEMO")
+                                        || planName.equals("MONTHLY_LITE")
+                                        || planName.equals("YEARLY_LITE")
+                                        || planName.equals("MONTHLY_BASIC"))
+                                .orElse(false)
+                ));
+        return Boolean.TRUE.equals(result);
     }
 
     private void validateItemTypeAllowed(ItemType itemType) {
@@ -541,9 +902,41 @@ public class ItemService {
         if (isStandardPlan(planName)
                 && itemType != ItemType.NORMAL
                 && itemType != ItemType.WEIGHT
+                && itemType != ItemType.VOLUME
                 && itemType != ItemType.SERVICE) {
-            throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT and SERVICE items only");
+            throw new BadRequestException("STANDARD plan supports NORMAL, WEIGHT, VOLUME and SERVICE items only");
         }
+    }
+
+    private String normalizeAltName(String value) {
+        return (value == null || value.isBlank()) ? null : value.trim();
+    }
+
+    private boolean resolveKotEnabled(Boolean requestedKotEnabled) {
+        if (!Boolean.TRUE.equals(requestedKotEnabled)) {
+            return false;
+        }
+        if (!appConfigurationService.isKotEnabled()) {
+            throw new BadRequestException("KOT is disabled in app configuration");
+        }
+        return true;
+    }
+
+    private ItemOverheadCostMode normalizeOverheadCostMode(ItemType itemType, ItemOverheadCostMode mode) {
+        if (itemType != ItemType.RECIPE) {
+            return ItemOverheadCostMode.NONE;
+        }
+        return mode == null ? ItemOverheadCostMode.NONE : mode;
+    }
+
+    private BigDecimal normalizeOverheadCostValue(ItemType itemType, ItemOverheadCostMode mode, BigDecimal value) {
+        if (itemType != ItemType.RECIPE || mode == null || mode == ItemOverheadCostMode.NONE) {
+            return BigDecimal.ZERO;
+        }
+        if (value == null || value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Recipe overhead value must be greater than zero");
+        }
+        return value.setScale(2, RoundingMode.HALF_UP);
     }
 
     private String currentPlanName() {
@@ -551,10 +944,18 @@ public class ItemService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .orElse("");
+        // tenant_subscriptions lives in pos_master — switch context before the transaction opens.
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        String plan = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(p -> p.getName() == null ? "" : p.getName().trim().toUpperCase())
+                                .orElse("")
+                ));
+        return plan == null ? "" : plan;
     }
 
     private boolean isFreePlan(String planName) {
@@ -655,29 +1056,141 @@ public class ItemService {
                 .build();
     }
 
-    @Transactional
-    public void deactivateItem(Long id) {
-        Item item = itemRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        item.setActive(false);
-        itemRepository.save(item);
+    private void syncProcessingOutputs(Item item, List<StockProcessingOutputLinkRequest> outputRequests) {
+        if (!item.isStockProcessingEnabled()) {
+            stockProcessingOutputLinkRepository.deleteBySourceItemId(item.getId());
+            stockProcessingOutputLinkRepository.flush();
+            return;
+        }
+
+        if (!isStockTrackedItem(item)) {
+            throw new BadRequestException("Only normal, weight, or volume stock items can be used as stock processing sources");
+        }
+
+        if (outputRequests == null) {
+            return;
+        }
+
+        stockProcessingOutputLinkRepository.deleteBySourceItemId(item.getId());
+        stockProcessingOutputLinkRepository.flush();
+        if (outputRequests.isEmpty()) {
+            return;
+        }
+
+        Set<Long> distinctOutputIds = new HashSet<>();
+        List<StockProcessingOutputLink> outputLinks = new ArrayList<>();
+
+        for (StockProcessingOutputLinkRequest outputRequest : outputRequests) {
+            if (outputRequest.getOutputItemId() == null) {
+                throw new BadRequestException("Processing output item is required");
+            }
+            if (!distinctOutputIds.add(outputRequest.getOutputItemId())) {
+                throw new BadRequestException("Duplicate processing output item found");
+            }
+            if (outputRequest.getOutputItemId().equals(item.getId())) {
+                throw new BadRequestException("Processing source item cannot be used as its own output");
+            }
+
+            Item outputItem = itemRepository.findById(outputRequest.getOutputItemId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Processing output item not found: " + outputRequest.getOutputItemId()));
+
+            if (!outputItem.isActive()) {
+                throw new BadRequestException("Processing output item is inactive: " + outputItem.getName());
+            }
+            if (!isStockTrackedItem(outputItem)) {
+                throw new BadRequestException("Processing outputs must be normal, weight, or volume stock items");
+            }
+
+            int defaultQuantity = QuantityConversionUtil.normalizeQuantity(
+                    outputItem,
+                    outputRequest.getDefaultQty(),
+                    QuantityConversionUtil.primaryDisplayUnit(outputItem)
+            );
+
+            outputLinks.add(StockProcessingOutputLink.builder()
+                    .sourceItemId(item.getId())
+                    .outputItemId(outputItem.getId())
+                    .defaultQuantity(defaultQuantity)
+                    .defaultSellingPrice(outputRequest.getDefaultSellingPrice())
+                    .waste(Boolean.TRUE.equals(outputRequest.getWaste()))
+                    .build());
+        }
+
+        stockProcessingOutputLinkRepository.saveAll(outputLinks);
+    }
+
+    private List<StockProcessingOutputLinkResponse> mapProcessingOutputResponses(List<StockProcessingOutputLink> links) {
+        if (links == null || links.isEmpty()) {
+            return List.of();
+        }
+
+        Map<Long, Item> outputMap = itemRepository.findAllById(
+                        links.stream()
+                                .map(StockProcessingOutputLink::getOutputItemId)
+                                .distinct()
+                                .toList()
+                ).stream()
+                .collect(Collectors.toMap(Item::getId, output -> output));
+
+        return links.stream()
+                .map(link -> {
+                    Item output = outputMap.get(link.getOutputItemId());
+                    if (output == null) {
+                        throw new ResourceNotFoundException("Processing output item not found: " + link.getOutputItemId());
+                    }
+                    BigDecimal effectiveSellingPrice = link.getDefaultSellingPrice() != null
+                            ? link.getDefaultSellingPrice()
+                            : output.getSellingPrice();
+                    return StockProcessingOutputLinkResponse.builder()
+                            .outputItemId(output.getId())
+                            .outputBarcode(output.getBarcode())
+                            .outputName(output.getName())
+                            .itemType(output.getItemType())
+                            .defaultUnit(output.getDefaultUnit())
+                            .defaultQty(QuantityConversionUtil.toDisplayQuantity(output, link.getDefaultQuantity()))
+                            .defaultQtyUnit(QuantityConversionUtil.primaryDisplayUnit(output))
+                            .defaultSellingPrice(effectiveSellingPrice)
+                            .waste(link.isWaste())
+                            .build();
+                })
+                .toList();
+    }
+
+    private boolean isStockTrackedItem(Item item) {
+        return item.getItemType() == ItemType.NORMAL
+                || item.getItemType() == ItemType.WEIGHT
+                || item.getItemType() == ItemType.VOLUME;
     }
 
     public String generateFiveDigitBarcode() {
+        return generateUniqueBarcode(new HashSet<>());
+    }
+
+    private String generateUniqueBarcode(Set<String> reservedBarcodes) {
         String newBarcode;
         Random random = new Random();
         do {
             int randomNumber = 10000 + random.nextInt(90000);
             newBarcode = String.valueOf(randomNumber);
-        } while (itemRepository.existsByBarcode(newBarcode));
+        } while (reservedBarcodes.contains(newBarcode) || itemRepository.existsByBarcode(newBarcode));
+        reservedBarcodes.add(newBarcode);
         return newBarcode;
     }
 
-    public List<ItemResponse> getRecentlyAddedItems(int limit) {
+    public List<ItemResponse> getRecentlyAddedItems(int limit, Long branchId) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));
 
         return itemRepository.findAll(pageable).stream()
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
                 .toList();
+    }
+
+    /** Earliest-expiry sellable batch (FEFO) for a barcode label, or null if none qualify. */
+    private LocalDateTime findLabelExpiry(Long branchId, Long itemId) {
+        return stockBatchRepository.findEarliestExpiryBatches(branchId, itemId, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .map(StockBatch::getExpireDate)
+                .orElse(null);
     }
 }

@@ -3,19 +3,20 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(
         name = "orders",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "invoice_no"}),
-                @UniqueConstraint(columnNames = {"tenant_id", "client_sale_id"})
+                @UniqueConstraint(columnNames = {"invoice_no"}),
+                @UniqueConstraint(columnNames = {"client_sale_id"})
         },
         indexes = {
-                @Index(name = "idx_tenant_invoice", columnList = "tenant_id, invoice_no"),
-                @Index(name = "idx_tenant_branch_order", columnList = "tenant_id, branch_id"),
-                @Index(name = "idx_tenant_client_sale", columnList = "tenant_id, client_sale_id")
+                @Index(name = "idx_invoice", columnList = "invoice_no"),
+                @Index(name = "idx_branch_order", columnList = "branch_id"),
+                @Index(name = "idx_client_sale", columnList = "client_sale_id")
         }
 )
 @Getter @Setter
@@ -82,6 +83,20 @@ public class Order extends TenantEntity {
     @Column(nullable = false)
     private double billDiscount;
 
+    @Column(name = "promotion_discount_total", nullable = false)
+    @Builder.Default
+    private double promotionDiscountTotal = 0.0;
+
+    @Column(name = "bill_promotion_id")
+    private Long billPromotionId;
+
+    @Column(name = "bill_promotion_name", length = 120)
+    private String billPromotionName;
+
+    @Column(name = "bill_promotion_discount_amount", nullable = false)
+    @Builder.Default
+    private double billPromotionDiscountAmount = 0.0;
+
     @Column(nullable = false)
     private double grandTotal;
 
@@ -105,6 +120,14 @@ public class Order extends TenantEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    /**
+     * The trading day this sale belongs to, derived from createdAt on persist.
+     * Reporting keys off this rather than off createdAt so that an offline sale
+     * imported days later still lands on the day it was actually made.
+     */
+    @Column(name = "business_date")
+    private LocalDate businessDate;
+
     @Column(name = "offline_sold_at")
     private LocalDateTime offlineSoldAt;
 
@@ -120,7 +143,8 @@ public class Order extends TenantEntity {
 
     @PrePersist
     void onCreate() {
-        createdAt = LocalDateTime.now();
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (businessDate == null) businessDate = createdAt.toLocalDate();
         if (status == null) status = OrderStatus.COMPLETED;
     }
 }

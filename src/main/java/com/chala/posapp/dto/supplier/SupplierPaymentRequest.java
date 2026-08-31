@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.supplier;
 
+import com.chala.posapp.entity.CashSource;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -17,5 +18,7 @@ public class SupplierPaymentRequest {
     private BigDecimal amount;
 
     private String paymentMethod;
+    private CashSource cashSource;
+    private Long cashSourceBranchId;
     private String note;
 }

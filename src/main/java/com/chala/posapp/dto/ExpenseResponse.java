@@ -13,7 +13,9 @@ import java.time.LocalDateTime;
 public class ExpenseResponse {
     private Long id;
     private Double amount;
+    private Long expenseTypeId;
     private String category;
+    private boolean countInProfitReport;
     private String description;
     private Long branchId;
     private String branchName;

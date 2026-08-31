@@ -9,8 +9,9 @@ import java.time.LocalDateTime;
 @Table(
         name = "expenses",
         indexes = {
-                @Index(name = "idx_tenant_branch_shift_exp", columnList = "tenant_id, branch_id, shift_id"),
-                @Index(name = "idx_tenant_created_at_exp", columnList = "tenant_id, created_at")
+                @Index(name = "idx_branch_shift_exp", columnList = "branch_id, shift_id"),
+                @Index(name = "idx_created_at_exp", columnList = "created_at"),
+                @Index(name = "idx_expense_type_exp", columnList = "expense_type_id")
         }
 )
 @Getter @Setter
@@ -21,7 +22,7 @@ public class Expense extends TenantEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "shift_id", nullable = false)
+    @Column(name = "shift_id")
     private Long shiftId;
 
     @Column(name = "branch_id", nullable = false)
@@ -30,9 +31,14 @@ public class Expense extends TenantEntity {
     @Column(name = "cashier_user_id", nullable = false)
     private Long cashierUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private ExpenseCategory category;
+    @Column(name = "expense_type_id")
+    private Long expenseTypeId;
+
+    @Column(nullable = false, length = 120)
+    private String category;
+
+    @Column(name = "count_in_profit_report", nullable = false)
+    private boolean countInProfitReport;
 
     @Column(nullable = false)
     private double amount;

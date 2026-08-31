@@ -20,6 +20,7 @@ public class WarrantyClaimListResponse {
     private String invoiceNo;
     private String customerName;
     private String itemName;
+    private String altName;
     private String barcode;
     private WarrantyStatus warrantyStatus;
     private WarrantyClaimActionType actionType;

@@ -3,6 +3,7 @@ package com.chala.posapp.repository;
 import com.chala.posapp.entity.TenantSubscription;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -17,6 +18,18 @@ public interface TenantSubscriptionRepository extends JpaRepository<TenantSubscr
     boolean existsByTenantId(String tenantId);
 
     boolean existsByPlanId(Long planId);
+
+    long countByPlanId(Long planId);
+
+    List<TenantSubscription> findByPlanId(Long planId);
+
+    long countByBlockedTrue();
+
+    List<TenantSubscription> findByValidUntilBetween(LocalDateTime from, LocalDateTime to);
+
+    /** Shop counts per plan, for the panel's plan cards. Returns rows of {planId, count}. */
+    @Query("select ts.plan.id, count(ts) from TenantSubscription ts group by ts.plan.id")
+    List<Object[]> countGroupedByPlan();
 
     List<TenantSubscription> findByIsActiveTrue();
 

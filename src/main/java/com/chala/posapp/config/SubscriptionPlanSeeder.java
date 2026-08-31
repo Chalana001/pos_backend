@@ -3,9 +3,11 @@ package com.chala.posapp.config;
 import com.chala.posapp.entity.BillingCycle;
 import com.chala.posapp.entity.SubscriptionPlan;
 import com.chala.posapp.repository.SubscriptionPlanRepository;
+import com.chala.posapp.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -14,6 +16,7 @@ import java.util.Set;
 
 @Slf4j
 @Component
+@Order(2)
 @RequiredArgsConstructor
 public class SubscriptionPlanSeeder implements CommandLineRunner {
 
@@ -32,6 +35,10 @@ public class SubscriptionPlanSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        TenantContext.runWith("MASTER", this::syncPlans);
+    }
+
+    private void syncPlans() {
         log.info("Syncing subscription plans...");
 
         upsertPlan("FREE", "MONTHLY_DEMO", BillingCycle.MONTHLY, 0.0, 0.0, 1);

@@ -1,6 +1,7 @@
 package com.chala.posapp.dto.user;
 
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.util.validation.PasswordComplexity;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -13,8 +14,9 @@ public class CreateUserRequest {
     @Size(min = 3, max = 50)
     private String username;
 
+    // MISS-08: enforce password complexity (min 8 chars, uppercase, digit, special char)
     @NotBlank
-    @Size(min = 6, max = 100)
+    @PasswordComplexity
     private String password;
 
     @NotNull

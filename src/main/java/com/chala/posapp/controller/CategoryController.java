@@ -26,11 +26,29 @@ public class CategoryController {
         return ResponseEntity.ok(categories);
     }
 
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/single-parent")
+    public ResponseEntity<CategoryDto> getSingleCategoryParent() {
+        return ResponseEntity.ok(categoryService.getSingleCategoryParentDto());
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/single-categories")
+    public ResponseEntity<List<SubCategoryDto>> getSingleCategories() {
+        return ResponseEntity.ok(categoryService.getSingleCategories());
+    }
+
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @PostMapping()
     public ResponseEntity<CategoryDto> createCategory(@RequestBody CategoryRequest request) {
         CategoryDto createdCategory = categoryService.createCategory(request);
         return ResponseEntity.ok(createdCategory);
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/single-categories")
+    public ResponseEntity<SubCategoryDto> createSingleCategory(@RequestBody CategoryRequest request) {
+        return ResponseEntity.ok(categoryService.createSingleCategory(request));
     }
 
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER','CASHIER')")

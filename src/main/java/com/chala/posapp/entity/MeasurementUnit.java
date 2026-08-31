@@ -4,5 +4,7 @@ public enum MeasurementUnit {
     PCS,
     G,
     KG,
+    ML,
+    L,
     SERVICE
 }

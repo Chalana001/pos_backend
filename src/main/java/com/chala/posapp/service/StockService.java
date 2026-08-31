@@ -20,11 +20,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -41,36 +41,12 @@ public class StockService {
     private final StockBatchRepository stockBatchRepository;
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final GrnItemRepository grnItemRepository;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long enforceBranchAccess(Long branchId) {
-        User user = getLoggedUser();
-
-        if (isAdminLike(user)) {
-            return branchId;
-        }
-
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-
-        if (!user.getBranchId().equals(branchId)) {
-            throw new BadRequestException("Cannot access another branch");
-        }
-
-        return branchId;
-    }
+    // DUP-05 FIX: securityUtils.enforceBranchAccess() centralised in SecurityUtils
 
     public Page<StockResponseWithItems> listBranchStock(
             Long branchId,
@@ -81,7 +57,7 @@ public class StockService {
             int page,
             int size
     ) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = (allowedBranchId != null && allowedBranchId > 0) ? allowedBranchId : null;
         Pageable pageable = PageRequest.of(page, size);
         String normalizedStatus = stockStatus == null || stockStatus.isBlank()
@@ -101,7 +77,7 @@ public class StockService {
     }
 
     public List<LowStockResponse> lowStock(Long branchId) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
         return stockBatchRepository.findLowStockItems(filterBranchId);
     }
@@ -113,7 +89,7 @@ public class StockService {
             Long categoryId,
             Long subCategoryId
     ) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
         String normalizedStatus = stockStatus == null || stockStatus.isBlank()
                 ? "ALL"
@@ -129,7 +105,7 @@ public class StockService {
     }
 
     public StockItemDetailsResponse getItemDetails(Long branchId, Long itemId) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
 
         Item item = itemRepository.findById(itemId)
@@ -145,6 +121,7 @@ public class StockService {
                 .itemId(item.getId())
                 .barcode(item.getBarcode())
                 .itemName(item.getName())
+                .altName(item.getAltName())
                 .itemType(item.getItemType())
                 .defaultUnit(item.getDefaultUnit())
                 .reorderLevel(item.getReorderLevel())
@@ -169,7 +146,7 @@ public class StockService {
             int page,
             int size
     ) {
-        Long allowedBranchId = enforceBranchAccess(branchId);
+        Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
         itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
@@ -215,7 +192,7 @@ public class StockService {
                 .sellingPrice(batch.getSellingPrice())
                 .qty(batch.getQuantity())
                 .displayQty(QuantityConversionUtil.toDisplayQuantity(batch.getItem().getItemType(), batch.getItem().getDefaultUnit(), batch.getQuantity()))
-                .displayUnit(batch.getItem().getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : batch.getItem().getDefaultUnit())
+                .displayUnit(QuantityConversionUtil.primaryDisplayUnit(batch.getItem()))
                 .receivedAt(batch.getReceivedAt())
                 .expiry(batch.getExpireDate())
                 .build();

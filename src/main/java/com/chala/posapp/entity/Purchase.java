@@ -13,7 +13,7 @@ import java.util.List;
 @Table(
         name = "purchase",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "supplier_id", "invoice_no"})
+                @UniqueConstraint(columnNames = {"supplier_id", "invoice_no"})
         }
 )
 @Getter @Setter
@@ -47,6 +47,22 @@ public class Purchase extends TenantEntity {
     @Column(name = "payment_method", length = 30)
     private String paymentMethod;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cash_source", nullable = false, length = 40)
+    private CashSource cashSource;
+
+    @Column(name = "cash_shift_id")
+    private Long cashShiftId;
+
+    @Column(name = "cashier_user_id")
+    private Long cashierUserId;
+
+    @Column(name = "cash_source_amount", precision = 12, scale = 2)
+    private BigDecimal cashSourceAmount;
+
+    @Column(name = "cash_source_branch_id")
+    private Long cashSourceBranchId;
+
     @Column(precision = 12, scale = 2)
     private BigDecimal dueAmount;
 
@@ -70,6 +86,8 @@ public class Purchase extends TenantEntity {
         if (grandTotal == null) grandTotal = BigDecimal.ZERO;
         if (discountAmount == null) discountAmount = BigDecimal.ZERO;
         if (paidAmount == null) paidAmount = BigDecimal.ZERO;
+        if (cashSourceAmount == null) cashSourceAmount = paidAmount;
+        if (cashSource == null) cashSource = paidAmount.compareTo(BigDecimal.ZERO) > 0 ? CashSource.BRANCH_CASH : CashSource.NONE;
         if (dueAmount == null) dueAmount = BigDecimal.ZERO;
         if (status == null) status = PurchaseStatus.COMPLETED;
     }

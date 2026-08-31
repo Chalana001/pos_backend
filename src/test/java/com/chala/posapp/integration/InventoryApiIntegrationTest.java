@@ -4,12 +4,39 @@ import com.chala.posapp.entity.stock.StockBatch;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// Runs on real MySQL (not H2) — this test exercises the FULLTEXT-backed
+// item search (MATCH...AGAINST), which H2 cannot execute.
+@ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
+@Testcontainers(disabledWithoutDocker = true)
 class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
+
+    @Container
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+            .withDatabaseName("pos_master")
+            .withUsername("posapp")
+            .withPassword("posapp");
+
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", () ->
+                "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
+                + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
+        registry.add("spring.datasource.username", mysql::getUsername);
+        registry.add("spring.datasource.password", mysql::getPassword);
+    }
 
     @Test
     void branchUserCatalogStockAndTransferApisWork() throws Exception {
@@ -346,7 +373,8 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         StockBatch sourceBatch = firstBatchFor(fixture.mainBranch().getId(), itemId);
 
         JsonNode stockPage = getJson("/stock/branch/" + fixture.mainBranch().getId() + "?page=0&size=10", tenantId, managerToken);
-        assertEquals(10, stockPage.path("content").get(0).path("totalQuantity").asInt());
+        assertEquals(10000, stockPage.path("content").get(0).path("totalQuantity").asInt());
+        assertEquals(10.0, stockPage.path("content").get(0).path("displayQuantity").asDouble(), 0.001);
 
         JsonNode lowStock = getJson("/stock/low?branchId=" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertFalse(lowStock.isEmpty());
@@ -366,7 +394,8 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
                 }
                 """.formatted(fixture.mainBranch().getId(), itemId, sourceBatch.getId())
         );
-        assertEquals(-2, adjustment.path("qtyChange").asInt());
+        assertEquals(-2000, adjustment.path("qtyChange").asInt());
+        assertEquals(-2.0, adjustment.path("displayQtyChange").asDouble(), 0.001);
 
         JsonNode branchAdjustmentHistory = getJson("/stock-adjustments/branch/" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(1, branchAdjustmentHistory.size());
@@ -408,7 +437,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode receivedTransfer = postJson("/stock-transfers/" + firstTransferId + "/receive", tenantId, adminToken, "");
         assertEquals("COMPLETED", receivedTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(secondBranchId, itemId).size());
-        assertEquals(3, firstBatchFor(secondBranchId, itemId).getQuantity());
+        assertEquals(3000, firstBatchFor(secondBranchId, itemId).getQuantity());
 
         JsonNode secondTransfer = postJson(
                 "/stock-transfers",
@@ -433,7 +462,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         JsonNode receivedSecondTransfer = postJson("/stock-transfers/" + secondTransferId + "/receive", tenantId, adminToken, "");
         assertEquals("COMPLETED", receivedSecondTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(secondBranchId, itemId).size());
-        assertEquals(4, firstBatchFor(secondBranchId, itemId).getQuantity());
+        assertEquals(4000, firstBatchFor(secondBranchId, itemId).getQuantity());
 
         JsonNode thirdTransfer = postJson(
                 "/stock-transfers",
@@ -468,7 +497,7 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
         );
         assertEquals("CANCELED", canceledTransfer.path("status").asText());
         assertEquals(1, stockBatchRepository.findByBranchIdAndItemId(fixture.mainBranch().getId(), itemId).size());
-        assertEquals(4, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
+        assertEquals(4000, firstBatchFor(fixture.mainBranch().getId(), itemId).getQuantity());
 
         JsonNode outgoingTransfers = getJson("/stock-transfers/outgoing/" + fixture.mainBranch().getId(), tenantId, adminToken);
         assertEquals(3, outgoingTransfers.size());
@@ -490,5 +519,132 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
                 adminToken
         );
         assertTrue(posSearchAfterDeactivate.isEmpty());
+    }
+
+    @Test
+    void supplierDiscountIsAllocatedToBatchCostForProfitReports() throws Exception {
+        TenantFixture fixture = seedTenantShop(uniqueKey("disc"), 5);
+        String tenantId = fixture.tenantId();
+        String adminToken = login(tenantId, fixture.admin().getUsername(), DEFAULT_PASSWORD);
+
+        JsonNode category = postJson(
+                "/categories",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Beverages"
+                }
+                """
+        );
+        JsonNode subCategory = postJson(
+                "/categories/sub-categories",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Soft Drinks",
+                  "categoryId": %d
+                }
+                """.formatted(category.path("id").asLong())
+        );
+        JsonNode supplier = postJson(
+                "/suppliers",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "name": "Bottle Supplier",
+                  "phone": "0112223333",
+                  "active": true
+                }
+                """
+        );
+        JsonNode item = postJson(
+                "/items",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "barcode": "BOTTLE-DISC-001",
+                  "name": "Bima Bottle",
+                  "subCategoryId": %d,
+                  "costPrice": 92,
+                  "sellingPrice": 100,
+                  "reorderLevel": 5
+                }
+                """.formatted(subCategory.path("id").asLong())
+        );
+        long itemId = item.path("id").asLong();
+
+        JsonNode purchase = postJson(
+                "/purchases",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "supplierId": %d,
+                  "invoiceNo": "FREE-DISC-001",
+                  "discountAmount": 184,
+                  "branches": [
+                    {
+                      "branchId": %d,
+                      "items": [
+                        {
+                          "itemId": %d,
+                          "qty": 12,
+                          "costPrice": 92,
+                          "sellingPrice": 100
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """.formatted(supplier.path("id").asLong(), fixture.mainBranch().getId(), itemId)
+        );
+        assertEquals(920.0, purchase.path("grandTotal").asDouble(), 0.001);
+        assertEquals(184.0, purchase.path("discountAmount").asDouble(), 0.001);
+        assertEquals(76.67, purchase.path("grnList").get(0).path("items").get(0).path("costPrice").asDouble(), 0.001);
+        assertEquals(920.0, purchase.path("grnList").get(0).path("items").get(0).path("lineTotal").asDouble(), 0.001);
+
+        StockBatch batch = firstBatchFor(fixture.mainBranch().getId(), itemId);
+        assertEquals(12000, batch.getQuantity());
+        assertEquals(76.67, batch.getCostPrice().doubleValue(), 0.001);
+
+        JsonNode sale = postJson(
+                "/orders",
+                tenantId,
+                adminToken,
+                """
+                {
+                  "branchId": %d,
+                  "orderType": "CASH",
+                  "items": [
+                    {
+                      "itemId": %d,
+                      "batchId": %d,
+                      "qty": 1,
+                      "unitPrice": 100,
+                      "discountType": "NONE",
+                      "discountValue": 0
+                    }
+                  ],
+                  "billDiscount": 0,
+                  "paidAmount": 100,
+                  "paymentMethod": "CASH"
+                }
+                """.formatted(fixture.mainBranch().getId(), itemId, batch.getId())
+        );
+        assertEquals(100.0, sale.path("grandTotal").asDouble(), 0.001);
+        assertEquals(76.67, orderItemRepository.findByOrderId(sale.path("id").asLong()).get(0).getLineCost(), 0.001);
+
+        String today = java.time.LocalDate.now().toString();
+        JsonNode profitReport = getJson(
+                "/reports/profit?branchId=" + fixture.mainBranch().getId() + "&from=" + today + "&to=" + today + "&limit=10",
+                tenantId,
+                adminToken
+        );
+        assertFalse(profitReport.isEmpty());
+        assertEquals(23.33, profitReport.get(0).path("profit").asDouble(), 0.01);
     }
 }

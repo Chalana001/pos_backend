@@ -11,10 +11,10 @@ import java.util.List;
 @Table(
         name = "categories",
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"tenant_id", "name"})
+                @UniqueConstraint(columnNames = {"name"})
         },
         indexes = {
-                @Index(name = "idx_tenant_category_name", columnList = "tenant_id, name")
+                @Index(name = "idx_category_name", columnList = "name")
         }
 )
 @Getter

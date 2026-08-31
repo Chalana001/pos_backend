@@ -17,13 +17,18 @@ public class AppConfigurationController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping
-    public ResponseEntity<AppConfigurationResponse> getConfiguration() {
-        return ResponseEntity.ok(appConfigurationService.getConfiguration());
+    public ResponseEntity<AppConfigurationResponse> getConfiguration(
+            @RequestParam(name = "branchId", required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(appConfigurationService.getConfiguration(branchId));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PutMapping
-    public ResponseEntity<AppConfigurationResponse> updateConfiguration(@RequestBody AppConfigurationRequest request) {
-        return ResponseEntity.ok(appConfigurationService.updateConfiguration(request));
+    public ResponseEntity<AppConfigurationResponse> updateConfiguration(
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestBody AppConfigurationRequest request
+    ) {
+        return ResponseEntity.ok(appConfigurationService.updateConfiguration(branchId, request));
     }
 }

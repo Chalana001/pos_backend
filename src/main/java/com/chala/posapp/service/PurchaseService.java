@@ -8,6 +8,8 @@ import com.chala.posapp.dto.grn.GrnItemRequest;
 import com.chala.posapp.dto.grn.GrnItemResponse;
 import com.chala.posapp.dto.grn.GrnResponse;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.CashShift;
+import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.GRN;
 import com.chala.posapp.entity.GrnItem;
 import com.chala.posapp.entity.Item;
@@ -16,40 +18,49 @@ import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.entity.stock.StockAdjustment;
+import com.chala.posapp.entity.stock.StockAdjustmentType;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
+import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.GrnItemRepository;
 import com.chala.posapp.repository.GrnRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.PurchaseRepository;
+import com.chala.posapp.repository.PurchaseReturnRepository;
+import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
 import com.chala.posapp.repository.SupplierRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,43 +69,36 @@ import java.util.stream.Collectors;
 public class PurchaseService {
     private static final DateTimeFormatter PURCHASE_INVOICE_FORMAT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmssSSS");
+    private static final int MONEY_SCALE = 2;
+    private static final int UNIT_COST_SCALE = 6;
 
-    private final PurchaseRepository purchaseRepository;
-    private final GrnRepository grnRepository;
-    private final GrnItemRepository grnItemRepository;
-    private final ItemRepository itemRepository;
-    private final StockBatchRepository stockBatchRepository;
+    private final PurchaseRepository       purchaseRepository;
+    private final GrnRepository            grnRepository;
+    private final GrnItemRepository        grnItemRepository;
+    private final ItemRepository           itemRepository;
+    private final StockBatchRepository     stockBatchRepository;
+    private final PurchaseReturnRepository purchaseReturnRepository;
     private final BranchRepository branchRepository;
     private final SupplierRepository supplierRepository;
     private final GrnNumberService grnNumberService;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
+    private final CashShiftRepository cashShiftRepository;
+    private final StockAdjustmentRepository stockAdjustmentRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureCreateAccess(User user, List<BranchPurchaseRequest> branches) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
         if (user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
-        Long branchId = requireAssignedBranch(user);
+        Long branchId = securityUtils.requireAssignedBranch(user);
         boolean invalidBranchFound = branches.stream()
                 .map(BranchPurchaseRequest::getBranchId)
                 .anyMatch(requestBranchId -> !Objects.equals(branchId, requestBranchId));
@@ -104,14 +108,14 @@ public class PurchaseService {
     }
 
     private void ensurePurchaseAccess(User user, Purchase purchase) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
         if (user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Not allowed");
         }
 
-        Long branchId = requireAssignedBranch(user);
+        Long branchId = securityUtils.requireAssignedBranch(user);
         boolean invalidBranchFound = purchase.getGrnList().stream()
                 .map(grn -> grn.getBranch().getId())
                 .anyMatch(grnBranchId -> !Objects.equals(branchId, grnBranchId));
@@ -121,7 +125,7 @@ public class PurchaseService {
     }
 
     private boolean canAccessPurchase(User user, Purchase purchase) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return true;
         }
         if (user.getRole() != Role.MANAGER || user.getBranchId() == null) {
@@ -149,7 +153,7 @@ public class PurchaseService {
 
     @Transactional
     public PurchaseResponse createPurchase(CreatePurchaseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         ensureCreateAccess(user, request.getBranches());
         BigDecimal requestedPaidAmount = normalizeMoney(request.getPaidAmount());
         if (requestedPaidAmount.compareTo(BigDecimal.ZERO) < 0) {
@@ -165,18 +169,32 @@ public class PurchaseService {
 
         String invoiceNo = resolveInvoiceNo(request.getInvoiceNo());
 
+        String paymentMethod = normalizePaymentMethod(request.getPaymentMethod());
+
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
                 .invoiceNo(invoiceNo)
-                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
+                .paymentMethod(paymentMethod)
+                .cashSource(resolveCashSource(request.getCashSource(), requestedPaidAmount, paymentMethod))
                 .createdAt(LocalDateTime.now())
                 .grandTotal(BigDecimal.ZERO)
                 .status(PurchaseStatus.COMPLETED)
                 .build();
         Purchase savedPurchase = purchaseRepository.save(purchase);
 
-        BigDecimal grandTotal = BigDecimal.ZERO;
+        List<PreparedPurchaseLine> preparedLines = preparePurchaseLines(request);
+        BigDecimal grossTotal = preparedLines.stream()
+                .map(PreparedPurchaseLine::grossLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (discountAmount.compareTo(grossTotal) > 0) {
+            throw new BadRequestException("Discount amount cannot exceed purchase total");
+        }
+        applyDiscountAllocation(preparedLines, grossTotal, discountAmount);
+        Map<GrnItemRequest, PreparedPurchaseLine> preparedLineByRequest = preparedLines.stream()
+                .collect(Collectors.toMap(PreparedPurchaseLine::request, Function.identity()));
+
         List<GrnResponse> grnResponseList = new ArrayList<>();
+        BigDecimal netGrandTotal = BigDecimal.ZERO;
 
         for (BranchPurchaseRequest branchReq : request.getBranches()) {
             Branch branch = branchRepository.findById(branchReq.getBranchId())
@@ -201,26 +219,21 @@ public class PurchaseService {
             int index = 0;
 
             for (GrnItemRequest itemReq : branchReq.getItems()) {
+                PreparedPurchaseLine preparedLine = preparedLineByRequest.get(itemReq);
                 index++;
-                Item item = itemRepository.findById(itemReq.getItemId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+                Item item = preparedLine.item();
+                BigDecimal effectiveCostPrice = preparedLine.effectiveCostPrice();
+                BigDecimal netLineTotal = preparedLine.netLineTotal();
 
-                // ✅ සර්විස් අයිටම් එකක් GRN එකට දාන්න හැදුවොත් Block කරනවා
-                if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
-                    throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
-                }
-
-                item.setCostPrice(itemReq.getCostPrice());
+                item.setCostPrice(effectiveCostPrice);
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
-                // ✅ item.isWeightItem() වෙනුවට item.getItemType() පාවිච්චි කිරීම
-                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
-                        item.getItemType(),
-                        item.getDefaultUnit(),
-                        itemReq.getQty(),
-                        item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS
-                );
+                int normalizedQty = preparedLine.normalizedQty();
+
+                if (Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
+                    zeroOutNegativeStock(item, branch, user);
+                }
 
                 LocalDateTime expiry = itemReq.getExpiryDate() != null
                         ? itemReq.getExpiryDate().atStartOfDay()
@@ -233,50 +246,54 @@ public class PurchaseService {
                         .supplier(supplier)
                         .quantity(normalizedQty)
                         .originalQuantity(normalizedQty)
-                        .costPrice(itemReq.getCostPrice())
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
+                        .sourceType(StockBatchSourceType.PURCHASE)
                         .batchCode(batchCode)
                         .receivedAt(LocalDateTime.now())
                         .expireDate(expiry)
                         .build();
                 stockBatchRepository.save(batch);
 
-                BigDecimal lineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
-
                 GrnItem grnItem = GrnItem.builder()
                         .grn(savedGrn)
                         .item(item)
                         .qty(normalizedQty)
                         .displayQty(itemReq.getQty().stripTrailingZeros())
-                        .qtyUnit(item.getItemType() == ItemType.WEIGHT ? MeasurementUnit.KG : MeasurementUnit.PCS)
-                        .costPrice(itemReq.getCostPrice())
+                        .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                                : QuantityConversionUtil.primaryDisplayUnit(item))
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
-                        .amount(lineTotal)
+                        .amount(netLineTotal)
                         .build();
                 grnItems.add(grnItem);
 
-                grnTotal = grnTotal.add(lineTotal);
+                grnTotal = grnTotal.add(netLineTotal);
 
                 itemResponses.add(GrnItemResponse.builder()
+                        .id(grnItem.getId())
                         .itemId(item.getId())
                         .itemName(item.getName())
+                        .altName(item.getAltName())
                         .barcode(item.getBarcode())
                         .qty(grnItem.getDisplayQty())
                         .qtyUnit(grnItem.getQtyUnit())
-                        .costPrice(itemReq.getCostPrice())
+                        .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
-                        .lineTotal(lineTotal)
+                        .lineTotal(netLineTotal)
                         .build());
             }
 
             grnItemRepository.saveAll(grnItems);
             savedGrn.setTotalAmount(grnTotal);
             grnRepository.save(savedGrn);
-            grandTotal = grandTotal.add(grnTotal);
+            netGrandTotal = netGrandTotal.add(grnTotal);
 
             grnResponseList.add(GrnResponse.builder()
                     .id(savedGrn.getId())
                     .grnNo(savedGrn.getGrnNo())
+                    .branchId(branch.getId())
                     .branchName(branch.getName())
                     .supplierName(supplier.getName())
                     .totalAmount(grnTotal)
@@ -286,25 +303,26 @@ public class PurchaseService {
                     .build());
         }
 
-        savedPurchase.setGrandTotal(grandTotal);
-        if (discountAmount.compareTo(grandTotal) > 0) {
-            throw new BadRequestException("Discount amount cannot exceed purchase total");
-        }
-        BigDecimal netTotal = grandTotal.subtract(discountAmount);
-        if (requestedPaidAmount.compareTo(netTotal) > 0) {
+        if (requestedPaidAmount.compareTo(netGrandTotal) > 0) {
             throw new BadRequestException("Paid amount cannot exceed purchase total");
         }
-        BigDecimal dueAmount = netTotal.subtract(requestedPaidAmount);
+        BigDecimal dueAmount = netGrandTotal.subtract(requestedPaidAmount);
         savedPurchase.setDiscountAmount(discountAmount);
-        savedPurchase.setGrandTotal(netTotal);
+        savedPurchase.setGrandTotal(netGrandTotal);
         savedPurchase.setPaidAmount(requestedPaidAmount);
         savedPurchase.setDueAmount(dueAmount);
+        savedPurchase.setCashSourceAmount(requestedPaidAmount);
+        applyDrawerCashOutIfNeeded(savedPurchase, requestedPaidAmount, user, request);
         purchaseRepository.save(savedPurchase);
 
         if (dueAmount.compareTo(BigDecimal.ZERO) > 0) {
             supplier.setDueAmount(normalizeMoney(supplier.getDueAmount()).add(dueAmount));
             supplierRepository.save(supplier);
         }
+
+        // Receiving goods moves stock and changes what is owed to the supplier. Neither
+        // report-top-suppliers nor report-inventory-val had any eviction before this.
+        reportCacheInvalidator.procurementChanged();
 
         return PurchaseResponse.builder()
                 .purchaseId(savedPurchase.getId())
@@ -315,6 +333,11 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(savedPurchase.getDiscountAmount()))
                 .paidAmount(savedPurchase.getPaidAmount())
                 .paymentMethod(savedPurchase.getPaymentMethod())
+                .cashSource(savedPurchase.getCashSource())
+                .cashShiftId(savedPurchase.getCashShiftId())
+                .cashierUserId(savedPurchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(savedPurchase.getCashSourceAmount()))
+                .cashSourceBranchId(savedPurchase.getCashSourceBranchId())
                 .dueAmount(savedPurchase.getDueAmount())
                 .status(normalizeStatus(savedPurchase))
                 .cancelReason(savedPurchase.getCancelReason())
@@ -337,12 +360,12 @@ public class PurchaseService {
             int page,
             int size
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Pageable pageable = PageRequest.of(page, size);
         String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
         LocalDateTime fromDateTime = from != null ? from.atStartOfDay() : null;
         LocalDateTime toDateTime = to != null ? to.atTime(LocalTime.MAX) : null;
-        Long managerBranchId = isAdminLike(user) ? null : requireAssignedBranch(user);
+        Long managerBranchId = securityUtils.isAdminLike(user) ? null : securityUtils.requireAssignedBranch(user);
 
         Page<Purchase> purchasePage = purchaseRepository.findHistory(
                 normalizedSearch,
@@ -367,6 +390,11 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
                 .paymentMethod(purchase.getPaymentMethod())
+                .cashSource(purchase.getCashSource())
+                .cashShiftId(purchase.getCashShiftId())
+                .cashierUserId(purchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(purchase.getCashSourceAmount()))
+                .cashSourceBranchId(purchase.getCashSourceBranchId())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
@@ -377,7 +405,7 @@ public class PurchaseService {
     }
 
     public PurchaseResponse getPurchaseById(Long id) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
@@ -389,8 +417,10 @@ public class PurchaseService {
 
                     List<GrnItemResponse> itemResponses = dbItems.stream()
                             .map(item -> GrnItemResponse.builder()
+                                    .id(item.getId())
                                     .itemId(item.getItem().getId())
                                     .itemName(item.getItem().getName())
+                                    .altName(item.getItem().getAltName())
                                     .barcode(item.getItem().getBarcode())
                                     .qty(item.getDisplayQty())
                                     .qtyUnit(item.getQtyUnit())
@@ -403,12 +433,21 @@ public class PurchaseService {
                     return GrnResponse.builder()
                             .id(grn.getId())
                             .grnNo(grn.getGrnNo())
+                            .branchId(grn.getBranch().getId())
                             .branchName(grn.getBranch().getName())
                             .totalAmount(grn.getTotalAmount())
                             .items(itemResponses)
                             .build();
                 })
                 .collect(Collectors.toList());
+
+        // Return summary
+        long returnCount = purchaseReturnRepository.countByPurchaseId(purchase.getId());
+        BigDecimal totalReturnedAmount = purchaseReturnRepository
+                .findByPurchaseIdOrderByCreatedAtDesc(purchase.getId())
+                .stream()
+                .map(r -> r.getTotalReturnAmount() == null ? BigDecimal.ZERO : r.getTotalReturnAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return PurchaseResponse.builder()
                 .purchaseId(purchase.getId())
@@ -419,18 +458,26 @@ public class PurchaseService {
                 .discountAmount(normalizeMoney(purchase.getDiscountAmount()))
                 .paidAmount(normalizeMoney(purchase.getPaidAmount()))
                 .paymentMethod(purchase.getPaymentMethod())
+                .cashSource(purchase.getCashSource())
+                .cashShiftId(purchase.getCashShiftId())
+                .cashierUserId(purchase.getCashierUserId())
+                .cashSourceAmount(normalizeMoney(purchase.getCashSourceAmount()))
+                .cashSourceBranchId(purchase.getCashSourceBranchId())
                 .dueAmount(normalizeMoney(purchase.getDueAmount()))
                 .status(normalizeStatus(purchase))
                 .cancelReason(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCancelReason() : null)
                 .createdAt(purchase.getCreatedAt())
                 .canceledAt(normalizeStatus(purchase) == PurchaseStatus.CANCELED ? purchase.getCanceledAt() : null)
                 .grnList(grnList)
+                .hasReturns(returnCount > 0)
+                .returnCount((int) returnCount)
+                .totalReturnedAmount(totalReturnedAmount)
                 .build();
     }
 
     @Transactional
     public PurchaseResponse cancelPurchase(Long purchaseId, CancelPurchaseRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
@@ -459,6 +506,7 @@ public class PurchaseService {
         }
 
         stockBatchRepository.deleteAll(batchesToDelete);
+        reverseDrawerCashOutIfOpen(purchase);
         BigDecimal purchaseDue = normalizeMoney(purchase.getDueAmount());
         if (purchaseDue.compareTo(BigDecimal.ZERO) > 0) {
             Supplier supplier = purchase.getSupplier();
@@ -477,6 +525,222 @@ public class PurchaseService {
 
     private BigDecimal normalizeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private CashSource resolveCashSource(CashSource requestedCashSource, BigDecimal paidAmount, String paymentMethod) {
+        if (paidAmount == null || paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return CashSource.NONE;
+        }
+        if (!"CASH".equals(paymentMethod)) {
+            return "BANK".equals(paymentMethod) ? CashSource.BANK : CashSource.NONE;
+        }
+        return requestedCashSource == null || requestedCashSource == CashSource.NONE
+                ? CashSource.BRANCH_CASH
+                : requestedCashSource;
+    }
+
+    private void applyDrawerCashOutIfNeeded(Purchase purchase, BigDecimal paidAmount, User user, CreatePurchaseRequest request) {
+        if (purchase.getCashSource() != CashSource.CASH_DRAWER || paidAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+
+        Long branchId = resolveDrawerBranchId(user, request);
+        CashShift shift = cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(branchId, user.getId(), ShiftStatus.OPEN)
+                .orElseThrow(() -> new BadRequestException("An open shift is required when purchase payment comes from the cash drawer"));
+
+        double amount = paidAmount.doubleValue();
+        shift.setTotalExpenses(shift.getTotalExpenses() + amount);
+        cashShiftRepository.save(shift);
+        purchase.setCashShiftId(shift.getId());
+        purchase.setCashierUserId(user.getId());
+        purchase.setCashSourceBranchId(branchId);
+    }
+
+    private Long resolveDrawerBranchId(User user, CreatePurchaseRequest request) {
+        if (!securityUtils.isAdminLike(user)) {
+            return securityUtils.requireAssignedBranch(user);
+        }
+
+        List<Long> purchaseBranchIds = request.getBranches().stream()
+                .map(BranchPurchaseRequest::getBranchId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (purchaseBranchIds.isEmpty()) {
+            throw new BadRequestException("Purchase branch is required for cash drawer source");
+        }
+
+        Long requestedBranchId = request.getCashSourceBranchId();
+        if (requestedBranchId == null || requestedBranchId == 0) {
+            if (purchaseBranchIds.size() == 1) {
+                return purchaseBranchIds.get(0);
+            }
+            throw new BadRequestException("Drawer branch is required when a cash drawer purchase is split across multiple branches");
+        }
+
+        if (!purchaseBranchIds.contains(requestedBranchId)) {
+            throw new BadRequestException("Drawer branch must be one of the purchase branches");
+        }
+        return requestedBranchId;
+    }
+
+    private void reverseDrawerCashOutIfOpen(Purchase purchase) {
+        if (purchase.getCashSource() != CashSource.CASH_DRAWER || purchase.getCashShiftId() == null) {
+            return;
+        }
+
+        CashShift shift = cashShiftRepository.findById(purchase.getCashShiftId())
+                .orElseThrow(() -> new ResourceNotFoundException("Linked cash shift not found"));
+        if (shift.getStatus() != ShiftStatus.OPEN) {
+            throw new BadRequestException("Cannot cancel purchase because its drawer payment belongs to a closed shift");
+        }
+
+        double amount = normalizeMoney(purchase.getCashSourceAmount()).doubleValue();
+        shift.setTotalExpenses(Math.max(0, shift.getTotalExpenses() - amount));
+        cashShiftRepository.save(shift);
+    }
+
+    private void zeroOutNegativeStock(Item item, Branch branch, User user) {
+        List<StockBatch> negativeBatches = stockBatchRepository
+                .findByBranchIdAndItemIdAndQuantityLessThan(branch.getId(), item.getId(), 0);
+
+        for (StockBatch negativeBatch : negativeBatches) {
+            int qtyChange = -negativeBatch.getQuantity();
+            negativeBatch.setQuantity(0);
+            stockBatchRepository.save(negativeBatch);
+
+            StockAdjustment adjustment = StockAdjustment.builder()
+                    .branchId(branch.getId())
+                    .itemId(item.getId())
+                    .type(StockAdjustmentType.MANUAL)
+                    .qtyChange(qtyChange)
+                    .displayQtyChange(QuantityConversionUtil.toDisplayQuantity(item, qtyChange))
+                    .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                            ? QuantityConversionUtil.primaryDisplayUnit(item)
+                            : item.getDefaultUnit())
+                    .reason("Negative stock corrected before purchase")
+                    .userId(user.getId())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            stockAdjustmentRepository.save(adjustment);
+        }
+    }
+
+    private List<PreparedPurchaseLine> preparePurchaseLines(CreatePurchaseRequest request) {
+        List<PreparedPurchaseLine> preparedLines = new ArrayList<>();
+
+        for (BranchPurchaseRequest branchReq : request.getBranches()) {
+            if (branchReq.getItems() == null || branchReq.getItems().isEmpty()) {
+                continue;
+            }
+
+            for (GrnItemRequest itemReq : branchReq.getItems()) {
+                Item item = itemRepository.findById(itemReq.getItemId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
+
+                if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
+                    throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
+                }
+
+                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
+                        item.getItemType(),
+                        item.getDefaultUnit(),
+                        itemReq.getQty(),
+                        QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                                : QuantityConversionUtil.primaryDisplayUnit(item)
+                );
+                BigDecimal grossLineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
+                preparedLines.add(new PreparedPurchaseLine(itemReq, item, normalizedQty, grossLineTotal));
+            }
+        }
+
+        return preparedLines;
+    }
+
+    private void applyDiscountAllocation(List<PreparedPurchaseLine> preparedLines, BigDecimal grossTotal, BigDecimal discountAmount) {
+        if (preparedLines.isEmpty()) {
+            return;
+        }
+
+        if (discountAmount.compareTo(BigDecimal.ZERO) == 0 || grossTotal.compareTo(BigDecimal.ZERO) == 0) {
+            preparedLines.forEach(line -> line.applyDiscount(BigDecimal.ZERO));
+            return;
+        }
+
+        BigDecimal allocatedDiscount = BigDecimal.ZERO;
+        for (int i = 0; i < preparedLines.size(); i++) {
+            PreparedPurchaseLine line = preparedLines.get(i);
+            BigDecimal lineDiscount = i == preparedLines.size() - 1
+                    ? discountAmount.subtract(allocatedDiscount)
+                    : discountAmount
+                    .multiply(line.grossLineTotal())
+                    .divide(grossTotal, MONEY_SCALE, RoundingMode.HALF_UP);
+
+            if (lineDiscount.compareTo(line.grossLineTotal()) > 0) {
+                lineDiscount = line.grossLineTotal();
+            }
+            allocatedDiscount = allocatedDiscount.add(lineDiscount);
+            line.applyDiscount(lineDiscount);
+        }
+    }
+
+    private static BigDecimal effectiveUnitCost(Item item, BigDecimal netLineTotal, int normalizedQty) {
+        if (normalizedQty <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal baseUnitsPerPrimaryUnit = BigDecimal.valueOf(1000);
+        return netLineTotal
+                .multiply(baseUnitsPerPrimaryUnit)
+                .divide(BigDecimal.valueOf(normalizedQty), UNIT_COST_SCALE, RoundingMode.HALF_UP)
+                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    private static final class PreparedPurchaseLine {
+        private final GrnItemRequest request;
+        private final Item item;
+        private final int normalizedQty;
+        private final BigDecimal grossLineTotal;
+        private BigDecimal netLineTotal;
+        private BigDecimal effectiveCostPrice;
+
+        private PreparedPurchaseLine(GrnItemRequest request, Item item, int normalizedQty, BigDecimal grossLineTotal) {
+            this.request = request;
+            this.item = item;
+            this.normalizedQty = normalizedQty;
+            this.grossLineTotal = grossLineTotal;
+            applyDiscount(BigDecimal.ZERO);
+        }
+
+        private GrnItemRequest request() {
+            return request;
+        }
+
+        private Item item() {
+            return item;
+        }
+
+        private int normalizedQty() {
+            return normalizedQty;
+        }
+
+        private BigDecimal grossLineTotal() {
+            return grossLineTotal;
+        }
+
+        private BigDecimal netLineTotal() {
+            return netLineTotal;
+        }
+
+        private BigDecimal effectiveCostPrice() {
+            return effectiveCostPrice;
+        }
+
+        private void applyDiscount(BigDecimal discount) {
+            this.netLineTotal = grossLineTotal.subtract(discount).max(BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+            this.effectiveCostPrice = effectiveUnitCost(item, netLineTotal, normalizedQty);
+        }
     }
 
     private String normalizePaymentMethod(String paymentMethod) {

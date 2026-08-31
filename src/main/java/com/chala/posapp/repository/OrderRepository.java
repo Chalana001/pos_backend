@@ -4,6 +4,7 @@ import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.domain.Page;
@@ -19,6 +20,19 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByClientSaleId(String clientSaleId);
 
     long countByBranchId(Long branchId);
+
+    @Modifying
+    @Query("""
+        UPDATE Order o
+        SET o.createdAt = o.offlineSoldAt
+        WHERE o.branchId = :branchId
+          AND o.offlineImported = true
+          AND o.offlineSoldAt IS NOT NULL
+          AND o.clientSaleId LIKE 'legacy:%'
+    """)
+    int repairLegacyImportedCreatedAt(
+            @Param("branchId") Long branchId
+    );
 
     @Query("""
         SELECT COALESCE(SUM(
@@ -78,7 +92,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
         FROM Order o
         LEFT JOIN Customer c ON c.id = o.customerId
         LEFT JOIN User u ON u.id = o.cashierUserId
-        WHERE (:branchId IS NULL OR o.branchId = :branchId)
+        WHERE (:branchId IS NULL OR :branchId = 0 OR o.branchId = :branchId)
           AND (:search IS NULL OR :search = ''
                OR LOWER(o.invoiceNo) LIKE LOWER(CONCAT('%', :search, '%'))
                OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))

@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.receipt;
 
+import com.chala.posapp.entity.ItemNameSource;
 import com.chala.posapp.entity.PrintTemplateType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -36,9 +37,17 @@ public class ReceiptSettingsResponse {
     private boolean showThanksMessage;
     private boolean showCredits;
     private int logoWidthPercent;
+    private int logoTopSpacing;
     private int invoiceLogoWidthPercent;
+    private String receiptFontFamily;
     private int paperWidthMm;
+    private boolean directPrintEnabled;
+    private String printerName;
+    private int printerCopies;
     private String thanksMessage;
     private String creditsLine1;
     private String creditsLine2;
+    private ItemNameSource itemNameSource;
+    private String templateLines;
+    private String currencySymbol;
 }

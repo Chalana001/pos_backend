@@ -9,23 +9,31 @@ import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.order.OrderItemResponse;
 import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
+import com.chala.posapp.dto.order.StockShortageIssue;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.entity.stock.StockBatch;
+import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.exception.StockOverrideRequiredException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.audit.Audited;
+import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -43,7 +51,7 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final OrderItemStockUsageRepository orderItemStockUsageRepository;
     private final ItemRepository itemRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final InvoiceService invoiceService;
     private final CustomerRepository customerRepository;
     private final CashShiftRepository cashShiftRepository;
@@ -58,35 +66,35 @@ public class OrderService {
     private final CreditPaymentRepository creditPaymentRepository;
     private final WarrantyRepository warrantyRepository;
     private final AppConfigurationService appConfigurationService;
+    private final PromotionService promotionService;
+    private final StockOverrideAuditRepository stockOverrideAuditRepository;
+    private final PlatformTransactionManager transactionManager;
+    private final UserRepository userRepository;
+    private final OrderReturnRepository orderReturnRepository;
+    private final ReportCacheInvalidator reportCacheInvalidator;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureBranchAccess(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Cannot access another branch");
         }
     }
 
+    // Cache eviction is NOT annotated here. It used to be, and importOfflineSale() calls
+    // createOrderInternal() directly — so every sale synced back from an offline till
+    // walked straight past it and invalidated nothing. reportCacheInvalidator is called
+    // from createOrderInternal instead, which both paths go through.
+    // MISS-03: Audit every sale creation
+    @Audited(entity = "ORDER", action = "CREATE",
+             summaryExpression = "'Branch ' + #request.branchId + ' | items=' + #request.items.size()")
     @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
         return createOrderInternal(request, null);
@@ -94,7 +102,7 @@ public class OrderService {
 
     @Transactional
     public OfflineSaleImportResponse importOfflineSale(OfflineSaleImportRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER && user.getRole() != Role.CASHIER) {
             throw new BadRequestException("Not allowed");
         }
@@ -131,7 +139,12 @@ public class OrderService {
 
         OrderResponse response = createOrderInternal(
                 createOrderRequest,
-                new OfflineOrderMetadata(request.getClientSaleId(), request.getOfflineSoldAt())
+                new OfflineOrderMetadata(
+                        request.getClientSaleId(),
+                        request.getOfflineSoldAt(),
+                        request.getInvoiceNo(),
+                        request.getOfflineCashierUserId()
+                )
         );
 
         return OfflineSaleImportResponse.builder()
@@ -143,12 +156,27 @@ public class OrderService {
                 .build();
     }
 
-    @Transactional
+    /**
+     * Import many queued sales, each standing or falling on its own.
+     *
+     * This used to be @Transactional and call this.importOfflineSale() directly. Spring's
+     * transaction advice lives on the proxy, so a self-invocation never opened the inner
+     * transaction the annotation promised and every row shared one — the per-row
+     * success/failure this returns described an isolation the code did not have, and a
+     * failed row's partial work stayed in the same persistence context until commit.
+     *
+     * Each row now runs in its own REQUIRES_NEW transaction through the transaction
+     * manager, which does not depend on going through the proxy. A row that fails rolls
+     * back only itself.
+     */
     public List<OfflineSaleImportResponse> importOfflineSales(List<OfflineSaleImportRequest> requests) {
+        TransactionTemplate perRowTransaction = new TransactionTemplate(transactionManager);
+        perRowTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
         List<OfflineSaleImportResponse> results = new ArrayList<>();
         for (OfflineSaleImportRequest request : requests) {
             try {
-                results.add(importOfflineSale(request));
+                results.add(perRowTransaction.execute(status -> importOfflineSale(request)));
             } catch (Exception exception) {
                 results.add(OfflineSaleImportResponse.builder()
                         .clientSaleId(request.getClientSaleId())
@@ -161,11 +189,11 @@ public class OrderService {
     }
 
     private OrderResponse createOrderInternal(CreateOrderRequest request, OfflineOrderMetadata offlineOrderMetadata) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Long branchId;
         if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {
-            branchId = requireAssignedBranch(user);
+            branchId = securityUtils.requireAssignedBranch(user);
             if (request.getBranchId() != null && !branchId.equals(request.getBranchId())) {
                 throw new BadRequestException("Cannot create orders for another branch");
             }
@@ -178,51 +206,125 @@ public class OrderService {
             throw new BadRequestException("Order items required");
         }
 
+        // An imported sale belongs to the cashier who made it, not to whoever pressed
+        // import. Attributing it to the importer also sent the cash to the wrong drawer,
+        // because addCashSaleToOpenShift resolves the shift by this same id.
+        Long cashierUserId = user.getId();
+        if (offlineOrderMetadata != null && offlineOrderMetadata.cashierUserId != null) {
+            User offlineCashier = userRepository.findById(offlineOrderMetadata.cashierUserId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Offline cashier not found: " + offlineOrderMetadata.cashierUserId));
+            if (offlineCashier.getBranchId() != null && !branchId.equals(offlineCashier.getBranchId())) {
+                throw new BadRequestException("Offline cashier belongs to another branch");
+            }
+            cashierUserId = offlineCashier.getId();
+        }
+
+        if (offlineOrderMetadata != null) {
+            // The cash from this sale has to land in a real drawer. Silently dropping it
+            // when nothing is open — which is what ifPresent did — is how offline revenue
+            // went missing. The queue page gates on this too, against the same rule.
+            final Long shiftCashierUserId = cashierUserId;
+            cashShiftRepository
+                    .findByBranchIdAndCashierUserIdAndStatus(branchId, shiftCashierUserId, ShiftStatus.OPEN)
+                    .orElseThrow(() -> new BadRequestException(
+                            "No open shift for the cashier who made this sale. Open a shift for them at this branch before importing."));
+        }
+
         SaleMode saleMode = request.getSaleMode() == null ? SaleMode.TAKEAWAY : request.getSaleMode();
         DiningTable diningTable = resolveDiningTable(user, branchId, saleMode, request.getTableId());
 
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
 
-        String invoiceNo = invoiceService.generateInvoiceNo(branchId);
+        // An offline sale was already printed with a number the customer is holding.
+        // Generating a fresh one here meant that receipt matched nothing in the system,
+        // so a return could not be looked up from it.
+        String invoiceNo = offlineOrderMetadata != null
+                && offlineOrderMetadata.invoiceNo != null
+                && !offlineOrderMetadata.invoiceNo.isBlank()
+                ? offlineOrderMetadata.invoiceNo.trim()
+                : invoiceService.generateInvoiceNo(branchId);
 
         double subTotal = 0;
+        double promotionDiscountTotal = 0;
+        // The moment the sale actually happened: the queued timestamp for an offline
+        // import, now for a live checkout. Promotions were already evaluated against
+        // this, and created_at now uses it too — otherwise a sale made during an outage
+        // is booked on the day it was pushed rather than the day it was made.
+        // imported_at remains the record of when it reached the server.
+        LocalDateTime soldAt = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
+                ? offlineOrderMetadata.offlineSoldAt
+                : LocalDateTime.now();
+        // Promotions are deliberately NOT applied to an imported offline sale.
+        //
+        // The till was offline when it priced this. It could not know which promotions
+        // were running, so it charged and PRINTED list price, and that is what the
+        // customer handed over. Applying a discount here would make the ledger disagree
+        // with the receipt in their hand and book a discount nobody received — and
+        // min(paidAmount, grandTotal) below would quietly absorb the difference as change
+        // that was never given, showing up only as an unexplained cash surplus at day end.
+        //
+        // The alternative — caching promotions and pricing them in the browser — means a
+        // second implementation of scopes, targets, caps, priority and best-of selection.
+        // Any drift between the two reintroduces exactly this mismatch, so the sale is
+        // banked at the price it was actually sold for instead.
+        List<Promotion> activePromotions = offlineOrderMetadata != null
+                ? List.of()
+                : promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
+        StockOverrideContext stockOverrideContext =
+                buildStockOverrideContext(request, user, offlineOrderMetadata != null);
 
         for (OrderItemRequest itemReq : request.getItems()) {
-            validateWarrantySelection(itemReq);
+            validateWarrantySelection(itemReq, user.getRole(), branchId);
             Item item = itemRepository.findById(itemReq.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemReq.getItemId()));
 
             if (!item.isActive()) {
                 throw new BadRequestException("Item is inactive: " + item.getBarcode());
             }
-            if (!appConfigurationService.isItemTypeEnabled(item.getItemType())) {
+            if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
                 throw new BadRequestException(item.getItemType().name() + " items are disabled in app configuration");
             }
 
-            int normalizedQty = QuantityConversionUtil.normalizeQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
+            int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
             StockConsumptionResult consumption = consumeStockForSale(
                     branchId,
                     item,
                     itemReq,
                     normalizedQty,
                     batchesToUpdate,
-                    offlineOrderMetadata != null
+                    stockOverrideContext
             );
 
             double unitPrice = itemReq.getUnitPrice();
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
+            PromotionApplication promotionApplication = promotionService.calculateBestDiscount(
+                    item,
+                    branchId,
+                    unitPrice,
+                    normalizedQty,
+                    discountType,
+                    discountValue,
+                    activePromotions
+            );
+            discountType = promotionApplication.discountType();
+            discountValue = promotionApplication.discountValue();
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
             double lineTotal = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(finalUnitPrice), normalizedQty).doubleValue();
+            if (promotionApplication.promotionApplied()) {
+                promotionDiscountTotal += promotionApplication.promotionDiscountAmount();
+            }
 
             OrderItem orderItem = OrderItem.builder()
                     .itemId(item.getId())
                     .batchId(consumption.primaryBatchId)
                     .barcode(item.getBarcode())
                     .itemName(item.getName())
+                    .altName(item.getAltName())
                     .itemType(item.getItemType())
                     .qty(normalizedQty)
                     .displayQty(itemReq.getQty().stripTrailingZeros())
@@ -231,6 +333,9 @@ public class OrderService {
                     .costPrice(consumption.unitCost)
                     .discountType(discountType)
                     .discountValue(discountValue)
+                    .promotionId(promotionApplication.promotionApplied() ? promotionApplication.promotionId() : null)
+                    .promotionName(promotionApplication.promotionApplied() ? promotionApplication.promotionName() : null)
+                    .promotionDiscountAmount(promotionApplication.promotionApplied() ? promotionApplication.promotionDiscountAmount() : 0.0)
                     .finalUnitPrice(finalUnitPrice)
                     .lineCost(consumption.lineCost)
                     .lineTotal(lineTotal)
@@ -239,13 +344,24 @@ public class OrderService {
                     .warrantyPeriodUnit(itemReq.getWarrantyPeriodUnit())
                     .build();
 
-            preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages));
+            preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages, consumption.overrides));
             subTotal += lineTotal;
         }
 
         double billDiscount = request.getBillDiscount();
         if (billDiscount < 0) billDiscount = 0;
         if (billDiscount > subTotal) billDiscount = subTotal;
+        PromotionOrderApplication billPromotionApplication = promotionService.calculateBestOrderDiscount(
+                branchId,
+                request.getCustomerId(),
+                subTotal,
+                billDiscount,
+                activePromotions
+        );
+        billDiscount = billPromotionApplication.appliedDiscountAmount();
+        if (billPromotionApplication.promotionApplied()) {
+            promotionDiscountTotal += billPromotionApplication.promotionDiscountAmount();
+        }
 
         double grandTotal = roundRupee(subTotal - billDiscount);
         double paidAmount = request.getPaidAmount();
@@ -300,7 +416,7 @@ public class OrderService {
                 .receiptBranchAddress(branch.getAddress())
                 .receiptBranchPhone(branch.getPhone())
                 .receiptBranchLogo(branch.getLogo())
-                .cashierUserId(user.getId())
+                .cashierUserId(cashierUserId)
                 .customerId(request.getCustomerId())
                 .orderType(effectiveOrderType)
                 .paymentMethod(paymentMethod)
@@ -310,13 +426,19 @@ public class OrderService {
                 .status(OrderStatus.COMPLETED)
                 .subTotal(subTotal)
                 .billDiscount(billDiscount)
+                .promotionDiscountTotal(promotionDiscountTotal)
+                .billPromotionId(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionId() : null)
+                .billPromotionName(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionName() : null)
+                .billPromotionDiscountAmount(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionDiscountAmount() : 0.0)
                 .grandTotal(grandTotal)
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
                 .salePaidAmount(paidTowardSale)
                 .saleDueAmount(dueAmount)
                 .note(request.getNote())
-                .createdAt(LocalDateTime.now())
+                // businessDate is derived from this in Order's @PrePersist, so every
+                // path that builds an Order gets the same rule.
+                .createdAt(soldAt)
                 .offlineSoldAt(offlineOrderMetadata != null ? offlineOrderMetadata.offlineSoldAt : null)
                 .importedAt(offlineOrderMetadata != null ? LocalDateTime.now() : null)
                 .offlineImported(offlineOrderMetadata != null)
@@ -346,6 +468,34 @@ public class OrderService {
             orderItemStockUsageRepository.saveAll(usagesToSave);
         }
 
+        List<StockOverrideAudit> overrideAuditsToSave = new ArrayList<>();
+        for (int i = 0; i < savedOrderItems.size(); i++) {
+            OrderItem savedOrderItem = savedOrderItems.get(i);
+            for (StockOverrideDraft override : preparedItems.get(i).overrides) {
+                overrideAuditsToSave.add(StockOverrideAudit.builder()
+                        .orderId(savedOrder.getId())
+                        .orderItemId(savedOrderItem.getId())
+                        .branchId(branchId)
+                        .saleItemId(override.saleItemId)
+                        .saleItemName(override.saleItemName)
+                        .stockItemId(override.stockItemId)
+                        .stockItemName(override.stockItemName)
+                        .batchId(override.batchId)
+                        .requiredQuantity(override.requiredQuantity)
+                        .availableQuantity(override.availableQuantity)
+                        .shortageQuantity(override.shortageQuantity)
+                        .qtyUnit(override.qtyUnit)
+                        .overrideMode(stockOverrideContext.mode)
+                        .overrideUserId(user.getId())
+                        .overrideUsername(user.getUsername())
+                        .reason(stockOverrideContext.reason)
+                        .build());
+            }
+        }
+        if (!overrideAuditsToSave.isEmpty()) {
+            stockOverrideAuditRepository.saveAll(overrideAuditsToSave);
+        }
+
         List<Warranty> warrantiesToSave = buildWarranties(savedOrder, savedOrderItems, customer);
         if (!warrantiesToSave.isEmpty()) {
             warrantyRepository.saveAll(warrantiesToSave);
@@ -365,12 +515,18 @@ public class OrderService {
             finalizeDineInSession(diningTable);
         }
 
+        // Both the online checkout and the offline sync land here, which is why the
+        // invalidation lives at this level rather than on the public entry points.
+        reportCacheInvalidator.salesChanged(branchId);
+
         return buildOrderResponse(savedOrder, savedOrderItems);
     }
 
+    @Audited(entity = "ORDER", action = "CANCEL",
+             summaryExpression = "'Invoice=' + #invoiceNo")
     @Transactional
     public OrderResponse cancelOrder(String invoiceNo, CancelOrderRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
@@ -399,7 +555,7 @@ public class OrderService {
             warranties.forEach(warranty -> warranty.setStatus(WarrantyStatus.VOID));
             warrantyRepository.saveAll(warranties);
         }
-        order.setCanceledAt(LocalDateTime.now());
+        // FIX: removed duplicate setCanceledAt() call that was here
         Order saved = orderRepository.save(order);
         reverseCashSaleFromOpenShift(saved);
 
@@ -408,16 +564,23 @@ public class OrderService {
             List<OrderItemStockUsage> usages = orderItemStockUsageRepository.findByOrderItemId(orderItem.getId());
             if (!usages.isEmpty()) {
                 restoreStockUsages(usages, order.getBranchId());
+            } else if (order.isOfflineImported() && orderItem.getBatchId() == null) {
+                // Legacy imported sales do not create stock usage rows or batch references.
+                continue;
             } else {
                 restoreStockToOriginalBatch(orderItem, order.getBranchId());
             }
         }
 
+        // A cancelled sale used to stay in every report until its TTL expired — nothing
+        // on this path evicted anything.
+        reportCacheInvalidator.salesChanged(order.getBranchId());
+
         return buildOrderResponse(saved, items);
     }
 
     public OrderResponse getOrder(String invoiceNo) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
@@ -427,7 +590,7 @@ public class OrderService {
 
     @Transactional
     public OrderResponse recordPayment(String invoiceNo, OrderPaymentRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         Order order = orderRepository.findByInvoiceNo(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
@@ -483,6 +646,9 @@ public class OrderService {
                 .note(note)
                 .build());
 
+        // Settling a due changes credit aging and the dashboard's outstanding figure.
+        reportCacheInvalidator.salesChanged(savedOrder.getBranchId());
+
         return mapToOrderResponse(savedOrder, true);
     }
 
@@ -499,9 +665,9 @@ public class OrderService {
             String totalOperator,
             Double totalAmount
     ) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
 
-        if (!isAdminLike(user) && user.getRole() != Role.MANAGER) {
+        if (!securityUtils.isAdminLike(user) && user.getRole() != Role.MANAGER) {
             throw new BadRequestException("Access denied: Only Admin or Manager can perform this action.");
         }
 
@@ -521,8 +687,8 @@ public class OrderService {
                     .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
         }
 
-        if (!isAdminLike(user)) {
-            Long userBranchId = requireAssignedBranch(user);
+        if (!securityUtils.isAdminLike(user)) {
+            Long userBranchId = securityUtils.requireAssignedBranch(user);
             if (branchId == 0L) {
                 branchId = userBranchId;
             } else if (!userBranchId.equals(branchId)) {
@@ -598,7 +764,7 @@ public class OrderService {
 
     private DiningTable resolveDiningTable(User user, Long branchId, SaleMode saleMode, Long tableId) {
         if (saleMode == SaleMode.DINE_IN) {
-            if (!appConfigurationService.isDineInEnabled()) {
+            if (!appConfigurationService.isDineInEnabled(branchId)) {
                 throw new BadRequestException("Dine-in is disabled in app configuration");
             }
 
@@ -627,7 +793,7 @@ public class OrderService {
             OrderItemRequest itemReq,
             int normalizedQty,
             Map<Long, StockBatch> batchesToUpdate,
-            boolean allowAutomaticBatchSelection
+            StockOverrideContext stockOverrideContext
     ) {
         if (item.getItemType() == ItemType.SERVICE) {
             if (!branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
@@ -635,14 +801,11 @@ public class OrderService {
             }
             double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
-            return new StockConsumptionResult(null, unitCost, lineCost, List.of());
+            return new StockConsumptionResult(null, unitCost, lineCost, List.of(), List.of());
         }
 
         if (item.getItemType() == ItemType.RECIPE) {
             List<RecipeIngredient> recipeIngredients = recipeIngredientRepository.findByParentItemId(item.getId());
-            if (recipeIngredients.isEmpty()) {
-                throw new BadRequestException("Recipe item has no ingredients: " + item.getName());
-            }
 
             Map<Long, Item> ingredientMap = itemRepository.findAllById(
                             recipeIngredients.stream()
@@ -653,6 +816,7 @@ public class OrderService {
                     .collect(Collectors.toMap(Item::getId, ingredient -> ingredient));
 
             List<StockUsageDraft> usages = new ArrayList<>();
+            List<StockOverrideDraft> overrides = new ArrayList<>();
             double lineCost = 0.0;
 
             for (RecipeIngredient recipeIngredient : recipeIngredients) {
@@ -668,14 +832,20 @@ public class OrderService {
 
                 InventoryConsumptionResult ingredientConsumption = consumeInventoryItem(
                         branchId,
+                        item,
                         ingredientItem,
                         null,
+                        null,
                         (int) requiredQty,
-                        batchesToUpdate
+                        batchesToUpdate,
+                        recipeIngredientStockContext()
                 );
                 usages.addAll(ingredientConsumption.usages);
                 lineCost += ingredientConsumption.lineCost;
+                overrides.addAll(ingredientConsumption.overrides);
             }
+
+            lineCost += calculateRecipeOverheadCost(item, normalizedQty, lineCost);
 
             double unitCost = normalizedQty == 0
                     ? 0.0
@@ -683,41 +853,44 @@ public class OrderService {
                     .divide(BigDecimal.valueOf(normalizedQty), 6, RoundingMode.HALF_UP)
                     .doubleValue();
 
-            return new StockConsumptionResult(null, unitCost, lineCost, usages);
+            return new StockConsumptionResult(null, unitCost, lineCost, usages, overrides);
         }
 
         if (isFreePlanWithoutStockManagement()) {
             double unitCost = item.getCostPrice() != null ? item.getCostPrice().doubleValue() : 0.0;
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitCost), normalizedQty).doubleValue();
-            return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of());
-        }
-
-        if (itemReq.getBatchId() == null && !allowAutomaticBatchSelection) {
-            throw new BadRequestException("Batch ID is missing for item: " + item.getName());
+            return new StockConsumptionResult(itemReq.getBatchId(), unitCost, lineCost, List.of(), List.of());
         }
 
         InventoryConsumptionResult inventoryConsumption = consumeInventoryItem(
                 branchId,
                 item,
+                item,
                 itemReq.getBatchId(),
+                BigDecimal.valueOf(itemReq.getUnitPrice()),
                 normalizedQty,
-                batchesToUpdate
+                batchesToUpdate,
+                stockOverrideContext
         );
 
         return new StockConsumptionResult(
                 inventoryConsumption.primaryBatchId,
                 inventoryConsumption.unitCost,
                 inventoryConsumption.lineCost,
-                inventoryConsumption.usages
+                inventoryConsumption.usages,
+                inventoryConsumption.overrides
         );
     }
 
     private InventoryConsumptionResult consumeInventoryItem(
             Long branchId,
+            Item saleItem,
             Item item,
             Long explicitBatchId,
+            BigDecimal preferredSellingPrice,
             int normalizedQty,
-            Map<Long, StockBatch> batchesToUpdate
+            Map<Long, StockBatch> batchesToUpdate,
+            StockOverrideContext stockOverrideContext
     ) {
         if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
             throw new BadRequestException("Stock-tracked grocery item required for stock deduction");
@@ -734,26 +907,40 @@ public class OrderService {
                 throw new BadRequestException("Batch does not belong to this branch");
             }
 
-            decrementBatch(batch, normalizedQty);
+            int availableQty = positiveQuantity(batch);
+            if (availableQty < normalizedQty && !stockOverrideContext.allowed) {
+                throwStockShortage(saleItem, item, batch, normalizedQty, availableQty, stockOverrideContext);
+            }
+            decrementBatch(batch, normalizedQty, stockOverrideContext.allowed);
             batchesToUpdate.put(batch.getId(), batch);
 
             double lineCost = QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), normalizedQty).doubleValue();
+            List<StockOverrideDraft> overrides = availableQty < normalizedQty
+                    ? List.of(buildOverrideDraft(saleItem, item, batch.getId(), normalizedQty, availableQty, stockOverrideContext))
+                    : List.of();
             return new InventoryConsumptionResult(
                     batch.getId(),
                     batch.getCostPrice().doubleValue(),
                     lineCost,
-                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty))
+                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty)),
+                    overrides
             );
         }
 
-        List<StockBatch> availableBatches = stockBatchRepository.findAvailableBatches(branchId, item.getId());
+        List<StockBatch> availableBatches = preferredSellingPrice == null
+                ? stockBatchRepository.findAvailableBatches(branchId, item.getId())
+                : stockBatchRepository.findAvailableBatchesBySellingPrice(branchId, item.getId(), preferredSellingPrice);
         if (availableBatches.isEmpty()) {
-            throw new BadRequestException("Insufficient stock for " + item.getName());
+            availableBatches = stockBatchRepository.findAvailableBatches(branchId, item.getId());
         }
-
         int remainingQty = normalizedQty;
         List<StockUsageDraft> usages = new ArrayList<>();
+        List<StockOverrideDraft> overrides = new ArrayList<>();
         double lineCost = 0.0;
+        int availableBefore = availableBatches.stream()
+                .mapToInt(this::positiveQuantity)
+                .sum();
+        StockBatch lastUsedBatch = null;
 
         for (StockBatch batch : availableBatches) {
             if (remainingQty <= 0) {
@@ -766,8 +953,9 @@ public class OrderService {
             }
 
             int usedQty = Math.min(availableQty, remainingQty);
-            decrementBatch(batch, usedQty);
+            decrementBatch(batch, usedQty, false);
             batchesToUpdate.put(batch.getId(), batch);
+            lastUsedBatch = batch;
 
             usages.add(new StockUsageDraft(item.getId(), batch.getId(), usedQty));
             lineCost += QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), usedQty).doubleValue();
@@ -775,7 +963,17 @@ public class OrderService {
         }
 
         if (remainingQty > 0) {
-            throw new BadRequestException("Insufficient stock for " + item.getName());
+            if (!stockOverrideContext.allowed) {
+                throwStockShortage(saleItem, item, lastUsedBatch, normalizedQty, availableBefore, stockOverrideContext);
+            }
+
+            StockBatch overrideBatch = resolveOverrideBatch(branchId, item, lastUsedBatch);
+            decrementBatch(overrideBatch, remainingQty, true);
+            batchesToUpdate.put(overrideBatch.getId(), overrideBatch);
+
+            usages.add(new StockUsageDraft(item.getId(), overrideBatch.getId(), remainingQty));
+            lineCost += QuantityConversionUtil.calculateActualAmount(item, overrideBatch.getCostPrice(), remainingQty).doubleValue();
+            overrides.add(buildOverrideDraft(saleItem, item, overrideBatch.getId(), normalizedQty, availableBefore, stockOverrideContext));
         }
 
         double unitCost = normalizedQty == 0
@@ -788,7 +986,140 @@ public class OrderService {
                 usages.isEmpty() ? null : usages.get(0).batchId,
                 unitCost,
                 lineCost,
-                usages
+                usages,
+                overrides
+        );
+    }
+
+    private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user, boolean offlineImport) {
+        // An offline sale has already happened: the goods left the shelf and the cash is
+        // in the drawer. Refusing it here un-sells nothing — it only keeps real revenue
+        // off the books and leaves a paid transaction stranded in the queue forever. So
+        // the shortfall is absorbed, stock is allowed to go negative, and the resulting
+        // StockOverrideAudit rows become the reconciliation trail for what went short.
+        if (offlineImport) {
+            String reason = request.getStockOverrideReason() == null || request.getStockOverrideReason().isBlank()
+                    ? "Offline sale imported after the fact"
+                    : request.getStockOverrideReason();
+            return new StockOverrideContext(
+                    StockOverrideMode.ALWAYS_ALLOW,
+                    true,
+                    true,
+                    normalizeOverrideReason(reason)
+            );
+        }
+
+        StockOverrideMode mode = appConfigurationService.getStockOverrideMode(request.getBranchId());
+        boolean requested = request.isAllowStockOverride();
+        boolean roleAllowed = appConfigurationService.isStockOverrideAllowedForRole(user.getRole(), request.getBranchId());
+
+        if (mode == StockOverrideMode.ALWAYS_ALLOW || mode == StockOverrideMode.MANAGER_OVERRIDE) {
+            if (requested && !roleAllowed) {
+                throw new BadRequestException("Stock override permission denied for this role");
+            }
+            return new StockOverrideContext(mode, requested && roleAllowed, roleAllowed, normalizeOverrideReason(request.getStockOverrideReason()));
+        }
+        return new StockOverrideContext(StockOverrideMode.BLOCK, false, false, normalizeOverrideReason(request.getStockOverrideReason()));
+    }
+
+    private StockOverrideContext recipeIngredientStockContext() {
+        return new StockOverrideContext(
+                StockOverrideMode.ALWAYS_ALLOW,
+                true,
+                true,
+                "Recipe ingredient negative stock allowed"
+        );
+    }
+
+    private String normalizeOverrideReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return null;
+        }
+        String trimmed = reason.trim();
+        return trimmed.length() <= 255 ? trimmed : trimmed.substring(0, 255);
+    }
+
+    private int positiveQuantity(StockBatch batch) {
+        if (batch == null || batch.getQuantity() == null) {
+            return 0;
+        }
+        return Math.max(0, batch.getQuantity());
+    }
+
+    private StockBatch resolveOverrideBatch(Long branchId, Item item, StockBatch lastUsedBatch) {
+        if (lastUsedBatch != null) {
+            return lastUsedBatch;
+        }
+
+        List<StockBatch> allBatches = stockBatchRepository.findBatchesForBranchItem(branchId, item.getId());
+        if (!allBatches.isEmpty()) {
+            return allBatches.get(0);
+        }
+
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
+        return stockBatchRepository.save(StockBatch.builder()
+                .branch(branch)
+                .item(item)
+                .quantity(0)
+                .originalQuantity(0)
+                .costPrice(item.getCostPrice())
+                .sellingPrice(item.getSellingPrice())
+                .sourceType(StockBatchSourceType.OVERRIDE)
+                .batchCode("OVERRIDE-" + branchId + "-" + item.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .build());
+    }
+
+    private void throwStockShortage(
+            Item saleItem,
+            Item stockItem,
+            StockBatch batch,
+            int requiredQty,
+            int availableQty,
+            StockOverrideContext stockOverrideContext
+    ) {
+        StockShortageIssue shortage = buildShortageIssue(saleItem, stockItem, batch, requiredQty, availableQty);
+        String message = stockOverrideContext.overrideAvailable
+                ? "Insufficient stock. Manager override required."
+                : "Insufficient stock for " + stockItem.getName();
+        throw new StockOverrideRequiredException(message, List.of(shortage), stockOverrideContext.overrideAvailable);
+    }
+
+    private StockShortageIssue buildShortageIssue(Item saleItem, Item stockItem, StockBatch batch, int requiredQty, int availableQty) {
+        int safeAvailable = Math.max(0, availableQty);
+        return StockShortageIssue.builder()
+                .itemId(saleItem.getId())
+                .itemName(saleItem.getName())
+                .stockItemId(stockItem.getId())
+                .stockItemName(stockItem.getName())
+                .batchId(batch != null ? batch.getId() : null)
+                .requiredQuantity(requiredQty)
+                .availableQuantity(safeAvailable)
+                .shortageQuantity(Math.max(0, requiredQty - safeAvailable))
+                .unit(QuantityConversionUtil.primaryDisplayUnit(stockItem))
+                .build();
+    }
+
+    private StockOverrideDraft buildOverrideDraft(
+            Item saleItem,
+            Item stockItem,
+            Long batchId,
+            int requiredQty,
+            int availableQty,
+            StockOverrideContext stockOverrideContext
+    ) {
+        int safeAvailable = Math.max(0, availableQty);
+        return new StockOverrideDraft(
+                saleItem.getId(),
+                saleItem.getName(),
+                stockItem.getId(),
+                stockItem.getName(),
+                batchId,
+                requiredQty,
+                safeAvailable,
+                Math.max(0, requiredQty - safeAvailable),
+                QuantityConversionUtil.primaryDisplayUnit(stockItem),
+                stockOverrideContext.reason
         );
     }
 
@@ -797,11 +1128,20 @@ public class OrderService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return false;
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .map(planName -> planName.equals("FREE") || planName.equals("MONTHLY_DEMO"))
-                .orElse(false);
+        // tenant_subscriptions lives in pos_master, not the tenant DB —
+        // switch context before the transaction opens the Hibernate session.
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        Boolean result = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
+                                .map(planName -> planName.equals("FREE") || planName.equals("MONTHLY_DEMO"))
+                                .orElse(false)
+                ));
+        return Boolean.TRUE.equals(result);
     }
 
     private boolean isFreePlanWithoutCustomerCredit() {
@@ -822,12 +1162,34 @@ public class OrderService {
         return paymentMethod.trim().toUpperCase();
     }
 
-    private void decrementBatch(StockBatch batch, int normalizedQty) {
-        if (batch.getQuantity() < normalizedQty) {
-            throw new BadRequestException("Insufficient stock for " + batch.getItem().getName()
-                    + " (Batch #" + batch.getId() + "). Available: " + batch.getQuantity());
+    private double calculateRecipeOverheadCost(Item item, int normalizedQty, double directLineCost) {
+        if (item.getItemType() != ItemType.RECIPE || normalizedQty <= 0) {
+            return 0.0;
         }
-        batch.setQuantity(batch.getQuantity() - normalizedQty);
+
+        ItemOverheadCostMode mode = item.getOverheadCostMode() == null ? ItemOverheadCostMode.NONE : item.getOverheadCostMode();
+        BigDecimal value = item.getOverheadCostValue() == null ? BigDecimal.ZERO : item.getOverheadCostValue();
+        if (mode == ItemOverheadCostMode.NONE || value.compareTo(BigDecimal.ZERO) <= 0) {
+            return 0.0;
+        }
+
+        if (mode == ItemOverheadCostMode.FIXED) {
+            return value.multiply(BigDecimal.valueOf(normalizedQty)).doubleValue();
+        }
+
+        return BigDecimal.valueOf(directLineCost)
+                .multiply(value)
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private void decrementBatch(StockBatch batch, int normalizedQty, boolean allowNegative) {
+        int currentQuantity = batch.getQuantity() == null ? 0 : batch.getQuantity();
+        if (!allowNegative && currentQuantity < normalizedQty) {
+            throw new BadRequestException("Insufficient stock for " + batch.getItem().getName()
+                    + " (Batch #" + batch.getId() + "). Available: " + currentQuantity);
+        }
+        batch.setQuantity(currentQuantity - normalizedQty);
     }
 
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {
@@ -845,7 +1207,7 @@ public class OrderService {
     }
 
     private MeasurementUnit resolveQtyUnit(Item item, OrderItemRequest itemReq) {
-        if (item.getItemType() == ItemType.WEIGHT) {
+        if (QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
             return itemReq.getQtyUnit() == null ? item.getDefaultUnit() : itemReq.getQtyUnit();
         }
         return item.getDefaultUnit();
@@ -981,15 +1343,21 @@ public class OrderService {
         List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
                 : items.stream()
                 .map(orderItem -> OrderItemResponse.builder()
+                        .id(orderItem.getId())
                         .itemId(orderItem.getItemId())
                         .barcode(orderItem.getBarcode())
                         .itemName(orderItem.getItemName())
+                        .altName(orderItem.getAltName())
                         .batchId(orderItem.getBatchId())
                         .qty(orderItem.getDisplayQty())
                         .qtyUnit(orderItem.getQtyUnit())
                         .unitPrice(orderItem.getUnitPrice())
                         .discountType(orderItem.getDiscountType() != null ? orderItem.getDiscountType().toString() : null)
                         .discountValue(orderItem.getDiscountValue())
+                        .promotionId(orderItem.getPromotionId())
+                        .promotionName(orderItem.getPromotionName())
+                        .promotionDiscountAmount(orderItem.getPromotionDiscountAmount())
+                        .promotionApplied(orderItem.getPromotionId() != null)
                         .finalUnitPrice(orderItem.getFinalUnitPrice())
                         .lineTotal(orderItem.getLineTotal())
                         .warrantyLabel(orderItem.getWarrantyLabel())
@@ -1013,6 +1381,14 @@ public class OrderService {
             }
         }
 
+        // Return summary — cheaply computed for every order response
+        long returnCount = orderReturnRepository.countByOriginalOrderId(order.getId());
+        double totalReturnedAmount = orderReturnRepository
+                .findByOriginalOrderIdOrderByCreatedAtDesc(order.getId())
+                .stream()
+                .mapToDouble(r -> r.getTotalRefundAmount())
+                .sum();
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .invoiceNo(order.getInvoiceNo())
@@ -1033,12 +1409,19 @@ public class OrderService {
                 .status(order.getStatus())
                 .subTotal(order.getSubTotal())
                 .billDiscount(order.getBillDiscount())
+                .promotionDiscountTotal(order.getPromotionDiscountTotal())
+                .billPromotionId(order.getBillPromotionId())
+                .billPromotionName(order.getBillPromotionName())
+                .billPromotionDiscountAmount(order.getBillPromotionDiscountAmount())
                 .grandTotal(order.getGrandTotal())
                 .paidAmount(order.getPaidAmount())
                 .dueAmount(order.getDueAmount())
                 .note(order.getNote())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
+                .hasReturns(returnCount > 0)
+                .returnCount((int) returnCount)
+                .totalReturnedAmount(totalReturnedAmount)
                 .build();
     }
 
@@ -1101,13 +1484,16 @@ public class OrderService {
         };
     }
 
-    private void validateWarrantySelection(OrderItemRequest itemReq) {
+    private void validateWarrantySelection(OrderItemRequest itemReq, Role role, Long branchId) {
         boolean hasLabel = itemReq.getWarrantyLabel() != null && !itemReq.getWarrantyLabel().isBlank();
         boolean hasPeriodValue = itemReq.getWarrantyPeriodValue() != null;
         boolean hasPeriodUnit = itemReq.getWarrantyPeriodUnit() != null;
 
         if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !(hasLabel && hasPeriodValue && hasPeriodUnit)) {
             throw new BadRequestException("Warranty selection is incomplete");
+        }
+        if ((hasLabel || hasPeriodValue || hasPeriodUnit) && !appConfigurationService.isWarrantyAllowedForRole(role, branchId)) {
+            throw new BadRequestException("Warranty selection is disabled for this role");
         }
     }
 
@@ -1128,10 +1514,12 @@ public class OrderService {
     private static final class PreparedOrderItem {
         private final OrderItem orderItem;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private PreparedOrderItem(OrderItem orderItem, List<StockUsageDraft> usages) {
+        private PreparedOrderItem(OrderItem orderItem, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.orderItem = orderItem;
             this.usages = usages;
+            this.overrides = overrides;
         }
 
         private OrderItem orderItem() {
@@ -1142,10 +1530,19 @@ public class OrderService {
     private static final class OfflineOrderMetadata {
         private final String clientSaleId;
         private final LocalDateTime offlineSoldAt;
+        private final String invoiceNo;
+        private final Long cashierUserId;
 
-        private OfflineOrderMetadata(String clientSaleId, LocalDateTime offlineSoldAt) {
+        private OfflineOrderMetadata(
+                String clientSaleId,
+                LocalDateTime offlineSoldAt,
+                String invoiceNo,
+                Long cashierUserId
+        ) {
             this.clientSaleId = clientSaleId;
             this.offlineSoldAt = offlineSoldAt;
+            this.invoiceNo = invoiceNo;
+            this.cashierUserId = cashierUserId;
         }
     }
 
@@ -1154,12 +1551,14 @@ public class OrderService {
         private final double unitCost;
         private final double lineCost;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private StockConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+        private StockConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.primaryBatchId = primaryBatchId;
             this.unitCost = unitCost;
             this.lineCost = lineCost;
             this.usages = usages;
+            this.overrides = overrides;
         }
     }
 
@@ -1168,12 +1567,14 @@ public class OrderService {
         private final double unitCost;
         private final double lineCost;
         private final List<StockUsageDraft> usages;
+        private final List<StockOverrideDraft> overrides;
 
-        private InventoryConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages) {
+        private InventoryConsumptionResult(Long primaryBatchId, double unitCost, double lineCost, List<StockUsageDraft> usages, List<StockOverrideDraft> overrides) {
             this.primaryBatchId = primaryBatchId;
             this.unitCost = unitCost;
             this.lineCost = lineCost;
             this.usages = usages;
+            this.overrides = overrides;
         }
     }
 
@@ -1186,6 +1587,57 @@ public class OrderService {
             this.itemId = itemId;
             this.batchId = batchId;
             this.quantity = quantity;
+        }
+    }
+
+    private static final class StockOverrideDraft {
+        private final Long saleItemId;
+        private final String saleItemName;
+        private final Long stockItemId;
+        private final String stockItemName;
+        private final Long batchId;
+        private final int requiredQuantity;
+        private final int availableQuantity;
+        private final int shortageQuantity;
+        private final MeasurementUnit qtyUnit;
+        private final String reason;
+
+        private StockOverrideDraft(
+                Long saleItemId,
+                String saleItemName,
+                Long stockItemId,
+                String stockItemName,
+                Long batchId,
+                int requiredQuantity,
+                int availableQuantity,
+                int shortageQuantity,
+                MeasurementUnit qtyUnit,
+                String reason
+        ) {
+            this.saleItemId = saleItemId;
+            this.saleItemName = saleItemName;
+            this.stockItemId = stockItemId;
+            this.stockItemName = stockItemName;
+            this.batchId = batchId;
+            this.requiredQuantity = requiredQuantity;
+            this.availableQuantity = availableQuantity;
+            this.shortageQuantity = shortageQuantity;
+            this.qtyUnit = qtyUnit;
+            this.reason = reason;
+        }
+    }
+
+    private static final class StockOverrideContext {
+        private final StockOverrideMode mode;
+        private final boolean allowed;
+        private final boolean overrideAvailable;
+        private final String reason;
+
+        private StockOverrideContext(StockOverrideMode mode, boolean allowed, boolean overrideAvailable, String reason) {
+            this.mode = mode;
+            this.allowed = allowed;
+            this.overrideAvailable = overrideAvailable;
+            this.reason = reason;
         }
     }
 }

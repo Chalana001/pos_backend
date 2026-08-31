@@ -7,6 +7,7 @@ public interface LowStockResponse {
     Long getItemId();
     String getBarcode();
     String getItemName();
+    String getAltName();
     Long getTotalQty();
     Integer getReorderLevel();
     ItemType getItemType();

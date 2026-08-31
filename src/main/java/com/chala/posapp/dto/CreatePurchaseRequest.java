@@ -1,6 +1,7 @@
 package com.chala.posapp.dto;
 
 import com.chala.posapp.dto.branch.BranchPurchaseRequest;
+import com.chala.posapp.entity.CashSource;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.util.List;
@@ -12,5 +13,7 @@ public class CreatePurchaseRequest {
     private BigDecimal discountAmount;
     private BigDecimal paidAmount;
     private String paymentMethod;
+    private CashSource cashSource;
+    private Long cashSourceBranchId;
     private List<BranchPurchaseRequest> branches;
 }

@@ -2,6 +2,7 @@ package com.chala.posapp.dto.item;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.ItemOverheadCostMode;
 import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
@@ -17,6 +18,9 @@ public class ItemCreateRequest {
 
     @NotBlank
     private String name;
+
+    @Size(max = 160)
+    private String altName;
 
     @NotNull(message = "Sub category is required")
     private Long subCategoryId;
@@ -44,4 +48,16 @@ public class ItemCreateRequest {
     private List<ItemIngredientRequest> ingredients;
 
     private Boolean active;
+
+    private Boolean posVisible;
+
+    private Boolean stockProcessingEnabled;
+
+    private ItemOverheadCostMode overheadCostMode;
+
+    @PositiveOrZero
+    private BigDecimal overheadCostValue;
+
+    @Valid
+    private List<StockProcessingOutputLinkRequest> processingOutputs;
 }

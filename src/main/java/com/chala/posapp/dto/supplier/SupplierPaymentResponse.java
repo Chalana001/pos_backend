@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.supplier;
 
+import com.chala.posapp.entity.CashSource;
 import lombok.Builder;
 import lombok.Data;
 
@@ -16,6 +17,10 @@ public class SupplierPaymentResponse {
     private String invoiceNo;
     private BigDecimal amount;
     private String paymentMethod;
+    private CashSource cashSource;
+    private Long cashShiftId;
+    private Long cashierUserId;
+    private Long cashSourceBranchId;
     private String note;
     private LocalDateTime paidAt;
 }

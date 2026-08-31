@@ -16,12 +16,14 @@ import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.DiningTableRepository;
 import com.chala.posapp.repository.PendingOrderRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
-import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -33,33 +35,21 @@ public class DiningTableService {
     private final DiningTableRepository diningTableRepository;
     private final PendingOrderRepository pendingOrderRepository;
     private final BranchRepository branchRepository;
-    private final UserRepository userRepository;
+    private final SecurityUtils securityUtils;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final AppConfigurationService appConfigurationService;
+    private final PlatformTransactionManager transactionManager;
 
-    private User getLoggedUser() {
-        String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        return userRepository.findByUsername(username)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-    }
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
 
-    private boolean isAdminLike(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN;
-    }
-
-    private Long requireAssignedBranch(User user) {
-        if (user.getBranchId() == null) {
-            throw new NotAssignedException("User branch not assigned");
-        }
-        return user.getBranchId();
-    }
+    // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
     private void ensureBranchAccess(User user, Long branchId) {
-        if (isAdminLike(user)) {
+        if (securityUtils.isAdminLike(user)) {
             return;
         }
 
-        Long userBranchId = requireAssignedBranch(user);
+        Long userBranchId = securityUtils.requireAssignedBranch(user);
         if (!userBranchId.equals(branchId)) {
             throw new BadRequestException("Cannot access another branch");
         }
@@ -67,7 +57,7 @@ public class DiningTableService {
 
     @Transactional
     public DiningTableResponse create(DiningTableCreateRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         validateDiningTableFeature(request.getBranchId());
         ensureBranchAccess(user, request.getBranchId());
 
@@ -92,8 +82,8 @@ public class DiningTableService {
     }
 
     public List<DiningTableResponse> listByBranch(Long branchId) {
-        User user = getLoggedUser();
-        validateDiningFeatureEnabled();
+        User user = securityUtils.getCurrentUser();
+        validateDiningFeatureEnabled(branchId);
         ensureBranchAccess(user, branchId);
 
         branchRepository.findById(branchId)
@@ -105,7 +95,7 @@ public class DiningTableService {
     }
 
     private void validateDiningTableFeature(Long branchId) {
-        if (!appConfigurationService.isTableManagementEnabled()) {
+        if (!appConfigurationService.isTableManagementEnabled(branchId)) {
             throw new BadRequestException("Table management is disabled in app configuration");
         }
 
@@ -118,8 +108,8 @@ public class DiningTableService {
         }
     }
 
-    private void validateDiningFeatureEnabled() {
-        if (!appConfigurationService.isTableManagementEnabled()) {
+    private void validateDiningFeatureEnabled(Long branchId) {
+        if (!appConfigurationService.isTableManagementEnabled(branchId)) {
             throw new BadRequestException("Table management is disabled in app configuration");
         }
 
@@ -133,10 +123,17 @@ public class DiningTableService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        return tenantSubscriptionRepository.findByTenantId(tenantId)
-                .map(TenantSubscription::getPlan)
-                .map(plan -> plan.getName() == null ? "" : plan.getName().trim().toUpperCase())
-                .orElse("");
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        String plan = TenantContext.callWith("MASTER",
+                () -> tx.execute(status ->
+                        tenantSubscriptionRepository.findByTenantId(tenantId)
+                                .map(TenantSubscription::getPlan)
+                                .map(p -> p.getName() == null ? "" : p.getName().trim().toUpperCase())
+                                .orElse("")
+                ));
+        return plan == null ? "" : plan;
     }
 
     private boolean isFreePlan(String planName) {
@@ -151,7 +148,7 @@ public class DiningTableService {
     }
 
     public DiningTableResponse get(Long id) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
         ensureBranchAccess(user, table.getBranchId());
@@ -160,7 +157,7 @@ public class DiningTableService {
 
     @Transactional
     public DiningTableResponse update(Long id, DiningTableUpdateRequest request) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
         ensureBranchAccess(user, table.getBranchId());
@@ -185,7 +182,7 @@ public class DiningTableService {
 
     @Transactional
     public void delete(Long id) {
-        User user = getLoggedUser();
+        User user = securityUtils.getCurrentUser();
         DiningTable table = diningTableRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Dining table not found"));
         ensureBranchAccess(user, table.getBranchId());
