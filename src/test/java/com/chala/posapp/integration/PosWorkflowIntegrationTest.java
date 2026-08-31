@@ -884,7 +884,10 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
 
         SubscriptionPlan standardPlan = ensurePlan("STANDARD", BillingCycle.MONTHLY, 1500.0, 1500.0, 1);
         fixture.subscription().setPlan(standardPlan);
-        tenantSubscriptionRepository.save(fixture.subscription());
+        // master-catalog write - same anchoring rule as the seeding helpers
+        com.chala.posapp.tenant.TenantContext.runWith(
+                com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT,
+                () -> tenantSubscriptionRepository.save(fixture.subscription()));
 
         Branch secondBranch = new Branch();
         secondBranch.setCode("B2");
