@@ -1,8 +1,10 @@
 name: POS System CI/CD
 
+# Manual trigger only. This pipeline restarts the LIVE service and takes a
+# production database dump - that must be a decision, not a side effect of
+# every push to main.
 on:
-  push:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -13,7 +15,7 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: '21'
           distribution: 'temurin'
           cache: maven
 
@@ -55,7 +57,7 @@ jobs:
             # --- 1. Database Backup ---
             mkdir -p $AAPANEL_DB_BACKUP
             DB_FILE="db_pos_db_$(date +%Y%m%d_%H%M%S).sql.gz"
-            mysqldump -u pos_db -p'L2hs2RcP67cwH84N' pos_db | gzip > "$AAPANEL_DB_BACKUP/$DB_FILE"
+            mysqldump -u pos_db -p"${{ secrets.PROD_DB_BACKUP_PASSWORD }}" pos_db | gzip > "$AAPANEL_DB_BACKUP/$DB_FILE"
             chown -R www:www $AAPANEL_DB_BACKUP
             chmod -R 755 $AAPANEL_DB_BACKUP
 

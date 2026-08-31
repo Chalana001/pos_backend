@@ -33,7 +33,10 @@ class SaasApiIntegrationTest extends ApiIntegrationTestSupport {
         registry.add("spring.datasource.url", () ->
                 "jdbc:mysql://" + mysql.getHost() + ":" + mysql.getMappedPort(3306)
                 + "/?createDatabaseIfNotExist=true&allowPublicKeyRetrieval=true&useSSL=false");
-        registry.add("spring.datasource.username", mysql::getUsername);
+        // root, not the container user: the app provisions tenant databases at
+        // runtime and the URL carries createDatabaseIfNotExist, both of which
+        // need server-wide rights the per-database app user does not have.
+        registry.add("spring.datasource.username", () -> "root");
         registry.add("spring.datasource.password", mysql::getPassword);
     }
 
