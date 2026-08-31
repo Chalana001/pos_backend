@@ -28,7 +28,12 @@ class WeightItemIntegrationTest extends ApiIntegrationTestSupport {
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("pos_master")
             .withUsername("posapp")
-            .withPassword("posapp");
+            .withPassword("posapp")
+            // pos_db must exist before the app boots: raw connections anchor on
+            // it and the tenant migration chain runs over it.
+            .withCopyFileToContainer(
+                    org.testcontainers.utility.MountableFile.forClasspathResource("tc-init/create-legacy-db.sql"),
+                    "/docker-entrypoint-initdb.d/create-legacy-db.sql");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {

@@ -260,7 +260,7 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
                 .dueAmount(0.0)
                 .salePaidAmount(120.0)
                 .saleDueAmount(0.0)
-                .createdAt(LocalDateTime.now().minusMinutes(30))
+                .createdAt(LocalDate.now().atTime(12, 0))
                 .build());
 
         shiftEntity.setOpenedAt(orderEntity.getCreatedAt().minusMinutes(30));
@@ -617,7 +617,7 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         stockBatchRepository.save(StockBatch.builder().branch(fixture.mainBranch()).item(output)
                 .batchCode("MOVE-BATCH-OUT").sourceType(StockBatchSourceType.PROCESSING)
                 .costPrice(BigDecimal.TEN).sellingPrice(BigDecimal.valueOf(20)).quantity(1000).originalQuantity(1000).build());
-        LocalDateTime processedAt = LocalDateTime.now().minusHours(1);
+        LocalDateTime processedAt = LocalDate.now().atTime(12, 0);
         StockProcessing processing = stockProcessingRepository.save(StockProcessing.builder()
                 .branch(fixture.mainBranch()).sourceItem(source).sourceBatchId(sourceBatch.getId()).sourceBatchCode(sourceBatch.getBatchCode())
                 .sourceQty(2000).sourceDisplayQty(BigDecimal.valueOf(2)).sourceQtyUnit(MeasurementUnit.PCS)
@@ -880,7 +880,7 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
         Supplier supplier = new Supplier(); supplier.setName("GRN Supplier"); supplier.setPhone("0776000099");
         supplier.setEmail("grn@supplier.test"); supplier.setDueAmount(BigDecimal.valueOf(100));
         supplier = supplierRepository.save(supplier);
-        LocalDateTime receivedAt = LocalDateTime.now().minusHours(2);
+        LocalDateTime receivedAt = LocalDate.now().atTime(12, 0);
         Purchase purchase = purchaseRepository.save(Purchase.builder().invoiceNo("PUR-GRN-1").supplier(supplier)
                 .createdAt(receivedAt).grandTotal(BigDecimal.valueOf(300)).discountAmount(BigDecimal.ZERO)
                 .paidAmount(BigDecimal.valueOf(200)).dueAmount(BigDecimal.valueOf(100)).paymentMethod("PARTIAL")
