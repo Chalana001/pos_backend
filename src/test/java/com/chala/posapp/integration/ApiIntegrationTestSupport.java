@@ -57,6 +57,8 @@ import java.util.Locale;
 import java.util.UUID;
 
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import com.chala.posapp.tenant.CurrentTenantResolver;
+import com.chala.posapp.tenant.TenantContext;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -169,14 +171,19 @@ abstract class ApiIntegrationTestSupport {
     }
 
     protected SubscriptionPlan ensurePlan(String name, BillingCycle billingCycle, double initialPrice, double renewalPrice, int maxBranches) {
-        return subscriptionPlanRepository.findByName(name)
-                .orElseGet(() -> subscriptionPlanRepository.save(SubscriptionPlan.builder()
-                        .name(name)
-                        .billingCycle(billingCycle)
-                        .initialPrice(initialPrice)
-                        .renewalPrice(renewalPrice)
-                        .maxBranches(maxBranches)
-                        .build()));
+        // Plans live in the master catalog; a bare repository call anchors on
+        // the legacy database, which in the test containers has only the
+        // tenant schema - prod's legacy db happens to hold everything, which
+        // is why this never failed outside CI.
+        return TenantContext.callWith(CurrentTenantResolver.MASTER_TENANT, () ->
+                subscriptionPlanRepository.findByName(name)
+                        .orElseGet(() -> subscriptionPlanRepository.save(SubscriptionPlan.builder()
+                                .name(name)
+                                .billingCycle(billingCycle)
+                                .initialPrice(initialPrice)
+                                .renewalPrice(renewalPrice)
+                                .maxBranches(maxBranches)
+                                .build())));
     }
 
     protected TenantFixture seedTenantShop(String tenantId, int maxBranches) {
@@ -186,7 +193,8 @@ abstract class ApiIntegrationTestSupport {
         String managerUsername = tenantId + "-manager";
         String cashierUsername = tenantId + "-cashier";
 
-        TenantSubscription subscription = tenantSubscriptionRepository.save(TenantSubscription.builder()
+        TenantSubscription subscription = TenantContext.callWith(CurrentTenantResolver.MASTER_TENANT, () ->
+                tenantSubscriptionRepository.save(TenantSubscription.builder()
                 .tenantId(tenantId)
                 .shopName("Shop " + tenantId)
                 .adminUsername(adminUsername)
@@ -196,7 +204,7 @@ abstract class ApiIntegrationTestSupport {
                 .extraBranches(0)
                 .validUntil(LocalDateTime.now().plusDays(30))
                 .notes("integration seed")
-                .build());
+                .build()));
 
         Branch mainBranch = new Branch();
         mainBranch.setCode(tenantId.toUpperCase(Locale.ROOT).replace("-", "_"));
