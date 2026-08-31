@@ -72,7 +72,9 @@ jobs:
             cd "$BACKUP_DIR" && ls -t POS.System-*.jar | tail -n +4 | xargs -r rm
 
             # --- 3. Update Service & Restart ---
-            sed -i "s|ExecStart=.*|ExecStart=/usr/bin/java -Xms512m -Xmx2g -jar $DEST_JAR|" $SERVICE_FILE
+            # The VPS clock is Europe/Berlin; the shops and their business dates are
+            # Sri Lankan. Pin the JVM so date logic never follows the host zone.
+            sed -i "s|ExecStart=.*|ExecStart=/usr/bin/java -Xms512m -Xmx2g -Duser.timezone=Asia/Colombo -jar $DEST_JAR|" $SERVICE_FILE
 
             systemctl daemon-reload
             systemctl restart pos.service
