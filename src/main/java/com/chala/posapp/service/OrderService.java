@@ -1343,6 +1343,7 @@ public class OrderService {
         List<OrderItemResponse> itemResponses = (items == null || items.isEmpty()) ? Collections.emptyList()
                 : items.stream()
                 .map(orderItem -> OrderItemResponse.builder()
+                        .id(orderItem.getId())
                         .itemId(orderItem.getItemId())
                         .barcode(orderItem.getBarcode())
                         .itemName(orderItem.getItemName())
