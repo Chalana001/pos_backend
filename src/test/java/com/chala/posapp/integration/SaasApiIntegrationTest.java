@@ -210,8 +210,12 @@ class SaasApiIntegrationTest extends ApiIntegrationTestSupport {
         String masterAdminToken = loginViaApiAlias("MASTER", "master-ops-admin", "Pass@123");
         assertFalse(masterAdminToken.isBlank());
 
-        assertTrue(userRepository.findByUsername("master-ops-admin")
-                .map(user -> user.getRole() == Role.ADMIN)
-                .orElse(false));
+        // master-ops-admin lives in the master catalog; a bare read routes to
+        // the legacy database and reports the user missing.
+        assertTrue(com.chala.posapp.tenant.TenantContext.callWith(
+                com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT,
+                () -> userRepository.findByUsername("master-ops-admin")
+                        .map(user -> user.getRole() == Role.ADMIN)
+                        .orElse(false)));
     }
 }

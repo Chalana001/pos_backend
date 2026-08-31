@@ -283,10 +283,13 @@ class PosWorkflowIntegrationTest extends ApiIntegrationTestSupport {
                 """.formatted(supplier.getId(), fixture.mainBranch().getId(), drumstickItemId, riceItemId, onionItemId)
         );
 
-        List<StockBatch> availableDrumstickBatches = stockBatchRepository.findAvailableBatches(
-                fixture.mainBranch().getId(),
-                drumstickItemId
-        );
+        // findAvailableBatches carries a PESSIMISTIC_WRITE lock, so it must run
+        // inside a transaction - services do; the test borrows one.
+        List<StockBatch> availableDrumstickBatches = inTransaction(() ->
+                stockBatchRepository.findAvailableBatches(
+                        fixture.mainBranch().getId(),
+                        drumstickItemId
+                ));
         assertEquals(processedDrumstickBatchId, availableDrumstickBatches.get(0).getId());
         assertEquals(StockBatchSourceType.PROCESSING, availableDrumstickBatches.get(0).getSourceType());
         assertEquals(StockBatchSourceType.PURCHASE, availableDrumstickBatches.get(1).getSourceType());

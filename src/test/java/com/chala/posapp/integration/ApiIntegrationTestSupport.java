@@ -43,6 +43,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
@@ -74,6 +76,15 @@ abstract class ApiIntegrationTestSupport {
 
     @Autowired
     private Environment environment;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    /** For repository methods that carry a pessimistic lock and so demand an
+     *  active transaction - services call them inside one, tests use this. */
+    protected <T> T inTransaction(java.util.function.Supplier<T> work) {
+        return new TransactionTemplate(transactionManager).execute(status -> work.get());
+    }
 
     // In the container suite every tenant shares the legacy pos_db (that is
     // what legacy fallback means), so one test's categories, branches and
