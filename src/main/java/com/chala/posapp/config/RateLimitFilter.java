@@ -23,7 +23,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * Limits are keyed by (IP + path prefix) so:
  *  - /api/reports/export  → 10 requests / minute  (Excel export is CPU/IO heavy)
  *  - /api/reports/**      → 60 requests / minute  (report queries)
- *  - /api/auth/**         → 20 requests / minute  (brute-force guard)
+ *  - /auth/**, /api/auth/** → 20 requests / minute  (brute-force guard)
+ *
+ * AuthController is mapped at BOTH roots, so both spellings must be limited and must
+ * share one bucket — otherwise an attacker just switches to the unlimited spelling.
  *
  * All other paths are not limited by this filter.
  *
@@ -84,7 +87,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return Bandwidth.classic(REPORT_PER_MIN,
                     Refill.greedy(REPORT_PER_MIN, Duration.ofMinutes(1)));
         }
-        if (path.startsWith("/api/auth/")) {
+        if (isAuthPath(path)) {
             return Bandwidth.classic(AUTH_PER_MIN,
                     Refill.greedy(AUTH_PER_MIN, Duration.ofMinutes(1)));
         }
@@ -94,16 +97,29 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private String bucketGroup(String path) {
         if (path.contains("/api/reports/export") || path.contains("/api/reports/pdf")) return "export";
         if (path.startsWith("/api/reports/")) return "reports";
-        if (path.startsWith("/api/auth/"))    return "auth";
+        if (isAuthPath(path))                 return "auth";
         return "other";
     }
 
+    /**
+     * {@code AuthController} answers on {@code /auth/**} and {@code /api/auth/**} alike, and
+     * the POS app happens to call the shorter one. Both map to the same bucket group so the
+     * limit counts a client's attempts across both, not once per spelling.
+     */
+    private boolean isAuthPath(String path) {
+        return path.startsWith("/api/auth/") || path.startsWith("/auth/");
+    }
+
+    /**
+     * Reading X-Forwarded-For here directly would hand every caller a free bucket key: the
+     * header is attacker-controlled, so rotating it defeated the limit entirely.
+     *
+     * <p>{@code server.forward-headers-strategy=native} makes Tomcat's RemoteIpValve resolve
+     * the header instead, and it only honours it when the request actually arrived from a
+     * trusted internal proxy — so getRemoteAddr() is the real client for proxied traffic and
+     * the socket peer for everything else. Both are things the caller cannot choose.
+     */
     private String resolveIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            // First IP in the chain is the originating client
-            return xff.split(",")[0].trim();
-        }
         return request.getRemoteAddr();
     }
 }

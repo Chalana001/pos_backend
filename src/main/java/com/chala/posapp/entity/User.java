@@ -37,6 +37,13 @@ public class User extends TenantEntity {
     @Column(name = "offline_pin_hash", length = 255)
     private String offlinePinHash;
 
+    /**
+     * Tokens issued before this moment are rejected by {@code JwtAuthFilter}. Bumped on a
+     * password change and by "sign out of all devices"; NULL means never invalidated.
+     */
+    @Column(name = "token_valid_from")
+    private LocalDateTime tokenValidFrom;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime offlinePinUpdatedAt;

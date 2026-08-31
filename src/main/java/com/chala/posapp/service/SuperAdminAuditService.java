@@ -68,11 +68,10 @@ public class SuperAdminAuditService {
                 return null;
             }
             HttpServletRequest request = attributes.getRequest();
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                // First hop is the client; the rest are proxies.
-                return truncate(forwarded.split(",")[0].trim(), 45);
-            }
+            // Deliberately NOT reading X-Forwarded-For by hand: anyone could set it, which
+            // made the recorded IP a field the audited party got to choose. Tomcat resolves
+            // the header into getRemoteAddr() only for trusted proxies — see
+            // server.forward-headers-strategy in application.properties.
             return truncate(request.getRemoteAddr(), 45);
         } catch (Exception exception) {
             return null;

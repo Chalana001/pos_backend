@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.saas;
 
+import com.chala.posapp.util.validation.PasswordComplexity;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Max;
@@ -25,8 +26,10 @@ public class ShopOnboardRequest {
     @Size(min = 3, max = 50)
     private String adminUsername;
 
+    // MISS-08: enforce password complexity. This is the shop's very first ADMIN
+    // credential and often never changed, so it was the weakest password in the system.
     @NotBlank
-    @Size(min = 6, max = 100)
+    @PasswordComplexity
     private String adminPassword;
 
     @NotNull

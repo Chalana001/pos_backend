@@ -392,6 +392,9 @@ public class SuperAdminSaasService {
                             .orElseThrow(() -> new ResourceNotFoundException("Tenant admin not found")));
 
             adminUser.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+            // Same reasoning as the in-shop reset: the old token must stop working now, not
+            // whenever it would have expired.
+            adminUser.setTokenValidFrom(LocalDateTime.now());
             userRepository.save(adminUser);
             return null;
         });

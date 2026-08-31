@@ -27,6 +27,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -135,6 +136,9 @@ public class UserManagementService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        // Cut every session this user already has. Resetting the password of someone who has
+        // been compromised is pointless while their existing token keeps working.
+        user.setTokenValidFrom(LocalDateTime.now());
         return "Password reset successful";
     }
 

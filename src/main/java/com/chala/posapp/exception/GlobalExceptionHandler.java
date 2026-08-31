@@ -67,6 +67,11 @@ public class GlobalExceptionHandler {
         return buildProblem(HttpStatus.BAD_REQUEST, "Request could not be completed because of invalid or duplicate data.");
     }
 
+    @ExceptionHandler(TooManyAttemptsException.class)
+    public ProblemDetail handleTooManyAttempts(TooManyAttemptsException ex) {
+        return buildProblem(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ProblemDetail handleAllExceptions(Exception ex) {
         ex.printStackTrace();

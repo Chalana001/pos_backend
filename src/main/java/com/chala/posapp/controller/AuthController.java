@@ -9,6 +9,7 @@ import com.chala.posapp.dto.user.RegisterRequest;
 import com.chala.posapp.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +31,19 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request){
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    /**
+     * Ends this device's session server-side. The client clears its own storage either way,
+     * but without this the token it threw away stayed valid for the rest of its 24 hours.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+        if (authorization != null && authorization.startsWith("Bearer ")) {
+            authService.logout(authorization.substring(7));
+        }
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")

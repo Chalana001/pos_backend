@@ -29,6 +29,15 @@ public class UserService implements UserDetailsService {
 
         if (!u.isEnabled()) throw new UsernameNotFoundException("User disabled");
 
+        return toUserDetails(u);
+    }
+
+    /**
+     * JwtAuthFilter needs the entity (to read {@code tokenValidFrom}) <em>and</em> the
+     * UserDetails. Exposing the mapping lets it do both from a single row read instead of
+     * loading the same user twice on every authenticated request.
+     */
+    public UserDetails toUserDetails(User u) {
         return new org.springframework.security.core.userdetails.User(
                 u.getUsername(),
                 u.getPasswordHash(),

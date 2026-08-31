@@ -8,8 +8,10 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
+import java.time.Instant;
 import java.util.Date;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -50,8 +52,11 @@ public class JwtService {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
+        // Ordinary logins carry a jti too, so a single session can be revoked on logout.
+        // Support-session tokens have always had one; this makes the two consistent.
         return Jwts.builder()
                 .subject(username)
+                .id(UUID.randomUUID().toString())
                 .claim("role", role)
                 .claim("tenantId", tenantId)
                 .issuedAt(now)
@@ -113,6 +118,18 @@ public class JwtService {
 
     public String extractUsername(String token) {
         return parseClaims(token).getSubject();
+    }
+
+    /** When the token was minted. Compared against {@code users.token_valid_from}. */
+    public Instant extractIssuedAt(String token) {
+        Date issuedAt = parseClaims(token).getIssuedAt();
+        return issuedAt == null ? null : issuedAt.toInstant();
+    }
+
+    /** When the token dies on its own, used to size a deny-list entry. */
+    public Instant extractExpiration(String token) {
+        Date expiration = parseClaims(token).getExpiration();
+        return expiration == null ? null : expiration.toInstant();
     }
 
     public String extractRole(String token) {
