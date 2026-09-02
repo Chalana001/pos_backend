@@ -143,11 +143,19 @@ jobs:
             systemctl restart pos.service
 
             echo "== 5/5 health check"
+            # First boot of a new version runs Flyway across every tenant
+            # database, so allow five minutes - but bail out at once if the
+            # process itself dies rather than waiting out the window.
             HEALTHY=""
-            for i in $(seq 1 40); do
+            for i in $(seq 1 100); do
               sleep 3
+              if ! systemctl is-active --quiet pos.service; then
+                echo "   service exited after $((i*3))s"
+                break
+              fi
               if curl -sf http://127.0.0.1:8080/health | grep -q "POS Backend OK"; then
                 HEALTHY="yes"
+                echo "   healthy after $((i*3))s"
                 break
               fi
             done
