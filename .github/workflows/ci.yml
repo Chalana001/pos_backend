@@ -1,27 +1,41 @@
-# CI for the POS backend.
+# POS System CI/CD.
 #
-# `mvn verify` runs the unit tests always; the Testcontainers MySQL
-# integration tests detect Docker on the runner (GitHub's ubuntu runners have
-# it) and run for real there, exactly as they skip gracefully on a Docker-less
-# laptop. The build proves the same thing a release build must: it compiles,
-# the tests pass, and the jar packages.
-name: ci
+# One pipeline, two jobs. `verify` runs on every push and PR: the full test
+# suite (79 tests, Testcontainers MySQL included) and the packaged jar.
+# `deploy` runs only for main and only after verify is green - the exact jar
+# the tests passed is the jar that ships; nothing is built twice.
+#
+# On the VPS the deploy: dumps the legacy database first (this is the moment
+# migrations run, so it is the moment a backup matters - the scheduled
+# backup-system covers the rest), parks the running jar as a dated backup and
+# removes it from /root, moves the new jar in, rewrites the service ExecStart
+# (with the Asia/Colombo pin - the VPS clock is Europe/Berlin and business
+# dates follow the JVM), restarts, and then polls /health. If health never
+# comes up, the previous jar is restored and restarted and the run fails red -
+# a broken deploy heals itself instead of leaving shops down.
+name: POS System CI/CD
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 env:
-  # The shops and the production server run on Sri Lankan time, and the
-  # business-date logic follows the JVM clock. A UTC runner books an offline
-  # sale pushed after 05:30 onto the previous day and the offline-sales test
-  # rightly fails - CI runs on the clock production runs on.
+  # Shops and business-date logic run on Sri Lankan time; so does CI.
   TZ: Asia/Colombo
+
+# Never two deploys interleaved; a second push waits its turn.
+concurrency:
+  group: pos-backend-cicd-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      jar: ${{ steps.meta.outputs.jar }}
     steps:
       - uses: actions/checkout@v5
 
@@ -33,3 +47,126 @@ jobs:
 
       - name: Build and test
         run: mvn -B verify
+
+      - name: Read version
+        id: meta
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "jar=POS.System-${VERSION}.jar" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the tested jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: pos-backend-jar
+          path: target/POS.System-*.jar
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Fetch the tested jar
+        uses: actions/download-artifact@v4
+        with:
+          name: pos-backend-jar
+          path: dist
+
+      - name: Upload jar to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          source: "dist/${{ needs.verify.outputs.jar }}"
+          target: "/tmp"
+          strip_components: 1
+
+      - name: Switch the service to the new version
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          JAR_NAME: ${{ needs.verify.outputs.jar }}
+          APP_VERSION: ${{ needs.verify.outputs.version }}
+          DB_BACKUP_PASSWORD: ${{ secrets.PROD_DB_BACKUP_PASSWORD }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          envs: JAR_NAME,APP_VERSION,DB_BACKUP_PASSWORD
+          command_timeout: 15m
+          script: |
+            set -e
+
+            ROOT_PATH="/root"
+            NEW_JAR="/tmp/${JAR_NAME}"
+            DEST_JAR="${ROOT_PATH}/${JAR_NAME}"
+            BACKUP_DIR="${ROOT_PATH}/Pos Backup"
+            SERVICE_FILE="/etc/systemd/system/pos.service"
+            DB_BACKUP_DIR="/www/backup/database/pos_db"
+            ROLLBACK_JAR="/tmp/pos-rollback.jar"
+
+            [ -f "$NEW_JAR" ] || { echo "uploaded jar missing: $NEW_JAR"; exit 1; }
+
+            echo "== 1/5 database backup (migrations run on boot - this is the moment it matters)"
+            mkdir -p "$DB_BACKUP_DIR"
+            DB_FILE="db_pos_db_$(date +%Y%m%d_%H%M%S).sql.gz"
+            mysqldump -u pos_db -p"$DB_BACKUP_PASSWORD" pos_db | gzip > "$DB_BACKUP_DIR/$DB_FILE"
+            chown -R www:www "$DB_BACKUP_DIR" && chmod -R 755 "$DB_BACKUP_DIR"
+            # keep the last 5 pre-deploy dumps
+            (cd "$DB_BACKUP_DIR" && ls -t db_pos_db_*.sql.gz 2>/dev/null | tail -n +6 | xargs -r rm -f --)
+            echo "   dump: $DB_FILE"
+
+            echo "== 2/5 park the running jar"
+            CURRENT_JAR=$(ls -t ${ROOT_PATH}/POS.System-*.jar 2>/dev/null | head -1 || true)
+            rm -f "$ROLLBACK_JAR"
+            if [ -n "$CURRENT_JAR" ]; then
+              cp "$CURRENT_JAR" "$ROLLBACK_JAR"
+              mkdir -p "$BACKUP_DIR"
+              cp "$CURRENT_JAR" "$BACKUP_DIR/$(basename "$CURRENT_JAR" .jar)-$(date +%Y%m%d_%H%M%S).jar"
+              # keep only the last 3 backups
+              cd "$BACKUP_DIR" && ls -t POS.System-*.jar | tail -n +4 | xargs -r rm -f --
+              rm -f ${ROOT_PATH}/POS.System-*.jar
+              echo "   backed up and removed: $(basename "$CURRENT_JAR")"
+            else
+              echo "   no previous jar found"
+            fi
+
+            echo "== 3/5 install ${APP_VERSION}"
+            mv "$NEW_JAR" "$DEST_JAR"
+            sed -i "s|ExecStart=.*|ExecStart=/usr/bin/java -Xms512m -Xmx2g -Duser.timezone=Asia/Colombo -jar ${DEST_JAR}|" "$SERVICE_FILE"
+            systemctl daemon-reload
+
+            echo "== 4/5 restart"
+            systemctl restart pos.service
+
+            echo "== 5/5 health check"
+            HEALTHY=""
+            for i in $(seq 1 40); do
+              sleep 3
+              if curl -sf http://127.0.0.1:8080/health | grep -q "POS Backend OK"; then
+                HEALTHY="yes"
+                break
+              fi
+            done
+
+            if [ -n "$HEALTHY" ]; then
+              rm -f "$ROLLBACK_JAR"
+              echo "DEPLOYED: ${APP_VERSION} is live and healthy."
+              exit 0
+            fi
+
+            echo "HEALTH CHECK FAILED - rolling back"
+            journalctl -u pos.service -n 40 --no-pager || true
+            if [ -f "$ROLLBACK_JAR" ]; then
+              ROLLBACK_NAME=$(basename "$CURRENT_JAR")
+              rm -f ${ROOT_PATH}/POS.System-*.jar
+              cp "$ROLLBACK_JAR" "${ROOT_PATH}/${ROLLBACK_NAME}"
+              sed -i "s|ExecStart=.*|ExecStart=/usr/bin/java -Xms512m -Xmx2g -Duser.timezone=Asia/Colombo -jar ${ROOT_PATH}/${ROLLBACK_NAME}|" "$SERVICE_FILE"
+              systemctl daemon-reload
+              systemctl restart pos.service
+              echo "rolled back to ${ROLLBACK_NAME}"
+            fi
+            exit 1
