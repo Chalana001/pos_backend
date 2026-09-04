@@ -97,7 +97,11 @@ public class PurchaseReturnService {
 
             int alreadyReturned = purchaseReturnItemRepository
                     .sumReturnedQtyByGrnItemId(grnItem.getId());
-            int maxReturnable = grnItem.getQty() - alreadyReturned;
+            // Free (FOC) units were received into stock too, so they are returnable.
+            // Refunds use the line's diluted cost price, so returning everything
+            // (paid + free) refunds exactly the net amount paid — never more.
+            int freeQty = grnItem.getFreeQty() == null ? 0 : grnItem.getFreeQty();
+            int maxReturnable = grnItem.getQty() + freeQty - alreadyReturned;
 
             if (maxReturnable <= 0) {
                 throw new BadRequestException(

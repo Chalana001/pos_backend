@@ -31,6 +31,16 @@ public class GrnItem extends TenantEntity {
     @Column(name = "display_qty", nullable = false, precision = 12, scale = 3)
     private BigDecimal displayQty;
 
+    // Supplier free-of-charge (FOC) units: received into stock, dilute the effective
+    // unit cost, but add nothing to the line amount or the payable total.
+    @Builder.Default
+    @Column(name = "free_qty", nullable = false)
+    private Integer freeQty = 0;
+
+    @Builder.Default
+    @Column(name = "display_free_qty", nullable = false, precision = 12, scale = 3)
+    private BigDecimal displayFreeQty = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "qty_unit", nullable = false, length = 10)
     private MeasurementUnit qtyUnit;

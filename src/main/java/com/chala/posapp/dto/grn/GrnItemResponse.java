@@ -14,6 +14,7 @@ public class GrnItemResponse {
     private String itemName;
     private String altName;
     private BigDecimal qty;
+    private BigDecimal freeQty;
     private MeasurementUnit qtyUnit;
     private BigDecimal costPrice;
     private BigDecimal sellingPrice;

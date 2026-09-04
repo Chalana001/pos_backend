@@ -8,6 +8,8 @@ import java.time.LocalDate;
 public class GrnItemRequest {
     private Long itemId;
     private BigDecimal qty;
+    // Supplier free-of-charge units, in the same unit as qtyUnit. Optional; null means 0.
+    private BigDecimal freeQty;
     private MeasurementUnit qtyUnit;
 
     private BigDecimal costPrice;

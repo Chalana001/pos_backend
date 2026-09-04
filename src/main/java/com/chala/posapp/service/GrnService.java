@@ -48,6 +48,7 @@ public class GrnService {
                         .itemName(item.getItem().getName())
                         .altName(item.getItem().getAltName())
                         .qty(item.getDisplayQty())
+                        .freeQty(item.getDisplayFreeQty())
                         .qtyUnit(item.getQtyUnit())
                         .costPrice(item.getCostPrice())
                         .sellingPrice(item.getSellingPrice())

@@ -225,11 +225,18 @@ public class PurchaseService {
                 BigDecimal effectiveCostPrice = preparedLine.effectiveCostPrice();
                 BigDecimal netLineTotal = preparedLine.netLineTotal();
 
-                item.setCostPrice(effectiveCostPrice);
+                // A fully-free line pays nothing, so its effective cost is 0. That 0 is the
+                // true cost of the batch, but it must not overwrite the item's reference
+                // cost — margin reports would show a fake 100% profit afterwards.
+                if (preparedLine.normalizedQty() > 0) {
+                    item.setCostPrice(effectiveCostPrice);
+                }
                 item.setSellingPrice(itemReq.getSellingPrice());
                 itemRepository.save(item);
 
                 int normalizedQty = preparedLine.normalizedQty();
+                int normalizedFreeQty = preparedLine.normalizedFreeQty();
+                int totalReceivedQty = preparedLine.totalReceivedQty();
 
                 if (Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
                     zeroOutNegativeStock(item, branch, user);
@@ -244,8 +251,8 @@ public class PurchaseService {
                         .branch(branch)
                         .item(item)
                         .supplier(supplier)
-                        .quantity(normalizedQty)
-                        .originalQuantity(normalizedQty)
+                        .quantity(totalReceivedQty)
+                        .originalQuantity(totalReceivedQty)
                         .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
                         .sourceType(StockBatchSourceType.PURCHASE)
@@ -255,11 +262,20 @@ public class PurchaseService {
                         .build();
                 stockBatchRepository.save(batch);
 
+                BigDecimal displayQty = itemReq.getQty() == null
+                        ? BigDecimal.ZERO
+                        : itemReq.getQty().stripTrailingZeros();
+                BigDecimal displayFreeQty = itemReq.getFreeQty() == null
+                        ? BigDecimal.ZERO
+                        : itemReq.getFreeQty().stripTrailingZeros();
+
                 GrnItem grnItem = GrnItem.builder()
                         .grn(savedGrn)
                         .item(item)
                         .qty(normalizedQty)
-                        .displayQty(itemReq.getQty().stripTrailingZeros())
+                        .displayQty(displayQty)
+                        .freeQty(normalizedFreeQty)
+                        .displayFreeQty(displayFreeQty)
                         .qtyUnit(QuantityConversionUtil.isMeasuredItem(item.getItemType())
                                 ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
                                 : QuantityConversionUtil.primaryDisplayUnit(item))
@@ -278,6 +294,7 @@ public class PurchaseService {
                         .altName(item.getAltName())
                         .barcode(item.getBarcode())
                         .qty(grnItem.getDisplayQty())
+                        .freeQty(grnItem.getDisplayFreeQty())
                         .qtyUnit(grnItem.getQtyUnit())
                         .costPrice(effectiveCostPrice)
                         .sellingPrice(itemReq.getSellingPrice())
@@ -423,6 +440,7 @@ public class PurchaseService {
                                     .altName(item.getItem().getAltName())
                                     .barcode(item.getItem().getBarcode())
                                     .qty(item.getDisplayQty())
+                                    .freeQty(item.getDisplayFreeQty())
                                     .qtyUnit(item.getQtyUnit())
                                     .costPrice(item.getCostPrice())
                                     .sellingPrice(item.getSellingPrice())
@@ -642,16 +660,30 @@ public class PurchaseService {
                     throw new BadRequestException("Only stock-tracked grocery items can be purchased or added to GRN. Item: " + item.getName());
                 }
 
-                int normalizedQty = QuantityConversionUtil.normalizeQuantity(
-                        item.getItemType(),
-                        item.getDefaultUnit(),
-                        itemReq.getQty(),
-                        QuantityConversionUtil.isMeasuredItem(item.getItemType())
-                                ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
-                                : QuantityConversionUtil.primaryDisplayUnit(item)
-                );
+                MeasurementUnit resolvedUnit = QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                        ? (itemReq.getQtyUnit() == null ? QuantityConversionUtil.primaryDisplayUnit(item) : itemReq.getQtyUnit())
+                        : QuantityConversionUtil.primaryDisplayUnit(item);
+
+                BigDecimal freeQty = itemReq.getFreeQty();
+                if (freeQty != null && freeQty.signum() < 0) {
+                    throw new BadRequestException("Free quantity cannot be negative. Item: " + item.getName());
+                }
+                boolean hasPaidQty = itemReq.getQty() != null && itemReq.getQty().signum() > 0;
+                boolean hasFreeQty = freeQty != null && freeQty.signum() > 0;
+                if (!hasPaidQty && !hasFreeQty) {
+                    throw new BadRequestException("Quantity must be greater than zero. Item: " + item.getName());
+                }
+
+                // A line may be entirely free of charge (supplier FOC-only delivery):
+                // paid qty 0 is allowed as long as free qty is present.
+                int normalizedQty = hasPaidQty
+                        ? QuantityConversionUtil.normalizeQuantity(item.getItemType(), item.getDefaultUnit(), itemReq.getQty(), resolvedUnit)
+                        : 0;
+                int normalizedFreeQty = hasFreeQty
+                        ? QuantityConversionUtil.normalizeQuantity(item.getItemType(), item.getDefaultUnit(), freeQty, resolvedUnit)
+                        : 0;
                 BigDecimal grossLineTotal = QuantityConversionUtil.calculateActualAmount(item, itemReq.getCostPrice(), normalizedQty);
-                preparedLines.add(new PreparedPurchaseLine(itemReq, item, normalizedQty, grossLineTotal));
+                preparedLines.add(new PreparedPurchaseLine(itemReq, item, normalizedQty, normalizedFreeQty, grossLineTotal));
             }
         }
 
@@ -685,15 +717,15 @@ public class PurchaseService {
         }
     }
 
-    private static BigDecimal effectiveUnitCost(Item item, BigDecimal netLineTotal, int normalizedQty) {
-        if (normalizedQty <= 0) {
+    private static BigDecimal effectiveUnitCost(BigDecimal netLineTotal, int totalReceivedQty) {
+        if (totalReceivedQty <= 0) {
             return BigDecimal.ZERO;
         }
 
         BigDecimal baseUnitsPerPrimaryUnit = BigDecimal.valueOf(1000);
         return netLineTotal
                 .multiply(baseUnitsPerPrimaryUnit)
-                .divide(BigDecimal.valueOf(normalizedQty), UNIT_COST_SCALE, RoundingMode.HALF_UP)
+                .divide(BigDecimal.valueOf(totalReceivedQty), UNIT_COST_SCALE, RoundingMode.HALF_UP)
                 .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
@@ -701,14 +733,16 @@ public class PurchaseService {
         private final GrnItemRequest request;
         private final Item item;
         private final int normalizedQty;
+        private final int normalizedFreeQty;
         private final BigDecimal grossLineTotal;
         private BigDecimal netLineTotal;
         private BigDecimal effectiveCostPrice;
 
-        private PreparedPurchaseLine(GrnItemRequest request, Item item, int normalizedQty, BigDecimal grossLineTotal) {
+        private PreparedPurchaseLine(GrnItemRequest request, Item item, int normalizedQty, int normalizedFreeQty, BigDecimal grossLineTotal) {
             this.request = request;
             this.item = item;
             this.normalizedQty = normalizedQty;
+            this.normalizedFreeQty = normalizedFreeQty;
             this.grossLineTotal = grossLineTotal;
             applyDiscount(BigDecimal.ZERO);
         }
@@ -725,6 +759,14 @@ public class PurchaseService {
             return normalizedQty;
         }
 
+        private int normalizedFreeQty() {
+            return normalizedFreeQty;
+        }
+
+        private int totalReceivedQty() {
+            return normalizedQty + normalizedFreeQty;
+        }
+
         private BigDecimal grossLineTotal() {
             return grossLineTotal;
         }
@@ -739,7 +781,9 @@ public class PurchaseService {
 
         private void applyDiscount(BigDecimal discount) {
             this.netLineTotal = grossLineTotal.subtract(discount).max(BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-            this.effectiveCostPrice = effectiveUnitCost(item, netLineTotal, normalizedQty);
+            // Free units dilute the unit cost: the money paid for the line is spread
+            // over everything received, so "10 + 2 free" costs 10/12 per unit.
+            this.effectiveCostPrice = effectiveUnitCost(netLineTotal, totalReceivedQty());
         }
     }
 
