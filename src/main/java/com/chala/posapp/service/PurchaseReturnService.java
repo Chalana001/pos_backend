@@ -8,6 +8,7 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.entity.supplier.Supplier;
+import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -95,31 +96,53 @@ public class PurchaseReturnService {
                         "GRN item id " + itemReq.getGrnItemId() + " does not belong to GRN " + grn.getGrnNo());
             }
 
+            // Units: the request and the stored purchase_return_items.return_qty are in
+            // DISPLAY units — the unit the GRN line was entered in (grn_items.qty_unit).
+            // grn_items.qty and stock batches are in normalized base units (thousandths:
+            // 10 pcs = 10000). Compare display against display here, and normalize only
+            // for the stock math below — mixing the two scales is what previously let
+            // returns deduct 1/1000th of the stock and pass a ~1000x-too-loose cap.
+            Item item = grnItem.getItem();
             int alreadyReturned = purchaseReturnItemRepository
                     .sumReturnedQtyByGrnItemId(grnItem.getId());
             // Free (FOC) units were received into stock too, so they are returnable.
             // Refunds use the line's diluted cost price, so returning everything
             // (paid + free) refunds exactly the net amount paid — never more.
-            int freeQty = grnItem.getFreeQty() == null ? 0 : grnItem.getFreeQty();
-            int maxReturnable = grnItem.getQty() + freeQty - alreadyReturned;
+            BigDecimal displayFreeQty = grnItem.getDisplayFreeQty() == null
+                    ? BigDecimal.ZERO : grnItem.getDisplayFreeQty();
+            BigDecimal maxReturnable = grnItem.getDisplayQty()
+                    .add(displayFreeQty)
+                    .subtract(BigDecimal.valueOf(alreadyReturned));
 
-            if (maxReturnable <= 0) {
+            if (maxReturnable.signum() <= 0) {
                 throw new BadRequestException(
-                        "Item '" + grnItem.getItem().getName() + "' has already been fully returned");
+                        "Item '" + item.getName() + "' has already been fully returned");
             }
-            if (itemReq.getReturnQty() > maxReturnable) {
+            if (BigDecimal.valueOf(itemReq.getReturnQty()).compareTo(maxReturnable) > 0) {
                 throw new BadRequestException(
                         "Return qty " + itemReq.getReturnQty()
-                                + " exceeds returnable qty " + maxReturnable
-                                + " for item '" + grnItem.getItem().getName() + "'");
+                                + " exceeds returnable qty " + maxReturnable.stripTrailingZeros().toPlainString()
+                                + " for item '" + item.getName() + "'");
             }
 
-            // Cannot return if stock was already sold/consumed beyond what remains
-            checkStockAvailableForReturn(grnItem, itemReq.getReturnQty(), branchId, grn.getGrnNo());
+            int normalizedReturnQty = QuantityConversionUtil.normalizeQuantity(
+                    item.getItemType(),
+                    item.getDefaultUnit(),
+                    BigDecimal.valueOf(itemReq.getReturnQty()),
+                    QuantityConversionUtil.isMeasuredItem(item.getItemType())
+                            ? grnItem.getQtyUnit()
+                            : QuantityConversionUtil.primaryDisplayUnit(item));
 
+            // Cannot return if stock was already sold/consumed beyond what remains
+            checkStockAvailableForReturn(grnItem, normalizedReturnQty, branchId, grn.getGrnNo());
+
+            // costPrice is per PRIMARY unit (pc / kg / l). calculateActualAmount divides
+            // by the base-unit factor, which also fixes lines entered in G or ML being
+            // refunded at 1000x what was paid.
             BigDecimal refundLine = roundMoney(
-                    grnItem.getCostPrice().multiply(BigDecimal.valueOf(itemReq.getReturnQty())));
-            validatedLines.add(new ValidatedReturnLine(grnItem, itemReq.getReturnQty(), refundLine));
+                    QuantityConversionUtil.calculateActualAmount(item, grnItem.getCostPrice(), normalizedReturnQty));
+            validatedLines.add(new ValidatedReturnLine(
+                    grnItem, itemReq.getReturnQty(), normalizedReturnQty, refundLine));
         }
 
         // 5. Total return amount
@@ -156,7 +179,7 @@ public class PurchaseReturnService {
         List<PurchaseReturnItem> savedItems = new ArrayList<>();
         for (ValidatedReturnLine line : validatedLines) {
             boolean stockDeducted = deductStockForReturnItem(
-                    line.grnItem, line.returnQty, branchId, grn.getGrnNo());
+                    line.grnItem, line.normalizedReturnQty, branchId, grn.getGrnNo());
 
             PurchaseReturnItem returnItem = PurchaseReturnItem.builder()
                     .purchaseReturnId(savedReturn.getId())
@@ -260,7 +283,9 @@ public class PurchaseReturnService {
     //   and deduct returnQty from it
     // ---------------------------------------------------------------
 
-    private void checkStockAvailableForReturn(GrnItem grnItem, int returnQty,
+    // Both quantities below are in NORMALIZED base units — same scale as
+    // StockBatch.quantity — never the display units the caller typed.
+    private void checkStockAvailableForReturn(GrnItem grnItem, int normalizedReturnQty,
                                                Long branchId, String grnNo) {
         Item item = grnItem.getItem();
         if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
@@ -278,16 +303,17 @@ public class PurchaseReturnService {
                 .mapToInt(b -> b.getQuantity() == null ? 0 : b.getQuantity())
                 .sum();
 
-        if (availableInBatches < returnQty) {
+        if (availableInBatches < normalizedReturnQty) {
             throw new BadRequestException(
-                    "Cannot return " + returnQty + " of '" + item.getName()
-                            + "' — only " + availableInBatches
-                            + " units remain in stock (rest have been sold). "
+                    "Cannot return this quantity of '" + item.getName()
+                            + "' — only "
+                            + QuantityConversionUtil.toDisplayQuantity(item, availableInBatches).stripTrailingZeros().toPlainString()
+                            + " remain in stock (rest have been sold). "
                             + "Return only the unsold quantity.");
         }
     }
 
-    private boolean deductStockForReturnItem(GrnItem grnItem, int returnQty,
+    private boolean deductStockForReturnItem(GrnItem grnItem, int normalizedReturnQty,
                                               Long branchId, String grnNo) {
         Item item = grnItem.getItem();
         if (item.getItemType() == ItemType.SERVICE || item.getItemType() == ItemType.RECIPE) {
@@ -303,7 +329,7 @@ public class PurchaseReturnService {
         }
 
         // Deduct from batches FIFO
-        int remaining = returnQty;
+        int remaining = normalizedReturnQty;
         for (StockBatch batch : batches) {
             if (remaining <= 0) break;
             int available = batch.getQuantity() == null ? 0 : batch.getQuantity();
@@ -358,10 +384,13 @@ public class PurchaseReturnService {
                 .build();
     }
 
-    // Carries validated data between validation and persistence
+    // Carries validated data between validation and persistence.
+    // returnQty is in display units (what is persisted and shown);
+    // normalizedReturnQty is in base units (what stock math uses).
     private record ValidatedReturnLine(
             GrnItem grnItem,
             int returnQty,
+            int normalizedReturnQty,
             BigDecimal returnLineAmount) {
     }
 }
