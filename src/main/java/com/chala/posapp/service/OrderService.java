@@ -277,6 +277,14 @@ public class OrderService {
         StockOverrideContext stockOverrideContext =
                 buildStockOverrideContext(request, user, offlineOrderMetadata != null);
 
+        // A promotion's minBillAmount is judged against the whole cart at list price, so the
+        // subtotal has to exist before the first line is priced. The items are batch-loaded
+        // into the persistence context here, which is also what keeps the per-item findById
+        // in the loop below from issuing a second round of queries.
+        double cartBaseSubtotal = activePromotions.isEmpty()
+                ? 0
+                : calculateCartBaseSubtotal(request.getItems());
+
         for (OrderItemRequest itemReq : request.getItems()) {
             validateWarrantySelection(itemReq, user.getRole(), branchId);
             Item item = itemRepository.findById(itemReq.getItemId())
@@ -309,6 +317,7 @@ public class OrderService {
                     normalizedQty,
                     discountType,
                     discountValue,
+                    cartBaseSubtotal,
                     activePromotions
             );
             discountType = promotionApplication.discountType();
@@ -1190,6 +1199,39 @@ public class OrderService {
                     + " (Batch #" + batch.getId() + "). Available: " + currentQuantity);
         }
         batch.setQuantity(currentQuantity - normalizedQty);
+    }
+
+    /**
+     * The cart at list price, before any discount — what a promotion's {@code minBillAmount}
+     * is measured against.
+     *
+     * <p>Items are fetched in one batch rather than one at a time: the main pricing loop
+     * calls {@code findById} per line straight afterwards, and those resolve from the
+     * persistence context this populates instead of hitting the database again. Lines whose
+     * item no longer exists are skipped here and left for the main loop to reject with its
+     * own message, so this pass never changes which orders are accepted.
+     */
+    private double calculateCartBaseSubtotal(List<OrderItemRequest> itemRequests) {
+        List<Long> itemIds = itemRequests.stream()
+                .map(OrderItemRequest::getItemId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Item> itemsById = itemRepository.findAllById(itemIds).stream()
+                .collect(Collectors.toMap(Item::getId, java.util.function.Function.identity(), (a, b) -> a));
+
+        double subtotal = 0;
+        for (OrderItemRequest itemReq : itemRequests) {
+            Item item = itemsById.get(itemReq.getItemId());
+            if (item == null) {
+                continue;
+            }
+            int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemReq.getQty(), itemReq.getQtyUnit());
+            subtotal += QuantityConversionUtil
+                    .calculateActualAmount(item, BigDecimal.valueOf(itemReq.getUnitPrice()), normalizedQty)
+                    .doubleValue();
+        }
+        return subtotal;
     }
 
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {

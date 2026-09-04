@@ -32,7 +32,7 @@ public class PromotionService {
     private final SecurityUtils securityUtils;
 
     public List<PromotionResponse> list() {
-        return promotionRepository.findAllByOrderByActiveDescStartAtDescIdDesc().stream()
+        return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
                 .map(this::mapResponse)
                 .toList();
     }
@@ -61,7 +61,7 @@ public class PromotionService {
     @Transactional
     public PromotionResponse update(Long id, PromotionRequest request) {
         validateRequest(request);
-        Promotion promotion = promotionRepository.findById(id)
+        Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
 
         promotion.setName(request.getName().trim());
@@ -82,28 +82,50 @@ public class PromotionService {
 
     @Transactional
     public PromotionResponse updateStatus(Long id, boolean active) {
-        Promotion promotion = promotionRepository.findById(id)
+        Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
         promotion.setActive(active);
         return mapResponse(promotionRepository.save(promotion));
     }
 
+    /**
+     * Retires a promotion without erasing what it did.
+     *
+     * <p>Past orders carry {@code promotion_id} and {@code bill_promotion_id} as plain
+     * columns with no foreign key behind them, so removing the row left every sale it
+     * discounted pointing at nothing — the discounts stayed on the books while the terms
+     * that produced them were gone, and RPT-08 reported a null discount type for them for
+     * good. Marking {@code deletedAt} keeps the row joinable for reporting; deactivating
+     * alongside it means nothing downstream has to remember to check both columns.
+     */
     @Transactional
     public void delete(Long id) {
-        if (!promotionRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Promotion not found");
-        }
-        promotionRepository.deleteById(id);
+        Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
+        promotion.setDeletedAt(LocalDateTime.now());
+        promotion.setActive(false);
+        promotionRepository.save(promotion);
     }
 
     public List<Promotion> activePromotionsForBranch(Long branchId, LocalDateTime now) {
         return promotionRepository
-                .findByActiveTrueAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByPriorityDescIdDesc(now, now)
+                .findByActiveTrueAndDeletedAtIsNullAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByPriorityDescIdDesc(now, now)
                 .stream()
                 .filter(promotion -> promotion.getBranchId() == null || Objects.equals(promotion.getBranchId(), branchId))
                 .toList();
     }
 
+    /**
+     * Picks the best item/category promotion for one cart line and stacks the cashier's
+     * manual discount on top of it.
+     *
+     * <p>{@code cartBaseSubtotal} is the whole cart at list price, before any discount. It
+     * exists so that {@code minBillAmount} can be honoured here as well as at bill level:
+     * comparing against a post-discount figure would be circular, since the discount is
+     * what this method is deciding. Both {@code minBillAmount} and {@code maxDiscountAmount}
+     * were silently ignored on this path until now — the columns were stored and the
+     * engine never read them, so a capped percentage promotion gave away an uncapped one.
+     */
     public PromotionApplication calculateBestDiscount(
             Item item,
             Long branchId,
@@ -111,10 +133,12 @@ public class PromotionService {
             int normalizedQty,
             DiscountType manualType,
             double manualValue,
+            double cartBaseSubtotal,
             List<Promotion> activePromotions
     ) {
         DiscountType normalizedManualType = manualType == null ? DiscountType.NONE : manualType;
         double baseLineTotal = lineTotal(item, unitPrice, normalizedQty);
+        double safeCartSubtotal = Math.max(0, cartBaseSubtotal);
 
         Promotion bestPromotion = null;
         double bestPromotionDiscount = 0.0;
@@ -123,12 +147,15 @@ public class PromotionService {
             if (promotion.getScope() != PromotionScope.ITEM && promotion.getScope() != PromotionScope.CATEGORY) {
                 continue;
             }
+            if (safeCartSubtotal < Math.max(0, promotion.getMinBillAmount())) {
+                continue;
+            }
             if (!matches(promotion, item, branchId)) {
                 continue;
             }
             double promoFinalUnitPrice = calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
             double promoLineTotal = lineTotal(item, promoFinalUnitPrice, normalizedQty);
-            double promoDiscount = roundMoney(baseLineTotal - promoLineTotal);
+            double promoDiscount = capLineDiscount(promotion, roundMoney(baseLineTotal - promoLineTotal));
             if (promoDiscount > bestPromotionDiscount) {
                 bestPromotion = promotion;
                 bestPromotionDiscount = promoDiscount;
@@ -136,16 +163,24 @@ public class PromotionService {
         }
 
         if (bestPromotion != null) {
-            double promoFinalUnitPrice = calculateFinalUnitPrice(unitPrice, bestPromotion.getDiscountType(), bestPromotion.getDiscountValue());
+            double promoFinalUnitPrice = discountedUnitPrice(unitPrice, baseLineTotal, bestPromotionDiscount);
             double stackedFinalUnitPrice = calculateFinalUnitPrice(promoFinalUnitPrice, normalizedManualType, manualValue);
             double promoLineTotal = lineTotal(item, promoFinalUnitPrice, normalizedQty);
             double finalLineTotal = lineTotal(item, stackedFinalUnitPrice, normalizedQty);
             double manualDiscountAmount = roundMoney(promoLineTotal - finalLineTotal);
             double appliedDiscountAmount = roundMoney(baseLineTotal - finalLineTotal);
-            DiscountType effectiveDiscountType = normalizedManualType == DiscountType.NONE
+            // The caller rebuilds the final unit price from this type/value pair, so it has to
+            // reproduce the price actually charged. The promotion's own PERCENT survives only
+            // when nothing altered it — a manual discount on top, or maxDiscountAmount biting,
+            // both mean the line no longer sells at that percentage and the pair collapses to
+            // the flat per-unit reduction. Returning PERCENT there would re-expand to the
+            // uncapped discount downstream.
+            boolean capApplied = capApplied(bestPromotion, unitPrice, baseLineTotal, normalizedQty, item);
+            boolean promotionRateIntact = normalizedManualType == DiscountType.NONE && !capApplied;
+            DiscountType effectiveDiscountType = promotionRateIntact
                     ? bestPromotion.getDiscountType()
                     : DiscountType.FIXED;
-            double effectiveDiscountValue = normalizedManualType == DiscountType.NONE
+            double effectiveDiscountValue = promotionRateIntact
                     ? bestPromotion.getDiscountValue()
                     : roundMoney(Math.max(0, unitPrice - stackedFinalUnitPrice));
 
@@ -243,17 +278,29 @@ public class PromotionService {
         List<Promotion> activePromotions = activePromotionsForBranch(branchId, now);
         List<PromotionPreviewItemResponse> items = new ArrayList<>();
 
+        // Resolve every line first: minBillAmount is judged against the whole cart at list
+        // price, so the subtotal has to be known before the first line is priced.
+        List<ResolvedLine> lines = new ArrayList<>();
+        double cartBaseSubtotal = 0;
         for (OrderItemRequest itemRequest : request.getItems()) {
             Item item = itemRepository.findById(itemRequest.getItemId())
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemRequest.getItemId()));
             int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
+            lines.add(new ResolvedLine(item, itemRequest, normalizedQty));
+            cartBaseSubtotal += lineTotal(item, itemRequest.getUnitPrice(), normalizedQty);
+        }
+
+        for (ResolvedLine line : lines) {
+            Item item = line.item();
+            OrderItemRequest itemRequest = line.request();
             PromotionApplication application = calculateBestDiscount(
                     item,
                     branchId,
                     itemRequest.getUnitPrice(),
-                    normalizedQty,
+                    line.normalizedQty(),
                     itemRequest.getDiscountType(),
                     itemRequest.getDiscountValue(),
+                    cartBaseSubtotal,
                     activePromotions
             );
             items.add(PromotionPreviewItemResponse.builder()
@@ -296,6 +343,10 @@ public class PromotionService {
                 .finalTotal(orderApplication.finalTotal())
                 .billPromotionApplied(orderApplication.promotionApplied())
                 .build();
+    }
+
+    /** One preview line with its item and quantity already resolved, so the cart is only walked once. */
+    private record ResolvedLine(Item item, OrderItemRequest request, int normalizedQty) {
     }
 
     private void validateRequest(PromotionRequest request) {
@@ -521,6 +572,54 @@ public class PromotionService {
 
     private double lineTotal(Item item, double unitPrice, int normalizedQty) {
         return roundMoney(QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitPrice), normalizedQty).doubleValue());
+    }
+
+    /**
+     * Clamps one line's promotion discount to {@code maxDiscountAmount}. A zero cap means
+     * "no cap" — the column is NOT NULL and defaults to 0, so it cannot distinguish
+     * "uncapped" from "give nothing away", and uncapped is the only reading that keeps
+     * every promotion written before this cap existed working.
+     *
+     * <p>The cap is per line, not per cart: it reads as a ceiling on what this promotion
+     * takes off this item, which is also what makes it a usable guard against a mistyped
+     * offer price.
+     */
+    private double capLineDiscount(Promotion promotion, double lineDiscount) {
+        double cap = Math.max(0, promotion.getMaxDiscountAmount());
+        if (cap <= 0) {
+            return lineDiscount;
+        }
+        return roundMoney(Math.min(lineDiscount, cap));
+    }
+
+    /** True when {@link #capLineDiscount} actually reduced what this promotion would have given. */
+    private boolean capApplied(Promotion promotion, double unitPrice, double baseLineTotal, int normalizedQty, Item item) {
+        double cap = Math.max(0, promotion.getMaxDiscountAmount());
+        if (cap <= 0) {
+            return false;
+        }
+        double uncappedUnitPrice = calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
+        double uncappedDiscount = roundMoney(baseLineTotal - lineTotal(item, uncappedUnitPrice, normalizedQty));
+        return uncappedDiscount > cap;
+    }
+
+    /**
+     * Converts a line-level discount back into the unit price that produces it.
+     *
+     * <p>Everything downstream — manual discount stacking, the persisted
+     * {@code finalUnitPrice} — works in unit-price space, but a capped discount is only
+     * expressible as an amount. Scaling works because {@link #lineTotal} is linear in the
+     * unit price, so it holds for weight and measure items as well as whole units.
+     */
+    private double discountedUnitPrice(double unitPrice, double baseLineTotal, double lineDiscount) {
+        if (baseLineTotal <= 0) {
+            return unitPrice;
+        }
+        double ratio = (baseLineTotal - lineDiscount) / baseLineTotal;
+        if (ratio < 0) {
+            ratio = 0;
+        }
+        return unitPrice * ratio;
     }
 
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {

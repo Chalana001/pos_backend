@@ -12,6 +12,7 @@ import java.util.List;
         name = "promotions",
         indexes = {
                 @Index(name = "idx_promotion_active_dates", columnList = "active, start_at, end_at"),
+                @Index(name = "idx_promotion_live", columnList = "active, deleted_at, start_at, end_at"),
                 @Index(name = "idx_promotion_branch", columnList = "branch_id")
         }
 )
@@ -70,6 +71,16 @@ public class Promotion extends TenantEntity {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    /**
+     * Set when the promotion is retired. The row is never removed: past orders carry
+     * {@code promotion_id} with no foreign key behind it, so deleting the row would leave
+     * the discounts on the books while the terms that produced them vanished. Every read
+     * path filters {@code deleted_at IS NULL}; reporting joins ignore it and still resolve
+     * the name and discount of a campaign that ended.
+     */
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
 
     @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
