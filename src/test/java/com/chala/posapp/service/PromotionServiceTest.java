@@ -59,7 +59,9 @@ class PromotionServiceTest {
                 mock(BranchRepository.class),
                 mock(CustomerRepository.class),
                 mock(SecurityUtils.class),
-                mock(PromotionSnapshotCache.class)
+                mock(PromotionSnapshotCache.class),
+                mock(PromotionGate.class),
+                mock(com.chala.posapp.repository.PromotionCodeRepository.class)
         );
     }
 

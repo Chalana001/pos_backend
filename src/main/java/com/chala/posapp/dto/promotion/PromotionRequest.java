@@ -75,6 +75,15 @@ public class PromotionRequest {
     @Valid
     private List<PromotionScheduleDto> schedules;
 
+    /** Orders this promotion may discount before it stops applying. Null means unlimited. */
+    private Integer maxTotalRedemptions;
+
+    /** Orders per customer. Only enforceable when a customer is on the sale. */
+    private Integer maxRedemptionsPerCustomer;
+
+    /** Total discount this promotion may give. Null means unlimited. */
+    private BigDecimal budgetAmount;
+
     public PromotionEffectType resolvedEffectType() {
         return effectType == null ? PromotionEffectType.DISCOUNT : effectType;
     }

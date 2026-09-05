@@ -3,6 +3,7 @@ package com.chala.posapp.repository;
 import com.chala.posapp.entity.Promotion;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -40,6 +41,53 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
      */
     @EntityGraph(attributePaths = "targets")
     List<Promotion> findByActiveTrueAndDeletedAtIsNullOrderByPriorityDescIdDesc();
+
+    /**
+     * The caps and running counters for a set of promotions, read fresh at every checkout.
+     *
+     * <p>Not part of the cached snapshot on purpose: the counters move on every sale, and
+     * evicting the whole tenant's promotion cache each time a promotion fires would throw away
+     * the point of caching. The static configuration stays cached; this one indexed query gets
+     * the moving part.
+     *
+     * <p>Columns: id, maxTotalRedemptions, maxRedemptionsPerCustomer, budgetAmount,
+     * timesRedeemed, budgetConsumed, codeCount.
+     */
+    @Query(value = """
+        SELECT p.id, p.max_total_redemptions, p.max_redemptions_per_customer, p.budget_amount,
+               p.times_redeemed, p.budget_consumed,
+               (SELECT COUNT(*) FROM promotion_codes c WHERE c.promotion_id = p.id) AS code_count
+        FROM promotions p
+        WHERE p.id IN (:ids)
+        """, nativeQuery = true)
+    List<Object[]> limitStateRaw(@Param("ids") List<Long> ids);
+
+    /**
+     * Counts a redemption against the promotion's caps, or refuses. Budget is checked on the
+     * state before this order: a promotion stops applying once its budget is spent, and the
+     * last sale is allowed to overshoot by at most its own discount rather than being refused
+     * at the till for being Rs. 5 over. The redemption count is strict.
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE promotions
+        SET times_redeemed = times_redeemed + 1,
+            budget_consumed = budget_consumed + :amount
+        WHERE id = :id
+          AND (max_total_redemptions IS NULL OR times_redeemed < max_total_redemptions)
+          AND (budget_amount IS NULL OR budget_consumed < budget_amount)
+        """, nativeQuery = true)
+    int consume(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
+
+    /** Gives a redemption and its budget back on refund, floored at zero. */
+    @Modifying
+    @Query(value = """
+        UPDATE promotions
+        SET times_redeemed = GREATEST(0, times_redeemed - 1),
+            budget_consumed = GREATEST(0, budget_consumed - :amount)
+        WHERE id = :id
+        """, nativeQuery = true)
+    int release(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
 
     /**
      * Every promotion including retired ones, for the history page.

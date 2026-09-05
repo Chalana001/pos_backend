@@ -72,6 +72,38 @@ public class PromotionController {
         return ResponseEntity.ok(promotionService.priceCheck(request));
     }
 
+    /** Would this code work right now? Answered without consuming anything, for the till. */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @PostMapping("/check-code")
+    public ResponseEntity<CodeCheckResponse> checkCode(@Valid @RequestBody CodeCheckRequest request) {
+        return ResponseEntity.ok(promotionService.checkCode(request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/{id}/codes")
+    public ResponseEntity<List<PromotionCodeDto>> listCodes(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.listCodes(id));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/codes")
+    public ResponseEntity<List<PromotionCodeDto>> generateCodes(
+            @PathVariable Long id,
+            @Valid @RequestBody GenerateCodesRequest request
+    ) {
+        return ResponseEntity.ok(promotionService.generateCodes(id, request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PatchMapping("/{id}/codes/{codeId}/status")
+    public ResponseEntity<PromotionCodeDto> setCodeActive(
+            @PathVariable Long id,
+            @PathVariable Long codeId,
+            @RequestBody PromotionStatusRequest request
+    ) {
+        return ResponseEntity.ok(promotionService.setCodeActive(id, codeId, request.isActive()));
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{id}/duplicate")
     public ResponseEntity<PromotionResponse> duplicate(@PathVariable Long id) {

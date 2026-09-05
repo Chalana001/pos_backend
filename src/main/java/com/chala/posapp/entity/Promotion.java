@@ -133,6 +133,47 @@ public class Promotion extends TenantEntity {
     @Builder.Default
     private List<PromotionSchedule> schedules = new ArrayList<>();
 
+    /** A promotion with any codes applies only when one of them is presented. */
+    @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true)
+    @org.hibernate.annotations.BatchSize(size = 50)
+    @Builder.Default
+    private List<PromotionCode> codes = new ArrayList<>();
+
+    /** Null means unlimited. Counts orders, not lines. */
+    @Column(name = "max_total_redemptions")
+    private Integer maxTotalRedemptions;
+
+    @Column(name = "max_redemptions_per_customer")
+    private Integer maxRedemptionsPerCustomer;
+
+    /** Total discount this promotion may give before it stops applying. Null means unlimited. */
+    @Column(name = "budget_amount", precision = 19, scale = 4)
+    private BigDecimal budgetAmount;
+
+    // Running counters. Maintained by conditional UPDATEs inside the order transaction and
+    // deliberately not written by entity saves, so an admin editing the promotion's name cannot
+    // overwrite a count a sale bumped a second ago.
+    // ColumnDefault matters wherever Hibernate generates the schema (the test profile): a
+    // NOT NULL column that inserts omit needs a default, or the first save fails.
+    @Column(name = "times_redeemed", nullable = false, insertable = false, updatable = false)
+    @org.hibernate.annotations.ColumnDefault("0")
+    private int timesRedeemed;
+
+    @Column(name = "budget_consumed", nullable = false, insertable = false, updatable = false, precision = 19, scale = 4)
+    @org.hibernate.annotations.ColumnDefault("0")
+    private BigDecimal budgetConsumed;
+
+    public boolean isCodeGated() {
+        return codes != null && !codes.isEmpty();
+    }
+
+    public boolean isExhausted() {
+        if (maxTotalRedemptions != null && timesRedeemed >= maxTotalRedemptions) {
+            return true;
+        }
+        return budgetAmount != null && budgetConsumed != null && budgetConsumed.compareTo(budgetAmount) >= 0;
+    }
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

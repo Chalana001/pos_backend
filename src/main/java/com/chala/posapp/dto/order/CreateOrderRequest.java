@@ -31,6 +31,9 @@ public class CreateOrderRequest {
     @Min(0)
     private double billDiscount;
 
+    /** A promo code the customer presented. Validated and consumed inside the order transaction. */
+    private String promotionCode;
+
     @Min(0)
     private double paidAmount; // for CASH
 

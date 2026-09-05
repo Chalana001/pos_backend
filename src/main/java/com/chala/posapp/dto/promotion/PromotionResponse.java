@@ -35,6 +35,14 @@ public class PromotionResponse {
     private boolean allowManualStacking;
     private List<PromotionTierDto> tiers;
     private List<PromotionScheduleDto> schedules;
+    private Integer maxTotalRedemptions;
+    private Integer maxRedemptionsPerCustomer;
+    private BigDecimal budgetAmount;
+    private int timesRedeemed;
+    private BigDecimal budgetConsumed;
+    /** How many codes gate this promotion; zero means it applies automatically. */
+    private int codeCount;
+    private boolean exhausted;
     /** Item ids alone, for clients written before per-item pricing. Mirrors {@link #items}. */
     private List<Long> itemIds;
     /** Item targets with whatever price or rate each one carries. */

@@ -39,7 +39,20 @@ public record LineDecision(
         /** Matched but the resulting discount was zero — an offer price at or above list, say. */
         NO_DISCOUNT,
         /** At bill level: the manual discount was larger, so the promotion stood down. */
-        LOST_TO_MANUAL
+        LOST_TO_MANUAL,
+        /** The promotion is code-gated and no valid code of its was presented. */
+        CODE_REQUIRED,
+        /** The promotion has been redeemed as many times as it allows. */
+        LIMIT_REACHED,
+        /** The promotion has given away its whole budget. */
+        BUDGET_EXHAUSTED,
+        /** This customer has had this promotion as often as it allows. */
+        CUSTOMER_LIMIT_REACHED
+    }
+
+    /** For gating decisions, which have no snapshot at hand. */
+    public static LineDecision of(Long promotionId, String promotionName, Outcome outcome) {
+        return new LineDecision(promotionId, promotionName, outcome, BigDecimal.ZERO);
     }
 
     static LineDecision of(PromotionSnapshot promotion, Outcome outcome) {

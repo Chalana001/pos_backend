@@ -13,6 +13,9 @@ public class PromotionPreviewRequest {
     private Long customerId;
     private double billDiscount;
 
+    /** A promo code the customer presented, if any. One per cart. */
+    private String promotionCode;
+
     @Valid
     @NotNull
     private List<OrderItemRequest> items;

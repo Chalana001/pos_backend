@@ -17,6 +17,9 @@ import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.promotion.engine.LineDecision;
+import com.chala.posapp.promotion.engine.LineEvaluation;
+import com.chala.posapp.promotion.engine.OrderEvaluation;
 import com.chala.posapp.promotion.engine.PricingLine;
 import com.chala.posapp.promotion.engine.PromotionApplication;
 import com.chala.posapp.promotion.engine.PromotionOrderApplication;
@@ -71,6 +74,8 @@ public class OrderService {
     private final WarrantyRepository warrantyRepository;
     private final AppConfigurationService appConfigurationService;
     private final PromotionService promotionService;
+    private final PromotionGate promotionGate;
+    private final PromotionRedemptionService promotionRedemptionService;
     private final StockOverrideAuditRepository stockOverrideAuditRepository;
     private final PlatformTransactionManager transactionManager;
     private final UserRepository userRepository;
@@ -273,13 +278,30 @@ public class OrderService {
         // second implementation of scopes, targets, caps, priority and best-of selection.
         // Any drift between the two reintroduces exactly this mismatch, so the sale is
         // banked at the price it was actually sold for instead.
-        List<PromotionSnapshot> activePromotions = offlineOrderMetadata != null
-                ? List.of()
-                : promotionService.activePromotionsForBranch(branchId, soldAt);
+        // The gate removes what a code, a cap, a budget or a per-customer limit rules out. A
+        // presented code that does not work refuses the sale outright: the customer expects
+        // the discount, and silently charging full price is the one outcome nobody wants.
+        PromotionGate.Result promotionGateResult = null;
+        List<PromotionSnapshot> activePromotions = List.of();
+        if (offlineOrderMetadata == null) {
+            promotionGateResult = promotionGate.gate(
+                    promotionService.activePromotionsForBranch(branchId, soldAt),
+                    request.getPromotionCode(),
+                    request.getCustomerId(),
+                    soldAt);
+            if (promotionGateResult.codeStatus() != null && !promotionGateResult.codeStatus().isValid()) {
+                throw new BadRequestException("Promo code " + promotionGateResult.codeStatus().getCode()
+                        + ": " + promotionGateResult.codeStatus().getMessage());
+            }
+            activePromotions = promotionGateResult.eligible();
+        }
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
         // The bill pass needs the cart as priced so far: bundles and cheapest-free count units
         // from it, and an EXCLUSIVE line winner stands every bill-level promotion down.
         List<PricingLine> pricedLines = new ArrayList<>();
+        // Index-aligned with preparedItems: the engine's verdicts per line, written to the
+        // redemption ledger once the order items have ids.
+        List<List<LineDecision>> lineDecisions = new ArrayList<>();
         boolean linesHaveExclusive = false;
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext =
@@ -319,7 +341,7 @@ public class OrderService {
             double unitPrice = itemReq.getUnitPrice();
             DiscountType discountType = itemReq.getDiscountType() == null ? DiscountType.NONE : itemReq.getDiscountType();
             double discountValue = itemReq.getDiscountValue();
-            PromotionApplication promotionApplication = promotionService.calculateBestDiscount(
+            LineEvaluation lineEvaluation = promotionService.evaluateLine(
                     item,
                     branchId,
                     unitPrice,
@@ -329,6 +351,8 @@ public class OrderService {
                     cartBaseSubtotal,
                     activePromotions
             );
+            PromotionApplication promotionApplication = lineEvaluation.application();
+            lineDecisions.add(lineEvaluation.decisions());
             discountType = promotionApplication.discountType();
             discountValue = promotionApplication.discountValue();
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
@@ -371,7 +395,7 @@ public class OrderService {
         double billDiscount = request.getBillDiscount();
         if (billDiscount < 0) billDiscount = 0;
         if (billDiscount > subTotal) billDiscount = subTotal;
-        PromotionOrderApplication billPromotionApplication = promotionService.calculateBestOrderDiscount(
+        OrderEvaluation billEvaluation = promotionService.evaluateOrder(
                 branchId,
                 request.getCustomerId(),
                 subTotal,
@@ -380,6 +404,7 @@ public class OrderService {
                 linesHaveExclusive,
                 activePromotions
         );
+        PromotionOrderApplication billPromotionApplication = billEvaluation.application();
         billDiscount = billPromotionApplication.appliedDiscountAmount();
         if (billPromotionApplication.promotionApplied()) {
             promotionDiscountTotal += billPromotionApplication.promotionDiscountAmount();
@@ -473,6 +498,18 @@ public class OrderService {
                 .toList();
         orderItemsToSave.forEach(orderItem -> orderItem.setOrderId(savedOrder.getId()));
         List<OrderItem> savedOrderItems = orderItemRepository.saveAll(orderItemsToSave);
+
+        // Ledger and counters, inside this transaction: a code is only consumed if the sale
+        // commits, and a cap taken by another till since the preview refuses this sale here.
+        if (promotionGateResult != null) {
+            List<PromotionRedemptionService.LineRedemption> lineRedemptions = new ArrayList<>();
+            for (int i = 0; i < savedOrderItems.size(); i++) {
+                lineRedemptions.add(new PromotionRedemptionService.LineRedemption(
+                        savedOrderItems.get(i).getId(), savedOrderItems.get(i).getItemId(), lineDecisions.get(i)));
+            }
+            promotionRedemptionService.record(savedOrder, lineRedemptions, billEvaluation.decisions(),
+                    promotionGateResult.code());
+        }
 
         List<OrderItemStockUsage> usagesToSave = new ArrayList<>();
         for (int i = 0; i < savedOrderItems.size(); i++) {
@@ -580,6 +617,9 @@ public class OrderService {
         // FIX: removed duplicate setCanceledAt() call that was here
         Order saved = orderRepository.save(order);
         reverseCashSaleFromOpenShift(saved);
+        // The discount is given back, not erased: rows are marked reversed and the caps and
+        // any code they consumed are released.
+        promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         for (OrderItem orderItem : items) {

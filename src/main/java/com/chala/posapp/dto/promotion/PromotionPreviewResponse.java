@@ -19,4 +19,6 @@ public class PromotionPreviewResponse {
     private boolean billPromotionApplied;
     /** Every bill-level promotion considered and what happened to it. */
     private List<PromotionDecisionResponse> billDecisions;
+    /** What happened to the presented code, if one was. Null when none was sent. */
+    private CodeCheckResponse codeStatus;
 }

@@ -47,6 +47,8 @@ public class PromotionService {
     private final CustomerRepository customerRepository;
     private final SecurityUtils securityUtils;
     private final PromotionSnapshotCache snapshotCache;
+    private final PromotionGate promotionGate;
+    private final PromotionCodeRepository promotionCodeRepository;
 
     public List<PromotionResponse> list() {
         return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
@@ -77,6 +79,9 @@ public class PromotionService {
                 .getQty(request.getGetQty())
                 .stackingMode(request.resolvedStackingMode())
                 .allowManualStacking(request.resolvedAllowManualStacking())
+                .maxTotalRedemptions(positiveOrNull(request.getMaxTotalRedemptions()))
+                .maxRedemptionsPerCustomer(positiveOrNull(request.getMaxRedemptionsPerCustomer()))
+                .budgetAmount(positiveOrNull(request.getBudgetAmount()))
                 .build();
         applyTargets(promotion, request);
         applyTiersAndSchedules(promotion, request);
@@ -108,6 +113,9 @@ public class PromotionService {
         promotion.setGetQty(request.getGetQty());
         promotion.setStackingMode(request.resolvedStackingMode());
         promotion.setAllowManualStacking(request.resolvedAllowManualStacking());
+        promotion.setMaxTotalRedemptions(positiveOrNull(request.getMaxTotalRedemptions()));
+        promotion.setMaxRedemptionsPerCustomer(positiveOrNull(request.getMaxRedemptionsPerCustomer()));
+        promotion.setBudgetAmount(positiveOrNull(request.getBudgetAmount()));
         promotion.getTargets().clear();
         applyTargets(promotion, request);
         promotion.getTiers().clear();
@@ -232,7 +240,9 @@ public class PromotionService {
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
         LocalDateTime now = LocalDateTime.now();
-        List<PromotionSnapshot> activePromotions = activePromotionsForBranch(branchId, now);
+        PromotionGate.Result gate = promotionGate.gate(
+                activePromotionsForBranch(branchId, now), request.getPromotionCode(), request.getCustomerId(), now);
+        List<PromotionSnapshot> activePromotions = gate.eligible();
 
         // Resolve every line first: minBillAmount is judged against the whole cart at list
         // price, so the subtotal has to be known before the first line is priced.
@@ -313,8 +323,139 @@ public class PromotionService {
                 .appliedBillDiscountAmount(orderApplication.appliedDiscountAmount())
                 .finalTotal(orderApplication.finalTotal())
                 .billPromotionApplied(orderApplication.promotionApplied())
-                .billDecisions(toDecisionResponses(orderEvaluation.decisions()))
+                .billDecisions(toDecisionResponses(concat(gate.excluded(), orderEvaluation.decisions())))
+                .codeStatus(gate.codeStatus())
                 .build();
+    }
+
+    private static List<LineDecision> concat(List<LineDecision> first, List<LineDecision> second) {
+        List<LineDecision> all = new ArrayList<>(first);
+        all.addAll(second);
+        return all;
+    }
+
+    private static Integer positiveOrNull(Integer value) {
+        return value == null || value <= 0 ? null : value;
+    }
+
+    private static BigDecimal positiveOrNull(BigDecimal value) {
+        return value == null || value.signum() <= 0 ? null : value;
+    }
+
+    /** "Would this code work right now?" — for the till, without consuming anything. */
+    public CodeCheckResponse checkCode(CodeCheckRequest request) {
+        User user = securityUtils.getCurrentUser();
+        Long branchId = resolveBranchId(user, request.getBranchId());
+        LocalDateTime now = LocalDateTime.now();
+        PromotionGate.Result gate = promotionGate.gate(
+                activePromotionsForBranch(branchId, now), request.getCode(), request.getCustomerId(), now);
+        return gate.codeStatus();
+    }
+
+    public List<PromotionCodeDto> listCodes(Long promotionId) {
+        requireLivePromotion(promotionId);
+        return promotionCodeRepository.findByPromotionIdOrderByIdAsc(promotionId).stream()
+                .map(PromotionCodeDto::from)
+                .toList();
+    }
+
+    /**
+     * Mints codes. A named code is created as given; otherwise {@code count} random ones under
+     * the prefix. Random codes avoid 0/O and 1/I because they are read aloud and typed by hand.
+     */
+    @Transactional
+    public List<PromotionCodeDto> generateCodes(Long promotionId, GenerateCodesRequest request) {
+        Promotion promotion = requireLivePromotion(promotionId);
+        if (request.getMaxRedemptions() != null && request.getMaxRedemptions() <= 0) {
+            throw new BadRequestException("Max uses must be greater than 0, or empty for unlimited");
+        }
+        if (request.getPerCustomerLimit() != null && request.getPerCustomerLimit() <= 0) {
+            throw new BadRequestException("Per-customer limit must be greater than 0, or empty for unlimited");
+        }
+        if (request.getValidFrom() != null && request.getValidTo() != null
+                && !request.getValidTo().isAfter(request.getValidFrom())) {
+            throw new BadRequestException("Code end must be after its start");
+        }
+
+        String batchId = java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        List<PromotionCode> created = new ArrayList<>();
+
+        if (request.getCode() != null && !request.getCode().isBlank()) {
+            String code = request.getCode().trim().toUpperCase();
+            if (!code.matches("[A-Z0-9-]{3,40}")) {
+                throw new BadRequestException("A code is 3-40 letters, digits or dashes");
+            }
+            if (promotionCodeRepository.existsByCodeIgnoreCase(code)) {
+                throw new BadRequestException("Code " + code + " already exists");
+            }
+            created.add(newCode(promotion, code, request, batchId));
+        } else {
+            String prefix = request.getPrefix() == null ? "" : request.getPrefix().trim().toUpperCase();
+            if (!prefix.matches("[A-Z0-9]{0,8}")) {
+                throw new BadRequestException("A prefix is up to 8 letters or digits");
+            }
+            java.security.SecureRandom random = new java.security.SecureRandom();
+            java.util.Set<String> minted = new java.util.HashSet<>();
+            int attempts = 0;
+            while (created.size() < request.getCount()) {
+                if (++attempts > request.getCount() * 20) {
+                    throw new BadRequestException("Could not generate enough unique codes; try a different prefix");
+                }
+                String code = prefix + randomCode(random, 8);
+                if (!minted.add(code) || promotionCodeRepository.existsByCodeIgnoreCase(code)) {
+                    continue;
+                }
+                created.add(newCode(promotion, code, request, batchId));
+            }
+        }
+
+        promotion.getCodes().addAll(created);
+        promotionRepository.save(promotion);
+        return created.stream().map(PromotionCodeDto::from).toList();
+    }
+
+    @Transactional
+    public PromotionCodeDto setCodeActive(Long promotionId, Long codeId, boolean active) {
+        requireLivePromotion(promotionId);
+        PromotionCode code = promotionCodeRepository.findById(codeId)
+                .filter(c -> Objects.equals(c.getPromotion().getId(), promotionId))
+                .orElseThrow(() -> new ResourceNotFoundException("Code not found"));
+        code.setActive(active);
+        return PromotionCodeDto.from(promotionCodeRepository.save(code));
+    }
+
+    private Promotion requireLivePromotion(Long promotionId) {
+        return promotionRepository.findByIdAndDeletedAtIsNull(promotionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
+    }
+
+    private PromotionCode newCode(Promotion promotion, String code, GenerateCodesRequest request, String batchId) {
+        PromotionCode.CodeType type = request.getCodeType() == null ? PromotionCode.CodeType.PUBLIC : request.getCodeType();
+        Integer maxRedemptions = request.getMaxRedemptions();
+        if (type == PromotionCode.CodeType.SINGLE_USE && maxRedemptions == null) {
+            maxRedemptions = 1;
+        }
+        return PromotionCode.builder()
+                .promotion(promotion)
+                .code(code)
+                .codeType(type)
+                .maxRedemptions(maxRedemptions)
+                .perCustomerLimit(request.getPerCustomerLimit())
+                .validFrom(request.getValidFrom())
+                .validTo(request.getValidTo())
+                .active(true)
+                .batchId(batchId)
+                .build();
+    }
+
+    /** No 0/O or 1/I: these get read over a counter and typed on a till. */
+    private static String randomCode(java.security.SecureRandom random, int length) {
+        final String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(alphabet.charAt(random.nextInt(alphabet.length())));
+        }
+        return sb.toString();
     }
 
     private List<PromotionDecisionResponse> toDecisionResponses(List<LineDecision> decisions) {
@@ -341,6 +482,15 @@ public class PromotionService {
         }
         validateEffect(request);
         validateSchedules(request);
+        if (request.getMaxTotalRedemptions() != null && request.getMaxTotalRedemptions() < 0) {
+            throw new BadRequestException("Redemption limit cannot be negative");
+        }
+        if (request.getMaxRedemptionsPerCustomer() != null && request.getMaxRedemptionsPerCustomer() < 0) {
+            throw new BadRequestException("Per-customer limit cannot be negative");
+        }
+        if (request.getBudgetAmount() != null && request.getBudgetAmount().signum() < 0) {
+            throw new BadRequestException("Budget cannot be negative");
+        }
         if (request.getStartAt() == null || request.getEndAt() == null) {
             throw new BadRequestException("Promotion start and end dates are required");
         }
@@ -607,6 +757,9 @@ public class PromotionService {
         if (!promotion.isActive()) {
             return "PAUSED";
         }
+        if (promotion.isExhausted()) {
+            return "EXHAUSTED";
+        }
         if (promotion.getStartAt() != null && promotion.getStartAt().isAfter(now)) {
             return "SCHEDULED";
         }
@@ -762,7 +915,12 @@ public class PromotionService {
                 .getQty(source.getGetQty())
                 .stackingMode(source.getStackingMode())
                 .allowManualStacking(source.isAllowManualStacking())
+                .maxTotalRedemptions(source.getMaxTotalRedemptions())
+                .maxRedemptionsPerCustomer(source.getMaxRedemptionsPerCustomer())
+                .budgetAmount(source.getBudgetAmount())
                 .build();
+        // Codes are deliberately not copied: they are unique, and a duplicate campaign wants
+        // its own batch, not a second promotion answering to last year's codes.
 
         source.getTargets().forEach(target -> copy.getTargets().add(PromotionTarget.builder()
                 .promotion(copy)
@@ -955,6 +1113,13 @@ public class PromotionService {
                 .getQty(promotion.getGetQty())
                 .stackingMode(promotion.getStackingMode())
                 .allowManualStacking(promotion.isAllowManualStacking())
+                .maxTotalRedemptions(promotion.getMaxTotalRedemptions())
+                .maxRedemptionsPerCustomer(promotion.getMaxRedemptionsPerCustomer())
+                .budgetAmount(promotion.getBudgetAmount())
+                .timesRedeemed(promotion.getTimesRedeemed())
+                .budgetConsumed(promotion.getBudgetConsumed() == null ? BigDecimal.ZERO : promotion.getBudgetConsumed())
+                .codeCount(promotion.getCodes() == null ? 0 : promotion.getCodes().size())
+                .exhausted(promotion.isExhausted())
                 .tiers(promotion.getTiers().stream()
                         .map(tier -> PromotionTierDto.builder()
                                 .minQty(tier.getMinQty())
