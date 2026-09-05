@@ -9,6 +9,9 @@ import com.chala.posapp.entity.Promotion;
 import com.chala.posapp.entity.PromotionScope;
 import com.chala.posapp.entity.PromotionTarget;
 import com.chala.posapp.entity.SubCategory;
+import com.chala.posapp.promotion.engine.PromotionApplication;
+import com.chala.posapp.promotion.engine.PromotionOrderApplication;
+import com.chala.posapp.promotion.engine.PromotionSnapshot;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.CategoryRepository;
 import com.chala.posapp.repository.CustomerRepository;
@@ -22,6 +25,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,11 +58,20 @@ class PromotionServiceTest {
                 mock(SubCategoryRepository.class),
                 mock(BranchRepository.class),
                 mock(CustomerRepository.class),
-                mock(SecurityUtils.class)
+                mock(SecurityUtils.class),
+                mock(PromotionSnapshotCache.class)
         );
     }
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * The calculators take engine snapshots, not entities. Fixtures are still built as entities
+     * because that is the shape the mapping has to get right, so this is the boundary crossing.
+     */
+    private static List<PromotionSnapshot> snap(Promotion... promotions) {
+        return Arrays.stream(promotions).map(PromotionSnapshot::from).toList();
+    }
 
     private Item item(long id, long subCategoryId, long categoryId) {
         Category category = new Category();
@@ -99,7 +112,7 @@ class PromotionServiceTest {
                 .name(name)
                 .scope(PromotionScope.ITEM)
                 .discountType(type)
-                .discountValue(value)
+                .discountValue(BigDecimal.valueOf(value))
                 .active(true)
                 .build();
         promotion.getTargets().add(PromotionTarget.builder().promotion(promotion).itemId(targetItemId).build());
@@ -112,7 +125,7 @@ class PromotionServiceTest {
                 .name("Category promo " + id)
                 .scope(PromotionScope.CATEGORY)
                 .discountType(type)
-                .discountValue(value)
+                .discountValue(BigDecimal.valueOf(value))
                 .active(true)
                 .build();
         promotion.getTargets().add(PromotionTarget.builder()
@@ -129,12 +142,12 @@ class PromotionServiceTest {
                 .name("Bill promo " + id)
                 .scope(PromotionScope.BILL)
                 .discountType(type)
-                .discountValue(value)
+                .discountValue(BigDecimal.valueOf(value))
                 .active(true)
                 .build();
     }
 
-    private PromotionApplication priceLine(Item item, double unitPrice, int qty, double cartSubtotal, List<Promotion> promos) {
+    private PromotionApplication priceLine(Item item, double unitPrice, int qty, double cartSubtotal, List<PromotionSnapshot> promos) {
         return service.calculateBestDiscount(item, 1L, unitPrice, qty, DiscountType.NONE, 0, cartSubtotal, promos);
     }
 
@@ -150,9 +163,9 @@ class PromotionServiceTest {
             // 20% of a Rs. 200,000 line is Rs. 40,000 against a Rs. 500 intent. This is the
             // exact shape of the bug: the cap was accepted, persisted, and ignored.
             Promotion promo = itemPromotion(1, "Electronics 20%", DiscountType.PERCENT, 20, 7L);
-            promo.setMaxDiscountAmount(500);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(500));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100_000, TWO_PIECES, 200_000, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100_000, TWO_PIECES, 200_000, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.promotionDiscountAmount()).isEqualTo(500.0);
@@ -163,9 +176,9 @@ class PromotionServiceTest {
         @DisplayName("leaves a discount smaller than the cap untouched")
         void doesNotCapBelowThreshold() {
             Promotion promo = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
-            promo.setMaxDiscountAmount(500);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(500));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(20.0);
             assertThat(result.finalLineTotal()).isEqualTo(180.0);
@@ -175,9 +188,9 @@ class PromotionServiceTest {
         @DisplayName("treats a zero cap as no cap, so promotions written before the cap existed still work")
         void zeroCapMeansUncapped() {
             Promotion promo = itemPromotion(1, "20% off", DiscountType.PERCENT, 20, 7L);
-            promo.setMaxDiscountAmount(0);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(0));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 1000, TWO_PIECES, 2000, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 1000, TWO_PIECES, 2000, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(400.0);
         }
@@ -188,10 +201,10 @@ class PromotionServiceTest {
             // OrderService rebuilds finalUnitPrice from the returned type/value. If a capped
             // PERCENT came back as PERCENT, that rebuild would hand back the uncapped discount.
             Promotion promo = itemPromotion(1, "20% capped", DiscountType.PERCENT, 20, 7L);
-            promo.setMaxDiscountAmount(500);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(500));
 
             Item item = item(7, 3, 2);
-            PromotionApplication result = priceLine(item, 100_000, TWO_PIECES, 200_000, List.of(promo));
+            PromotionApplication result = priceLine(item, 100_000, TWO_PIECES, 200_000, snap(promo));
 
             assertThat(result.discountType()).isEqualTo(DiscountType.FIXED);
 
@@ -205,7 +218,7 @@ class PromotionServiceTest {
         void uncappedPercentIsReportedAsPercent() {
             Promotion promo = itemPromotion(1, "20% off", DiscountType.PERCENT, 20, 7L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.discountType()).isEqualTo(DiscountType.PERCENT);
             assertThat(result.discountValue()).isEqualTo(20.0);
@@ -215,9 +228,9 @@ class PromotionServiceTest {
         @DisplayName("caps a category promotion the same way")
         void capsCategoryPromotion() {
             Promotion promo = categoryPromotion(1, DiscountType.PERCENT, 50, 2L, null);
-            promo.setMaxDiscountAmount(100);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(100));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 1000, TWO_PIECES, 2000, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 1000, TWO_PIECES, 2000, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(100.0);
         }
@@ -233,9 +246,9 @@ class PromotionServiceTest {
         @DisplayName("skips the promotion when the cart at list price is below the minimum")
         void skipsBelowMinimum() {
             Promotion promo = itemPromotion(1, "Spend 5000", DiscountType.PERCENT, 10, 7L);
-            promo.setMinBillAmount(5000);
+            promo.setMinBillAmount(BigDecimal.valueOf(5000));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
             assertThat(result.promotionDiscountAmount()).isZero();
@@ -246,9 +259,9 @@ class PromotionServiceTest {
         @DisplayName("applies once the cart reaches the minimum")
         void appliesAtMinimum() {
             Promotion promo = itemPromotion(1, "Spend 5000", DiscountType.PERCENT, 10, 7L);
-            promo.setMinBillAmount(5000);
+            promo.setMinBillAmount(BigDecimal.valueOf(5000));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 5000, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 5000, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.promotionDiscountAmount()).isEqualTo(20.0);
@@ -267,7 +280,7 @@ class PromotionServiceTest {
             Promotion small = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
             Promotion large = itemPromotion(2, "30% off", DiscountType.PERCENT, 30, 7L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(small, large));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(small, large));
 
             assertThat(result.promotionId()).isEqualTo(2L);
             assertThat(result.promotionDiscountAmount()).isEqualTo(60.0);
@@ -277,10 +290,10 @@ class PromotionServiceTest {
         @DisplayName("a cap can change which promotion wins")
         void capChangesTheWinner() {
             Promotion cappedBig = itemPromotion(1, "30% capped at 10", DiscountType.PERCENT, 30, 7L);
-            cappedBig.setMaxDiscountAmount(10);
+            cappedBig.setMaxDiscountAmount(BigDecimal.valueOf(10));
             Promotion uncappedSmall = itemPromotion(2, "10% off", DiscountType.PERCENT, 10, 7L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(cappedBig, uncappedSmall));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(cappedBig, uncappedSmall));
 
             assertThat(result.promotionId()).isEqualTo(2L);
             assertThat(result.promotionDiscountAmount()).isEqualTo(20.0);
@@ -295,7 +308,7 @@ class PromotionServiceTest {
             Promotion lowerPriority = itemPromotion(2, "Second", DiscountType.PERCENT, 10, 7L);
 
             PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200,
-                    List.of(higherPriority, lowerPriority));
+                    snap(higherPriority, lowerPriority));
 
             assertThat(result.promotionId()).isEqualTo(1L);
         }
@@ -306,7 +319,7 @@ class PromotionServiceTest {
             Promotion otherBranch = itemPromotion(1, "Branch 2 only", DiscountType.PERCENT, 10, 7L);
             otherBranch.setBranchId(2L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(otherBranch));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(otherBranch));
 
             assertThat(result.promotionApplied()).isFalse();
         }
@@ -323,7 +336,7 @@ class PromotionServiceTest {
         void matchesViaParentCategory() {
             Promotion promo = categoryPromotion(1, DiscountType.PERCENT, 10, 2L, null);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
         }
@@ -333,7 +346,7 @@ class PromotionServiceTest {
         void matchesViaSubCategory() {
             Promotion promo = categoryPromotion(1, DiscountType.PERCENT, 10, null, 3L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
         }
@@ -345,7 +358,7 @@ class PromotionServiceTest {
             // legacy or hand-edited row must degrade quietly instead of throwing at checkout.
             Promotion promo = categoryPromotion(1, DiscountType.PERCENT, 10, 2L, 3L);
 
-            PromotionApplication result = priceLine(uncategorisedItem(7), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(uncategorisedItem(7), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
         }
@@ -363,7 +376,7 @@ class PromotionServiceTest {
             Promotion promo = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
 
             PromotionApplication result = service.calculateBestDiscount(
-                    item(7, 3, 2), 1L, 100, TWO_PIECES, DiscountType.PERCENT, 10, 200, List.of(promo));
+                    item(7, 3, 2), 1L, 100, TWO_PIECES, DiscountType.PERCENT, 10, 200, snap(promo));
 
             // 100 → 90 (promotion) → 81 (manual), so the line is 162 rather than 160.
             assertThat(result.finalLineTotal()).isEqualTo(162.0);
@@ -376,7 +389,7 @@ class PromotionServiceTest {
         @DisplayName("applies alone when no promotion matches")
         void manualOnly() {
             PromotionApplication result = service.calculateBestDiscount(
-                    item(7, 3, 2), 1L, 100, TWO_PIECES, DiscountType.FIXED, 25, 200, List.of());
+                    item(7, 3, 2), 1L, 100, TWO_PIECES, DiscountType.FIXED, 25, 200, snap());
 
             assertThat(result.promotionApplied()).isFalse();
             assertThat(result.finalLineTotal()).isEqualTo(150.0);
@@ -387,7 +400,7 @@ class PromotionServiceTest {
         @DisplayName("a fixed discount larger than the price floors the line at zero")
         void manualCannotGoNegative() {
             PromotionApplication result = service.calculateBestDiscount(
-                    item(7, 3, 2), 1L, 100, ONE_PIECE, DiscountType.FIXED, 500, 100, List.of());
+                    item(7, 3, 2), 1L, 100, ONE_PIECE, DiscountType.FIXED, 500, 100, snap());
 
             assertThat(result.finalLineTotal()).isZero();
         }
@@ -403,10 +416,10 @@ class PromotionServiceTest {
         @DisplayName("honours maxDiscountAmount")
         void capsBillPromotion() {
             Promotion promo = billPromotion(1, DiscountType.PERCENT, 20);
-            promo.setMaxDiscountAmount(500);
+            promo.setMaxDiscountAmount(BigDecimal.valueOf(500));
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 0, List.of(promo));
+                    1L, null, 10_000, 0, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.promotionDiscountAmount()).isEqualTo(500.0);
@@ -417,10 +430,10 @@ class PromotionServiceTest {
         @DisplayName("skips a promotion whose minimum bill is not met")
         void honoursMinimumBill() {
             Promotion promo = billPromotion(1, DiscountType.PERCENT, 20);
-            promo.setMinBillAmount(5_000);
+            promo.setMinBillAmount(BigDecimal.valueOf(5_000));
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 1_000, 0, List.of(promo));
+                    1L, null, 1_000, 0, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
             assertThat(result.finalTotal()).isEqualTo(1_000.0);
@@ -434,12 +447,12 @@ class PromotionServiceTest {
             Promotion promo = billPromotion(1, DiscountType.PERCENT, 10);
 
             PromotionOrderApplication promotionWins = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 200, List.of(promo));
+                    1L, null, 10_000, 200, snap(promo));
             assertThat(promotionWins.promotionApplied()).isTrue();
             assertThat(promotionWins.appliedDiscountAmount()).isEqualTo(1_000.0);
 
             PromotionOrderApplication manualWins = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 2_000, List.of(promo));
+                    1L, null, 10_000, 2_000, snap(promo));
             assertThat(manualWins.promotionApplied()).isFalse();
             assertThat(manualWins.appliedDiscountAmount()).isEqualTo(2_000.0);
         }
@@ -450,7 +463,7 @@ class PromotionServiceTest {
             Promotion promo = billPromotion(1, DiscountType.FIXED, 50_000);
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 1_000, 0, List.of(promo));
+                    1L, null, 1_000, 0, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(1_000.0);
             assertThat(result.finalTotal()).isZero();
@@ -464,7 +477,7 @@ class PromotionServiceTest {
     void roundsToTwoDecimals() {
         Promotion promo = itemPromotion(1, "33% off", DiscountType.PERCENT, 33.333, 7L);
 
-        PromotionApplication result = priceLine(item(7, 3, 2), 99.99, ONE_PIECE, 99.99, List.of(promo));
+        PromotionApplication result = priceLine(item(7, 3, 2), 99.99, ONE_PIECE, 99.99, snap(promo));
 
         assertThat(BigDecimal.valueOf(result.promotionDiscountAmount()).scale()).isLessThanOrEqualTo(2);
         assertThat(BigDecimal.valueOf(result.finalLineTotal()).scale()).isLessThanOrEqualTo(2);
@@ -479,7 +492,7 @@ class PromotionServiceTest {
         private Promotion promoWithTarget(PromotionTarget target, DiscountType type, double value) {
             Promotion promotion = Promotion.builder()
                     .id(1L).name("Christmas Sale").scope(PromotionScope.ITEM)
-                    .discountType(type).discountValue(value).active(true)
+                    .discountType(type).discountValue(BigDecimal.valueOf(value)).active(true)
                     .allowBelowCost(true)
                     .build();
             target.setPromotion(promotion);
@@ -496,7 +509,7 @@ class PromotionServiceTest {
                     .build();
             Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 50);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.finalLineTotal()).isEqualTo(798.0);
@@ -513,7 +526,7 @@ class PromotionServiceTest {
                     .build();
             Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(50.0);
             assertThat(result.discountType()).isEqualTo(DiscountType.PERCENT);
@@ -526,7 +539,7 @@ class PromotionServiceTest {
             PromotionTarget target = PromotionTarget.builder().itemId(7L).build();
             Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(20.0);
             assertThat(result.discountType()).isEqualTo(DiscountType.PERCENT);
@@ -538,7 +551,7 @@ class PromotionServiceTest {
         void differentPricesInOneCampaign() {
             Promotion promo = Promotion.builder()
                     .id(1L).name("Christmas Sale").scope(PromotionScope.ITEM)
-                    .discountType(DiscountType.PERCENT).discountValue(5).active(true)
+                    .discountType(DiscountType.PERCENT).discountValue(BigDecimal.valueOf(5)).active(true)
                     .allowBelowCost(true)
                     .build();
             promo.getTargets().add(PromotionTarget.builder()
@@ -546,8 +559,8 @@ class PromotionServiceTest {
             promo.getTargets().add(PromotionTarget.builder()
                     .promotion(promo).itemId(8L).offerPrice(BigDecimal.valueOf(250)).build());
 
-            PromotionApplication first = priceLine(item(7, 3, 2), 450, ONE_PIECE, 730, List.of(promo));
-            PromotionApplication second = priceLine(item(8, 3, 2), 280, ONE_PIECE, 730, List.of(promo));
+            PromotionApplication first = priceLine(item(7, 3, 2), 450, ONE_PIECE, 730, snap(promo));
+            PromotionApplication second = priceLine(item(8, 3, 2), 280, ONE_PIECE, 730, snap(promo));
 
             assertThat(first.finalLineTotal()).isEqualTo(399.0);
             assertThat(second.finalLineTotal()).isEqualTo(250.0);
@@ -562,7 +575,7 @@ class PromotionServiceTest {
                     .itemId(7L).offerPrice(BigDecimal.valueOf(399)).build();
             Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 50);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, snap(promo));
 
             assertThat(result.discountType()).isEqualTo(DiscountType.FIXED);
             assertThat(result.discountValue()).isEqualTo(51.0);
@@ -575,7 +588,7 @@ class PromotionServiceTest {
                     .itemId(7L).offerPrice(BigDecimal.valueOf(900)).build();
             Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 450, ONE_PIECE, 450, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, ONE_PIECE, 450, snap(promo));
 
             assertThat(result.finalLineTotal()).isEqualTo(450.0);
             assertThat(result.promotionApplied()).isFalse();
@@ -595,7 +608,7 @@ class PromotionServiceTest {
             // for 399.00.
             Promotion promo = itemPromotion(1, "Half price", DiscountType.PERCENT, 50, 7L);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
             assertThat(result.finalLineTotal()).isEqualTo(200.0);
@@ -607,7 +620,7 @@ class PromotionServiceTest {
             Promotion promo = itemPromotion(1, "Loss leader", DiscountType.PERCENT, 50, 7L);
             promo.setAllowBelowCost(true);
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.finalLineTotal()).isEqualTo(100.0);
@@ -620,7 +633,7 @@ class PromotionServiceTest {
             Promotion promo = itemPromotion(1, "20% off", DiscountType.PERCENT, 20, 7L);
             promo.setMarginFloorPercent(BigDecimal.valueOf(30));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
         }
@@ -632,7 +645,7 @@ class PromotionServiceTest {
             Promotion promo = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
             promo.setMarginFloorPercent(BigDecimal.valueOf(30));
 
-            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
         }
@@ -647,7 +660,7 @@ class PromotionServiceTest {
                     .build();
             Promotion promo = itemPromotion(1, "Half price", DiscountType.PERCENT, 50, 7L);
 
-            PromotionApplication result = priceLine(noCost, 100, TWO_PIECES, 200, List.of(promo));
+            PromotionApplication result = priceLine(noCost, 100, TWO_PIECES, 200, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
         }
@@ -659,7 +672,7 @@ class PromotionServiceTest {
             Promotion allowed = itemPromotion(2, "20% off", DiscountType.PERCENT, 20, 7L);
 
             PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200,
-                    List.of(tooDeep, allowed));
+                    snap(tooDeep, allowed));
 
             assertThat(result.promotionId()).isEqualTo(2L);
             assertThat(result.promotionDiscountAmount()).isEqualTo(40.0);
@@ -669,7 +682,7 @@ class PromotionServiceTest {
     @Test
     @DisplayName("an empty promotion list leaves the line at list price")
     void noPromotionsLeavesListPrice() {
-        PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of());
+        PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, snap());
 
         assertThat(result.promotionApplied()).isFalse();
         assertThat(result.finalLineTotal()).isEqualTo(200.0);

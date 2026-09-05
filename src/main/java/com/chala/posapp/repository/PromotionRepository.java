@@ -31,6 +31,17 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     Optional<Promotion> findByIdAndDeletedAtIsNull(Long id);
 
     /**
+     * Every promotion that could price a sale, regardless of date window or branch.
+     *
+     * <p>This is what gets cached. Date and branch are filtered in memory on each call, because
+     * a cached "active at time T" list is wrong the moment a start date passes, whereas the set
+     * of switched-on, non-deleted promotions only changes when someone edits one — and every
+     * edit evicts. Ordered by priority so ties resolve the same way they always have.
+     */
+    @EntityGraph(attributePaths = "targets")
+    List<Promotion> findByActiveTrueAndDeletedAtIsNullOrderByPriorityDescIdDesc();
+
+    /**
      * Every promotion including retired ones, for the history page.
      *
      * <p>The one place {@code deletedAt} is deliberately not filtered — a campaign that was

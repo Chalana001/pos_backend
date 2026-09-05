@@ -5,6 +5,15 @@ import com.chala.posapp.dto.promotion.*;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.promotion.engine.LineDecision;
+import com.chala.posapp.promotion.engine.LineEvaluation;
+import com.chala.posapp.promotion.engine.MoneyOps;
+import com.chala.posapp.promotion.engine.OrderEvaluation;
+import com.chala.posapp.promotion.engine.PricingLine;
+import com.chala.posapp.promotion.engine.PromotionApplication;
+import com.chala.posapp.promotion.engine.PromotionEvaluator;
+import com.chala.posapp.promotion.engine.PromotionOrderApplication;
+import com.chala.posapp.promotion.engine.PromotionSnapshot;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
@@ -36,6 +45,7 @@ public class PromotionService {
     private final BranchRepository branchRepository;
     private final CustomerRepository customerRepository;
     private final SecurityUtils securityUtils;
+    private final PromotionSnapshotCache snapshotCache;
 
     public List<PromotionResponse> list() {
         return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
@@ -51,9 +61,9 @@ public class PromotionService {
                 .name(request.getName().trim())
                 .scope(request.getScope())
                 .discountType(request.getDiscountType())
-                .discountValue(request.getDiscountValue())
-                .minBillAmount(Math.max(0, request.getMinBillAmount()))
-                .maxDiscountAmount(Math.max(0, request.getMaxDiscountAmount()))
+                .discountValue(BigDecimal.valueOf(request.getDiscountValue()))
+                .minBillAmount(BigDecimal.valueOf(Math.max(0, request.getMinBillAmount())))
+                .maxDiscountAmount(BigDecimal.valueOf(Math.max(0, request.getMaxDiscountAmount())))
                 .startAt(request.getStartAt())
                 .endAt(request.getEndAt())
                 .branchId(normalizeBranchId(request.getBranchId()))
@@ -63,6 +73,7 @@ public class PromotionService {
                 .allowBelowCost(request.isAllowBelowCost())
                 .build();
         applyTargets(promotion, request);
+        snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
 
@@ -75,9 +86,9 @@ public class PromotionService {
         promotion.setName(request.getName().trim());
         promotion.setScope(request.getScope());
         promotion.setDiscountType(request.getDiscountType());
-        promotion.setDiscountValue(request.getDiscountValue());
-        promotion.setMinBillAmount(Math.max(0, request.getMinBillAmount()));
-        promotion.setMaxDiscountAmount(Math.max(0, request.getMaxDiscountAmount()));
+        promotion.setDiscountValue(BigDecimal.valueOf(request.getDiscountValue()));
+        promotion.setMinBillAmount(BigDecimal.valueOf(Math.max(0, request.getMinBillAmount())));
+        promotion.setMaxDiscountAmount(BigDecimal.valueOf(Math.max(0, request.getMaxDiscountAmount())));
         promotion.setStartAt(request.getStartAt());
         promotion.setEndAt(request.getEndAt());
         promotion.setBranchId(normalizeBranchId(request.getBranchId()));
@@ -87,6 +98,7 @@ public class PromotionService {
         promotion.setAllowBelowCost(request.isAllowBelowCost());
         promotion.getTargets().clear();
         applyTargets(promotion, request);
+        snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
 
@@ -95,6 +107,7 @@ public class PromotionService {
         Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
         promotion.setActive(active);
+        snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
 
@@ -114,27 +127,30 @@ public class PromotionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
         promotion.setDeletedAt(LocalDateTime.now());
         promotion.setActive(false);
+        snapshotCache.evict();
         promotionRepository.save(promotion);
     }
 
-    public List<Promotion> activePromotionsForBranch(Long branchId, LocalDateTime now) {
-        return promotionRepository
-                .findByActiveTrueAndDeletedAtIsNullAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByPriorityDescIdDesc(now, now)
-                .stream()
-                .filter(promotion -> promotion.getBranchId() == null || Objects.equals(promotion.getBranchId(), branchId))
+    /**
+     * Promotions that can price a sale at {@code branchId} right {@code now}.
+     *
+     * <p>The candidate set comes from a per-tenant cache; date window and branch are filtered
+     * here, so the expensive part is shared across every checkout and preview while the
+     * time-sensitive part is always evaluated fresh.
+     */
+    public List<PromotionSnapshot> activePromotionsForBranch(Long branchId, LocalDateTime now) {
+        return snapshotCache.candidates().stream()
+                .filter(promotion -> promotion.isRunningAt(now))
+                .filter(promotion -> promotion.coversBranch(branchId))
                 .toList();
     }
 
     /**
-     * Picks the best item/category promotion for one cart line and stacks the cashier's
-     * manual discount on top of it.
+     * Prices one cart line. The maths lives in {@link PromotionEvaluator}; this resolves the
+     * entity into a {@link PricingLine} and hands it over.
      *
-     * <p>{@code cartBaseSubtotal} is the whole cart at list price, before any discount. It
-     * exists so that {@code minBillAmount} can be honoured here as well as at bill level:
-     * comparing against a post-discount figure would be circular, since the discount is
-     * what this method is deciding. Both {@code minBillAmount} and {@code maxDiscountAmount}
-     * were silently ignored on this path until now — the columns were stored and the
-     * engine never read them, so a capped percentage promotion gave away an uncapped one.
+     * <p>{@code cartBaseSubtotal} is the whole cart at list price, so a promotion's minimum bill
+     * can be judged without circularity.
      */
     public PromotionApplication calculateBestDiscount(
             Item item,
@@ -144,96 +160,25 @@ public class PromotionService {
             DiscountType manualType,
             double manualValue,
             double cartBaseSubtotal,
-            List<Promotion> activePromotions
+            List<PromotionSnapshot> activePromotions
     ) {
-        DiscountType normalizedManualType = manualType == null ? DiscountType.NONE : manualType;
-        double baseLineTotal = lineTotal(item, unitPrice, normalizedQty);
-        double safeCartSubtotal = Math.max(0, cartBaseSubtotal);
+        return evaluateLine(item, branchId, unitPrice, normalizedQty, manualType, manualValue,
+                cartBaseSubtotal, activePromotions).application();
+    }
 
-        Promotion bestPromotion = null;
-        PromotionTarget bestTarget = null;
-        double bestPromotionDiscount = 0.0;
-        double bestUncappedDiscount = 0.0;
-
-        for (Promotion promotion : activePromotions == null ? List.<Promotion>of() : activePromotions) {
-            if (promotion.getScope() != PromotionScope.ITEM && promotion.getScope() != PromotionScope.CATEGORY) {
-                continue;
-            }
-            if (safeCartSubtotal < Math.max(0, promotion.getMinBillAmount())) {
-                continue;
-            }
-            PromotionTarget target = matchingTarget(promotion, item, branchId);
-            if (target == null) {
-                continue;
-            }
-            double promoFinalUnitPrice = resolveOfferUnitPrice(promotion, target, unitPrice);
-            if (!marginAllows(promotion, item, promoFinalUnitPrice)) {
-                continue;
-            }
-            double promoLineTotal = lineTotal(item, promoFinalUnitPrice, normalizedQty);
-            double uncappedDiscount = roundMoney(baseLineTotal - promoLineTotal);
-            double promoDiscount = capLineDiscount(promotion, uncappedDiscount);
-            if (promoDiscount > bestPromotionDiscount) {
-                bestPromotion = promotion;
-                bestTarget = target;
-                bestPromotionDiscount = promoDiscount;
-                bestUncappedDiscount = uncappedDiscount;
-            }
-        }
-
-        if (bestPromotion != null) {
-            double promoFinalUnitPrice = discountedUnitPrice(unitPrice, baseLineTotal, bestPromotionDiscount);
-            double stackedFinalUnitPrice = calculateFinalUnitPrice(promoFinalUnitPrice, normalizedManualType, manualValue);
-            double promoLineTotal = lineTotal(item, promoFinalUnitPrice, normalizedQty);
-            double finalLineTotal = lineTotal(item, stackedFinalUnitPrice, normalizedQty);
-            double manualDiscountAmount = roundMoney(promoLineTotal - finalLineTotal);
-            double appliedDiscountAmount = roundMoney(baseLineTotal - finalLineTotal);
-            // The caller rebuilds the final unit price from this type/value pair, so it has to
-            // reproduce the price actually charged. A rate survives only when nothing altered
-            // it: a manual discount on top, maxDiscountAmount biting, or a per-item offer price
-            // (which is a price, not a rate) all mean the line no longer sells at that rate, and
-            // the pair collapses to the flat per-unit reduction. Returning PERCENT there would
-            // re-expand to the uncapped discount downstream.
-            boolean capApplied = bestPromotionDiscount < bestUncappedDiscount;
-            boolean promotionRateIntact = normalizedManualType == DiscountType.NONE
-                    && !capApplied
-                    && bestTarget.getOfferPrice() == null;
-            DiscountType effectiveDiscountType = promotionRateIntact
-                    ? effectiveRateType(bestPromotion, bestTarget)
-                    : DiscountType.FIXED;
-            double effectiveDiscountValue = promotionRateIntact
-                    ? effectiveRateValue(bestPromotion, bestTarget)
-                    : roundMoney(Math.max(0, unitPrice - stackedFinalUnitPrice));
-
-            return new PromotionApplication(
-                    bestPromotion.getId(),
-                    bestPromotion.getName(),
-                    effectiveDiscountType,
-                    effectiveDiscountValue,
-                    manualDiscountAmount,
-                    bestPromotionDiscount,
-                    appliedDiscountAmount,
-                    baseLineTotal,
-                    finalLineTotal,
-                    true
-            );
-        }
-
-        double manualFinalUnitPrice = calculateFinalUnitPrice(unitPrice, normalizedManualType, manualValue);
-        double manualLineTotal = lineTotal(item, manualFinalUnitPrice, normalizedQty);
-        double manualDiscountAmount = roundMoney(baseLineTotal - manualLineTotal);
-        return new PromotionApplication(
-                null,
-                null,
-                normalizedManualType,
-                normalizedManualType == DiscountType.NONE ? 0.0 : Math.max(0, manualValue),
-                manualDiscountAmount,
-                bestPromotionDiscount,
-                manualDiscountAmount,
-                baseLineTotal,
-                manualLineTotal,
-                false
-        );
+    /** Same as {@link #calculateBestDiscount} but keeps the reasoning, for the preview. */
+    public LineEvaluation evaluateLine(
+            Item item,
+            Long branchId,
+            double unitPrice,
+            int normalizedQty,
+            DiscountType manualType,
+            double manualValue,
+            double cartBaseSubtotal,
+            List<PromotionSnapshot> activePromotions
+    ) {
+        PricingLine line = PricingLine.from(item, unitPrice, normalizedQty, manualType, manualValue);
+        return PromotionEvaluator.evaluateLine(line, branchId, BigDecimal.valueOf(cartBaseSubtotal), activePromotions);
     }
 
     public PromotionOrderApplication calculateBestOrderDiscount(
@@ -241,63 +186,27 @@ public class PromotionService {
             Long customerId,
             double baseTotal,
             double manualBillDiscount,
-            List<Promotion> activePromotions
+            List<PromotionSnapshot> activePromotions
     ) {
-        double safeBaseTotal = Math.max(0, baseTotal);
-        double manualDiscountAmount = roundMoney(Math.max(0, Math.min(manualBillDiscount, safeBaseTotal)));
-        Promotion bestPromotion = null;
-        double bestPromotionDiscount = 0.0;
+        return evaluateOrder(branchId, customerId, baseTotal, manualBillDiscount, activePromotions).application();
+    }
 
-        for (Promotion promotion : activePromotions == null ? List.<Promotion>of() : activePromotions) {
-            if (promotion.getScope() != PromotionScope.BILL && promotion.getScope() != PromotionScope.CUSTOMER) {
-                continue;
-            }
-            if (!matchesOrderPromotion(promotion, branchId, customerId, safeBaseTotal)) {
-                continue;
-            }
-
-            double promoDiscount = calculateOrderPromotionDiscount(promotion, safeBaseTotal);
-            if (promoDiscount > bestPromotionDiscount) {
-                bestPromotion = promotion;
-                bestPromotionDiscount = promoDiscount;
-            }
-        }
-
-        if (bestPromotion != null && bestPromotionDiscount > manualDiscountAmount) {
-            return new PromotionOrderApplication(
-                    bestPromotion.getId(),
-                    bestPromotion.getName(),
-                    bestPromotion.getDiscountType(),
-                    bestPromotion.getDiscountValue(),
-                    manualDiscountAmount,
-                    bestPromotionDiscount,
-                    bestPromotionDiscount,
-                    safeBaseTotal,
-                    roundMoney(safeBaseTotal - bestPromotionDiscount),
-                    true
-            );
-        }
-
-        return new PromotionOrderApplication(
-                null,
-                null,
-                DiscountType.FIXED,
-                manualDiscountAmount,
-                manualDiscountAmount,
-                bestPromotionDiscount,
-                manualDiscountAmount,
-                safeBaseTotal,
-                roundMoney(safeBaseTotal - manualDiscountAmount),
-                false
-        );
+    public OrderEvaluation evaluateOrder(
+            Long branchId,
+            Long customerId,
+            double baseTotal,
+            double manualBillDiscount,
+            List<PromotionSnapshot> activePromotions
+    ) {
+        return PromotionEvaluator.evaluateOrder(branchId, customerId,
+                BigDecimal.valueOf(baseTotal), BigDecimal.valueOf(manualBillDiscount), activePromotions);
     }
 
     public PromotionPreviewResponse preview(PromotionPreviewRequest request) {
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
         LocalDateTime now = LocalDateTime.now();
-        List<Promotion> activePromotions = activePromotionsForBranch(branchId, now);
-        List<PromotionPreviewItemResponse> items = new ArrayList<>();
+        List<PromotionSnapshot> activePromotions = activePromotionsForBranch(branchId, now);
 
         // Resolve every line first: minBillAmount is judged against the whole cart at list
         // price, so the subtotal has to be known before the first line is priced.
@@ -308,14 +217,15 @@ public class PromotionService {
                     .orElseThrow(() -> new ResourceNotFoundException("Item not found: " + itemRequest.getItemId()));
             int normalizedQty = QuantityConversionUtil.normalizeSaleQuantity(item, itemRequest.getQty(), itemRequest.getQtyUnit());
             lines.add(new ResolvedLine(item, itemRequest, normalizedQty));
-            cartBaseSubtotal += lineTotal(item, itemRequest.getUnitPrice(), normalizedQty);
+            cartBaseSubtotal += MoneyOps.lineTotal(item.getItemType(),
+                    BigDecimal.valueOf(itemRequest.getUnitPrice()), normalizedQty).doubleValue();
         }
 
+        List<PromotionPreviewItemResponse> items = new ArrayList<>();
         for (ResolvedLine line : lines) {
-            Item item = line.item();
             OrderItemRequest itemRequest = line.request();
-            PromotionApplication application = calculateBestDiscount(
-                    item,
+            LineEvaluation evaluation = evaluateLine(
+                    line.item(),
                     branchId,
                     itemRequest.getUnitPrice(),
                     line.normalizedQty(),
@@ -324,8 +234,9 @@ public class PromotionService {
                     cartBaseSubtotal,
                     activePromotions
             );
+            PromotionApplication application = evaluation.application();
             items.add(PromotionPreviewItemResponse.builder()
-                    .itemId(item.getId())
+                    .itemId(line.item().getId())
                     .promotionId(application.promotionId())
                     .promotionName(application.promotionName())
                     .discountType(application.discountType())
@@ -336,6 +247,7 @@ public class PromotionService {
                     .baseLineTotal(application.baseLineTotal())
                     .finalLineTotal(application.finalLineTotal())
                     .promotionApplied(application.promotionApplied())
+                    .decisions(toDecisionResponses(evaluation.decisions()))
                     .build());
         }
 
@@ -346,13 +258,14 @@ public class PromotionService {
                 .filter(PromotionPreviewItemResponse::isPromotionApplied)
                 .mapToDouble(PromotionPreviewItemResponse::getPromotionDiscountAmount)
                 .sum();
-        PromotionOrderApplication orderApplication = calculateBestOrderDiscount(
+        OrderEvaluation orderEvaluation = evaluateOrder(
                 branchId,
                 request.getCustomerId(),
                 subtotalAfterLineDiscounts,
                 request.getBillDiscount(),
                 activePromotions
         );
+        PromotionOrderApplication orderApplication = orderEvaluation.application();
         return PromotionPreviewResponse.builder()
                 .items(items)
                 .promotionDiscountTotal(roundMoney(promotionDiscountTotal + (orderApplication.promotionApplied() ? orderApplication.promotionDiscountAmount() : 0.0)))
@@ -363,7 +276,19 @@ public class PromotionService {
                 .appliedBillDiscountAmount(orderApplication.appliedDiscountAmount())
                 .finalTotal(orderApplication.finalTotal())
                 .billPromotionApplied(orderApplication.promotionApplied())
+                .billDecisions(toDecisionResponses(orderEvaluation.decisions()))
                 .build();
+    }
+
+    private List<PromotionDecisionResponse> toDecisionResponses(List<LineDecision> decisions) {
+        return decisions.stream()
+                .map(decision -> PromotionDecisionResponse.builder()
+                        .promotionId(decision.promotionId())
+                        .promotionName(decision.promotionName())
+                        .outcome(decision.outcome().name())
+                        .discount(decision.discount().doubleValue())
+                        .build())
+                .toList();
     }
 
     /** One preview line with its item and quantity already resolved, so the cart is only walked once. */
@@ -464,7 +389,7 @@ public class PromotionService {
                             .name(promotion.getName())
                             .scope(promotion.getScope())
                             .discountType(promotion.getDiscountType())
-                            .discountValue(promotion.getDiscountValue())
+                            .discountValue(promotion.getDiscountValue().doubleValue())
                             .startAt(promotion.getStartAt())
                             .endAt(promotion.getEndAt())
                             .branchId(promotion.getBranchId())
@@ -688,6 +613,7 @@ public class PromotionService {
                 .discountValue(target.getDiscountValue())
                 .build()));
 
+        snapshotCache.evict();
         return mapResponse(promotionRepository.save(copy));
     }
 
@@ -801,152 +727,6 @@ public class PromotionService {
                         .build()));
     }
 
-    /**
-     * The target row this item matched, or null if the promotion does not cover it.
-     *
-     * <p>Returns the row rather than a boolean because the row is where a per-item offer price
-     * lives — the caller needs to know not just whether the promotion applies but which of its
-     * entries applied.
-     *
-     * <p>A category promotion matches on either the item's sub-category or its parent category.
-     * An item with no sub-category has neither and matches nothing; the schema still permits
-     * such a row even though the API requires one, so this degrades quietly rather than
-     * dereferencing null.
-     */
-    private PromotionTarget matchingTarget(Promotion promotion, Item item, Long branchId) {
-        if (promotion.getBranchId() != null && !Objects.equals(promotion.getBranchId(), branchId)) {
-            return null;
-        }
-        if (promotion.getScope() == PromotionScope.ITEM) {
-            return promotion.getTargets().stream()
-                    .filter(target -> Objects.equals(target.getItemId(), item.getId()))
-                    .findFirst()
-                    .orElse(null);
-        }
-
-        SubCategory subCategory = item.getSubCategory();
-        Category category = subCategory != null ? subCategory.getCategory() : null;
-        Long subCategoryId = subCategory != null ? subCategory.getId() : null;
-        Long categoryId = category != null ? category.getId() : null;
-
-        return promotion.getTargets().stream()
-                .filter(target ->
-                        (target.getSubCategoryId() != null && Objects.equals(target.getSubCategoryId(), subCategoryId))
-                                || (target.getCategoryId() != null && Objects.equals(target.getCategoryId(), categoryId)))
-                .findFirst()
-                .orElse(null);
-    }
-
-    /**
-     * The unit price this item sells at under this promotion.
-     *
-     * <p>Resolution order is offer price, then per-item rate, then the promotion's own rate.
-     * Each step is more specific than the next, and the last is what every target row written
-     * before per-item pricing existed falls through to.
-     *
-     * <p>An offer price above list is a price increase, which is never what was meant — save
-     * time rejects it, and anything that still reaches here is clamped to list rather than
-     * charging a customer more than the shelf label.
-     */
-    private double resolveOfferUnitPrice(Promotion promotion, PromotionTarget target, double unitPrice) {
-        if (target != null && target.getOfferPrice() != null) {
-            double offer = target.getOfferPrice().doubleValue();
-            if (offer < 0) {
-                return 0;
-            }
-            return Math.min(offer, unitPrice);
-        }
-        if (target != null && target.getDiscountType() != null
-                && target.getDiscountType() != DiscountType.NONE && target.getDiscountValue() != null) {
-            return calculateFinalUnitPrice(unitPrice, target.getDiscountType(), target.getDiscountValue().doubleValue());
-        }
-        return calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
-    }
-
-    private DiscountType effectiveRateType(Promotion promotion, PromotionTarget target) {
-        if (target != null && target.getDiscountType() != null && target.getDiscountType() != DiscountType.NONE) {
-            return target.getDiscountType();
-        }
-        return promotion.getDiscountType();
-    }
-
-    private double effectiveRateValue(Promotion promotion, PromotionTarget target) {
-        if (target != null && target.getDiscountType() != null
-                && target.getDiscountType() != DiscountType.NONE && target.getDiscountValue() != null) {
-            return target.getDiscountValue().doubleValue();
-        }
-        return promotion.getDiscountValue();
-    }
-
-    /**
-     * Whether a promotion may price this line, given what the item costs.
-     *
-     * <p>Both checks are silent skips rather than errors: a promotion that would sell one item
-     * below cost should stop applying to that item, not fail the sale. The operator is warned
-     * at configuration time instead, which is where the price was typed.
-     *
-     * <p>An item with no cost price is left alone — there is nothing to measure against, and
-     * refusing on missing data would disable promotions on incompletely set up catalogues.
-     */
-    private boolean marginAllows(Promotion promotion, Item item, double discountedUnitPrice) {
-        BigDecimal costPrice = item.getCostPrice();
-        if (costPrice == null) {
-            return true;
-        }
-        double cost = costPrice.doubleValue();
-
-        if (!promotion.isAllowBelowCost() && discountedUnitPrice < cost) {
-            return false;
-        }
-
-        BigDecimal floor = promotion.getMarginFloorPercent();
-        if (floor != null) {
-            if (discountedUnitPrice <= 0) {
-                return false;
-            }
-            double marginPercent = ((discountedUnitPrice - cost) / discountedUnitPrice) * 100.0;
-            return marginPercent >= floor.doubleValue();
-        }
-        return true;
-    }
-
-    private boolean matchesOrderPromotion(Promotion promotion, Long branchId, Long customerId, double baseTotal) {
-        if (promotion.getBranchId() != null && !Objects.equals(promotion.getBranchId(), branchId)) {
-            return false;
-        }
-        if (baseTotal < Math.max(0, promotion.getMinBillAmount())) {
-            return false;
-        }
-        if (promotion.getScope() == PromotionScope.BILL) {
-            return true;
-        }
-        if (promotion.getScope() == PromotionScope.CUSTOMER) {
-            if (customerId == null || customerId <= 0) {
-                return false;
-            }
-            return promotion.getTargets().stream()
-                    .anyMatch(target -> Objects.equals(target.getCustomerId(), customerId));
-        }
-        return false;
-    }
-
-    private double calculateOrderPromotionDiscount(Promotion promotion, double baseTotal) {
-        double discount;
-        if (promotion.getDiscountType() == DiscountType.PERCENT) {
-            double safePercent = Math.max(0, Math.min(100, promotion.getDiscountValue()));
-            discount = baseTotal * (safePercent / 100.0);
-        } else if (promotion.getDiscountType() == DiscountType.FIXED) {
-            discount = Math.max(0, promotion.getDiscountValue());
-        } else {
-            discount = 0;
-        }
-        double maxDiscount = Math.max(0, promotion.getMaxDiscountAmount());
-        if (maxDiscount > 0) {
-            discount = Math.min(discount, maxDiscount);
-        }
-        return roundMoney(Math.min(baseTotal, discount));
-    }
-
     private Long normalizeBranchId(Long branchId) {
         if (branchId == null || branchId <= 0) {
             return null;
@@ -984,9 +764,9 @@ public class PromotionService {
                 .name(promotion.getName())
                 .scope(promotion.getScope())
                 .discountType(promotion.getDiscountType())
-                .discountValue(promotion.getDiscountValue())
-                .minBillAmount(promotion.getMinBillAmount())
-                .maxDiscountAmount(promotion.getMaxDiscountAmount())
+                .discountValue(promotion.getDiscountValue().doubleValue())
+                .minBillAmount(promotion.getMinBillAmount().doubleValue())
+                .maxDiscountAmount(promotion.getMaxDiscountAmount().doubleValue())
                 .startAt(promotion.getStartAt())
                 .endAt(promotion.getEndAt())
                 .branchId(promotion.getBranchId())
@@ -1019,47 +799,6 @@ public class PromotionService {
                 .filter(id -> id > 0)
                 .distinct()
                 .toList();
-    }
-
-    private double lineTotal(Item item, double unitPrice, int normalizedQty) {
-        return roundMoney(QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(unitPrice), normalizedQty).doubleValue());
-    }
-
-    /**
-     * Clamps one line's promotion discount to {@code maxDiscountAmount}. A zero cap means
-     * "no cap" — the column is NOT NULL and defaults to 0, so it cannot distinguish
-     * "uncapped" from "give nothing away", and uncapped is the only reading that keeps
-     * every promotion written before this cap existed working.
-     *
-     * <p>The cap is per line, not per cart: it reads as a ceiling on what this promotion
-     * takes off this item, which is also what makes it a usable guard against a mistyped
-     * offer price.
-     */
-    private double capLineDiscount(Promotion promotion, double lineDiscount) {
-        double cap = Math.max(0, promotion.getMaxDiscountAmount());
-        if (cap <= 0) {
-            return lineDiscount;
-        }
-        return roundMoney(Math.min(lineDiscount, cap));
-    }
-
-    /**
-     * Converts a line-level discount back into the unit price that produces it.
-     *
-     * <p>Everything downstream — manual discount stacking, the persisted
-     * {@code finalUnitPrice} — works in unit-price space, but a capped discount is only
-     * expressible as an amount. Scaling works because {@link #lineTotal} is linear in the
-     * unit price, so it holds for weight and measure items as well as whole units.
-     */
-    private double discountedUnitPrice(double unitPrice, double baseLineTotal, double lineDiscount) {
-        if (baseLineTotal <= 0) {
-            return unitPrice;
-        }
-        double ratio = (baseLineTotal - lineDiscount) / baseLineTotal;
-        if (ratio < 0) {
-            ratio = 0;
-        }
-        return unitPrice * ratio;
     }
 
     private double calculateFinalUnitPrice(double unitPrice, DiscountType type, double value) {

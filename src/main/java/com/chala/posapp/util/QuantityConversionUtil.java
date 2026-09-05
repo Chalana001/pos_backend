@@ -205,17 +205,25 @@ public final class QuantityConversionUtil {
     }
 
     public static BigDecimal calculateActualAmount(Item item, BigDecimal configuredPrice, int normalizedQty) {
+        return calculateActualAmount(item.getItemType(), configuredPrice, normalizedQty);
+    }
+
+    /**
+     * Same as {@link #calculateActualAmount(Item, BigDecimal, int)} without needing the entity.
+     * The pricing engine works on plain snapshots and only knows the type.
+     */
+    public static BigDecimal calculateActualAmount(ItemType itemType, BigDecimal configuredPrice, int normalizedQty) {
         if (configuredPrice == null) {
             return BigDecimal.ZERO;
         }
 
-        if (item.getItemType() != ItemType.NORMAL && item.getItemType() != ItemType.WEIGHT && item.getItemType() != ItemType.VOLUME) {
+        if (itemType != ItemType.NORMAL && itemType != ItemType.WEIGHT && itemType != ItemType.VOLUME) {
             return configuredPrice.multiply(BigDecimal.valueOf(normalizedQty));
         }
 
         return configuredPrice
                 .multiply(BigDecimal.valueOf(normalizedQty))
-                .divide(baseUnitsPerPrimaryUnit(item.getItemType()), 2, RoundingMode.HALF_UP);
+                .divide(baseUnitsPerPrimaryUnit(itemType), 2, RoundingMode.HALF_UP);
     }
 
     public static boolean isMeasuredItem(ItemType itemType) {

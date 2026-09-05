@@ -17,4 +17,6 @@ public class PromotionPreviewResponse {
     private double appliedBillDiscountAmount;
     private double finalTotal;
     private boolean billPromotionApplied;
+    /** Every bill-level promotion considered and what happened to it. */
+    private List<PromotionDecisionResponse> billDecisions;
 }

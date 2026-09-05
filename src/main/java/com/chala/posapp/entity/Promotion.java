@@ -39,16 +39,19 @@ public class Promotion extends TenantEntity {
     @Column(name = "discount_type", nullable = false, length = 20)
     private DiscountType discountType;
 
-    @Column(name = "discount_value", nullable = false)
-    private double discountValue;
+    // Money is DECIMAL(19,4) from V35. These were double, which stores 0.1 as
+    // 0.1000000000000000055511151231257827 and then rounds on the way out; the engine now
+    // computes in BigDecimal end to end, so the columns had to stop being the weak link.
+    @Column(name = "discount_value", nullable = false, precision = 19, scale = 4)
+    private BigDecimal discountValue;
 
-    @Column(name = "min_bill_amount", nullable = false)
+    @Column(name = "min_bill_amount", nullable = false, precision = 19, scale = 4)
     @Builder.Default
-    private double minBillAmount = 0.0;
+    private BigDecimal minBillAmount = BigDecimal.ZERO;
 
-    @Column(name = "max_discount_amount", nullable = false)
+    @Column(name = "max_discount_amount", nullable = false, precision = 19, scale = 4)
     @Builder.Default
-    private double maxDiscountAmount = 0.0;
+    private BigDecimal maxDiscountAmount = BigDecimal.ZERO;
 
     @Column(name = "start_at", nullable = false)
     private LocalDateTime startAt;

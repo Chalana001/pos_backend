@@ -75,6 +75,11 @@ public class CacheConfig {
     public static final String CACHE_RPT_PROMOTION_EFF    = "report-promotion-eff";
     public static final String CACHE_RPT_WARRANTY         = "report-warranty";
 
+    // The live promotion set, read on every checkout and every cart preview. Short TTL because
+    // the write paths evict it anyway; the TTL is only a backstop against a missed eviction.
+    public static final String CACHE_ACTIVE_PROMOTIONS    = "active-promotions";
+    private static final long PROMOTION_TTL_MINUTES = 5;
+
     // ── Bean ────────────────────────────────────────────────────────────────────
 
     @Bean
@@ -148,6 +153,7 @@ public class CacheConfig {
         manager.registerCustomCache(CACHE_RPT_CREDIT_AGING,  buildCache(REPORT_TTL_MINUTES));
         manager.registerCustomCache(CACHE_RPT_PROMOTION_EFF, buildCache(REPORT_TTL_MINUTES));
         manager.registerCustomCache(CACHE_RPT_WARRANTY,      buildCache(REPORT_TTL_MINUTES));
+        manager.registerCustomCache(CACHE_ACTIVE_PROMOTIONS, buildCache(PROMOTION_TTL_MINUTES));
 
         return manager;
     }

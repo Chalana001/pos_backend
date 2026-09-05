@@ -1,7 +1,8 @@
-package com.chala.posapp.service;
+package com.chala.posapp.promotion.engine;
 
 import com.chala.posapp.entity.DiscountType;
 
+/** The priced outcome at bill level. */
 public record PromotionOrderApplication(
         Long promotionId,
         String promotionName,

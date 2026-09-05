@@ -18,4 +18,6 @@ public class PromotionPreviewItemResponse {
     private double baseLineTotal;
     private double finalLineTotal;
     private boolean promotionApplied;
+    /** Every promotion considered for this line and what happened to it. */
+    private java.util.List<PromotionDecisionResponse> decisions;
 }

@@ -17,6 +17,9 @@ import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.promotion.engine.PromotionApplication;
+import com.chala.posapp.promotion.engine.PromotionOrderApplication;
+import com.chala.posapp.promotion.engine.PromotionSnapshot;
 import com.chala.posapp.exception.StockOverrideRequiredException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.tenant.TenantContext;
@@ -269,7 +272,7 @@ public class OrderService {
         // second implementation of scopes, targets, caps, priority and best-of selection.
         // Any drift between the two reintroduces exactly this mismatch, so the sale is
         // banked at the price it was actually sold for instead.
-        List<Promotion> activePromotions = offlineOrderMetadata != null
+        List<PromotionSnapshot> activePromotions = offlineOrderMetadata != null
                 ? List.of()
                 : promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
@@ -279,8 +282,9 @@ public class OrderService {
 
         // A promotion's minBillAmount is judged against the whole cart at list price, so the
         // subtotal has to exist before the first line is priced. The items are batch-loaded
-        // into the persistence context here, which is also what keeps the per-item findById
-        // in the loop below from issuing a second round of queries.
+        // into the persistence context here — with their category chain, which promotion
+        // matching reads — so the per-item findById in the loop below finds them already
+        // initialised instead of issuing two extra queries per line.
         double cartBaseSubtotal = activePromotions.isEmpty()
                 ? 0
                 : calculateCartBaseSubtotal(request.getItems());
@@ -1217,7 +1221,7 @@ public class OrderService {
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        Map<Long, Item> itemsById = itemRepository.findAllById(itemIds).stream()
+        Map<Long, Item> itemsById = itemRepository.findWithCategoryByIdIn(itemIds).stream()
                 .collect(Collectors.toMap(Item::getId, java.util.function.Function.identity(), (a, b) -> a));
 
         double subtotal = 0;

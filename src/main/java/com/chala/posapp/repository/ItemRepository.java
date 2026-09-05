@@ -4,6 +4,7 @@ import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.ItemType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface ItemRepository extends JpaRepository<Item, Long> {
 
@@ -97,4 +99,15 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
             @Param("priceOperator") String priceOperator,
             @Param("priceAmount") BigDecimal priceAmount,
             Pageable pageable);
+
+    /**
+     * Items with their category chain already loaded.
+     *
+     * <p>Promotion matching reads {@code subCategory} and {@code subCategory.category}, both lazy.
+     * Fetching them here, in the batch that primes the persistence context before pricing, means
+     * the per-line lookups that follow find them initialised instead of issuing two extra queries
+     * per cart line at checkout.
+     */
+    @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
+    List<Item> findWithCategoryByIdIn(Collection<Long> ids);
 }
