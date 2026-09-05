@@ -2,7 +2,9 @@ package com.chala.posapp.promotion.engine;
 
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.Promotion;
+import com.chala.posapp.entity.PromotionEffectType;
 import com.chala.posapp.entity.PromotionScope;
+import com.chala.posapp.entity.StackingMode;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -30,13 +32,17 @@ public record PromotionSnapshot(
         int priority,
         BigDecimal marginFloorPercent,
         boolean allowBelowCost,
-        List<TargetSnapshot> targets
+        PromotionEffectType effectType,
+        BigDecimal buyQty,
+        BigDecimal getQty,
+        StackingMode stackingMode,
+        boolean allowManualStacking,
+        List<TargetSnapshot> targets,
+        List<TierSnapshot> tiers,
+        List<ScheduleSnapshot> schedules
 ) {
 
     public static PromotionSnapshot from(Promotion promotion) {
-        List<TargetSnapshot> targets = promotion.getTargets() == null
-                ? List.of()
-                : promotion.getTargets().stream().map(TargetSnapshot::from).toList();
         return new PromotionSnapshot(
                 promotion.getId(),
                 promotion.getName(),
@@ -51,14 +57,32 @@ public record PromotionSnapshot(
                 promotion.getPriority(),
                 promotion.getMarginFloorPercent(),
                 promotion.isAllowBelowCost(),
-                targets
+                promotion.getEffectType() == null ? PromotionEffectType.DISCOUNT : promotion.getEffectType(),
+                promotion.getBuyQty(),
+                promotion.getGetQty(),
+                promotion.getStackingMode() == null ? StackingMode.BEST_ONLY : promotion.getStackingMode(),
+                promotion.isAllowManualStacking(),
+                promotion.getTargets() == null ? List.of()
+                        : promotion.getTargets().stream().map(TargetSnapshot::from).toList(),
+                promotion.getTiers() == null ? List.of()
+                        : promotion.getTiers().stream().map(TierSnapshot::from).toList(),
+                promotion.getSchedules() == null ? List.of()
+                        : promotion.getSchedules().stream().map(ScheduleSnapshot::from).toList()
         );
     }
 
-    /** Whether this promotion is inside its date window at {@code now}. */
+    /**
+     * Whether this promotion is inside its date window at {@code now} and, if it has schedules,
+     * inside at least one of them.
+     */
     public boolean isRunningAt(LocalDateTime now) {
-        return startAt != null && endAt != null
-                && !startAt.isAfter(now) && !endAt.isBefore(now);
+        if (startAt == null || endAt == null || startAt.isAfter(now) || endAt.isBefore(now)) {
+            return false;
+        }
+        if (schedules == null || schedules.isEmpty()) {
+            return true;
+        }
+        return schedules.stream().anyMatch(schedule -> schedule.matches(now));
     }
 
     /** Whether this promotion covers {@code branchId}. A null branch on the promotion means every branch. */
@@ -66,11 +90,19 @@ public record PromotionSnapshot(
         return this.branchId == null || Objects.equals(this.branchId, branchId);
     }
 
-    boolean isLineScope() {
-        return scope == PromotionScope.ITEM || scope == PromotionScope.CATEGORY;
+    /**
+     * Cart-level effects are evaluated with the bill even when their targets are items, because
+     * "any three for 1,000" cannot be decided one line at a time.
+     */
+    boolean isLineLevel() {
+        return (scope == PromotionScope.ITEM || scope == PromotionScope.CATEGORY) && !effectType.isCartLevel();
     }
 
-    boolean isOrderScope() {
-        return scope == PromotionScope.BILL || scope == PromotionScope.CUSTOMER;
+    boolean isOrderLevel() {
+        return scope == PromotionScope.BILL || scope == PromotionScope.CUSTOMER || effectType.isCartLevel();
+    }
+
+    boolean matchesTargetsByItem() {
+        return scope == PromotionScope.ITEM || scope == PromotionScope.CATEGORY;
     }
 }

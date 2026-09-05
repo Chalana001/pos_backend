@@ -28,6 +28,12 @@ public record PricingLine(
         BigDecimal manualDiscountValue
 ) {
 
+    /** The same line at a different unit price — how a line priced after its own discounts is handed to the bill pass. */
+    public PricingLine withUnitPrice(BigDecimal newUnitPrice) {
+        return new PricingLine(itemId, itemType, subCategoryId, categoryId, newUnitPrice, costPrice,
+                normalizedQty, DiscountType.NONE, BigDecimal.ZERO);
+    }
+
     public static PricingLine from(Item item, double unitPrice, int normalizedQty,
                                    DiscountType manualType, double manualValue) {
         SubCategory subCategory = item.getSubCategory();

@@ -1,6 +1,8 @@
 package com.chala.posapp.dto.promotion;
 
 import com.chala.posapp.entity.DiscountType;
+import com.chala.posapp.entity.PromotionEffectType;
+import com.chala.posapp.entity.StackingMode;
 import com.chala.posapp.entity.PromotionScope;
 import lombok.Builder;
 import lombok.Data;
@@ -26,6 +28,13 @@ public class PromotionResponse {
     private int priority;
     private BigDecimal marginFloorPercent;
     private boolean allowBelowCost;
+    private PromotionEffectType effectType;
+    private BigDecimal buyQty;
+    private BigDecimal getQty;
+    private StackingMode stackingMode;
+    private boolean allowManualStacking;
+    private List<PromotionTierDto> tiers;
+    private List<PromotionScheduleDto> schedules;
     /** Item ids alone, for clients written before per-item pricing. Mirrors {@link #items}. */
     private List<Long> itemIds;
     /** Item targets with whatever price or rate each one carries. */

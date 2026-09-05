@@ -14,6 +14,7 @@ import com.chala.posapp.promotion.engine.PromotionApplication;
 import com.chala.posapp.promotion.engine.PromotionEvaluator;
 import com.chala.posapp.promotion.engine.PromotionOrderApplication;
 import com.chala.posapp.promotion.engine.PromotionSnapshot;
+
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
@@ -71,8 +72,14 @@ public class PromotionService {
                 .priority(request.getPriority())
                 .marginFloorPercent(request.getMarginFloorPercent())
                 .allowBelowCost(request.isAllowBelowCost())
+                .effectType(request.resolvedEffectType())
+                .buyQty(request.getBuyQty())
+                .getQty(request.getGetQty())
+                .stackingMode(request.resolvedStackingMode())
+                .allowManualStacking(request.resolvedAllowManualStacking())
                 .build();
         applyTargets(promotion, request);
+        applyTiersAndSchedules(promotion, request);
         snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
@@ -96,8 +103,16 @@ public class PromotionService {
         promotion.setPriority(request.getPriority());
         promotion.setMarginFloorPercent(request.getMarginFloorPercent());
         promotion.setAllowBelowCost(request.isAllowBelowCost());
+        promotion.setEffectType(request.resolvedEffectType());
+        promotion.setBuyQty(request.getBuyQty());
+        promotion.setGetQty(request.getGetQty());
+        promotion.setStackingMode(request.resolvedStackingMode());
+        promotion.setAllowManualStacking(request.resolvedAllowManualStacking());
         promotion.getTargets().clear();
         applyTargets(promotion, request);
+        promotion.getTiers().clear();
+        promotion.getSchedules().clear();
+        applyTiersAndSchedules(promotion, request);
         snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
@@ -181,14 +196,22 @@ public class PromotionService {
         return PromotionEvaluator.evaluateLine(line, branchId, BigDecimal.valueOf(cartBaseSubtotal), activePromotions);
     }
 
+    /**
+     * @param pricedLines        the cart with each line at its post-line-discount unit price;
+     *                           bundles and cheapest-free count units from it
+     * @param linesHaveExclusive a line winner was EXCLUSIVE, so bill-level promotions stand down
+     */
     public PromotionOrderApplication calculateBestOrderDiscount(
             Long branchId,
             Long customerId,
             double baseTotal,
             double manualBillDiscount,
+            List<PricingLine> pricedLines,
+            boolean linesHaveExclusive,
             List<PromotionSnapshot> activePromotions
     ) {
-        return evaluateOrder(branchId, customerId, baseTotal, manualBillDiscount, activePromotions).application();
+        return evaluateOrder(branchId, customerId, baseTotal, manualBillDiscount,
+                pricedLines, linesHaveExclusive, activePromotions).application();
     }
 
     public OrderEvaluation evaluateOrder(
@@ -196,10 +219,13 @@ public class PromotionService {
             Long customerId,
             double baseTotal,
             double manualBillDiscount,
+            List<PricingLine> pricedLines,
+            boolean linesHaveExclusive,
             List<PromotionSnapshot> activePromotions
     ) {
         return PromotionEvaluator.evaluateOrder(branchId, customerId,
-                BigDecimal.valueOf(baseTotal), BigDecimal.valueOf(manualBillDiscount), activePromotions);
+                BigDecimal.valueOf(baseTotal), BigDecimal.valueOf(manualBillDiscount),
+                pricedLines, linesHaveExclusive, activePromotions);
     }
 
     public PromotionPreviewResponse preview(PromotionPreviewRequest request) {
@@ -222,6 +248,8 @@ public class PromotionService {
         }
 
         List<PromotionPreviewItemResponse> items = new ArrayList<>();
+        List<PricingLine> pricedLines = new ArrayList<>();
+        boolean linesHaveExclusive = false;
         for (ResolvedLine line : lines) {
             OrderItemRequest itemRequest = line.request();
             LineEvaluation evaluation = evaluateLine(
@@ -235,6 +263,13 @@ public class PromotionService {
                     activePromotions
             );
             PromotionApplication application = evaluation.application();
+            PricingLine listPriced = PricingLine.from(line.item(), itemRequest.getUnitPrice(), line.normalizedQty(),
+                    DiscountType.NONE, 0);
+            pricedLines.add(listPriced.withUnitPrice(MoneyOps.unitPriceForLineDiscount(
+                    listPriced.unitPrice(),
+                    BigDecimal.valueOf(application.baseLineTotal()),
+                    BigDecimal.valueOf(application.appliedDiscountAmount()))));
+            linesHaveExclusive |= application.exclusive();
             items.add(PromotionPreviewItemResponse.builder()
                     .itemId(line.item().getId())
                     .promotionId(application.promotionId())
@@ -263,6 +298,8 @@ public class PromotionService {
                 request.getCustomerId(),
                 subtotalAfterLineDiscounts,
                 request.getBillDiscount(),
+                pricedLines,
+                linesHaveExclusive,
                 activePromotions
         );
         PromotionOrderApplication orderApplication = orderEvaluation.application();
@@ -302,15 +339,8 @@ public class PromotionService {
         if (request.getScope() == null) {
             throw new BadRequestException("Promotion scope is required");
         }
-        if (request.getDiscountType() == null || request.getDiscountType() == DiscountType.NONE) {
-            throw new BadRequestException("Promotion discount type must be PERCENT or FIXED");
-        }
-        if (request.getDiscountValue() <= 0) {
-            throw new BadRequestException("Promotion discount value must be greater than 0");
-        }
-        if (request.getDiscountType() == DiscountType.PERCENT && request.getDiscountValue() > 100) {
-            throw new BadRequestException("Percent discount cannot exceed 100");
-        }
+        validateEffect(request);
+        validateSchedules(request);
         if (request.getStartAt() == null || request.getEndAt() == null) {
             throw new BadRequestException("Promotion start and end dates are required");
         }
@@ -319,6 +349,133 @@ public class PromotionService {
         }
         normalizeBranchId(request.getBranchId());
         validateTargets(request);
+    }
+
+    /**
+     * Each mechanic has its own required fields, and the message names the field a shop owner
+     * sees on screen rather than the column.
+     */
+    private void validateEffect(PromotionRequest request) {
+        PromotionEffectType effect = request.resolvedEffectType();
+        boolean lineScope = request.getScope() == PromotionScope.ITEM || request.getScope() == PromotionScope.CATEGORY;
+
+        switch (effect) {
+            case DISCOUNT -> {
+                if (request.getDiscountType() == null || request.getDiscountType() == DiscountType.NONE) {
+                    throw new BadRequestException("Promotion discount type must be PERCENT or FIXED");
+                }
+                if (request.getDiscountValue() <= 0) {
+                    throw new BadRequestException("Promotion discount value must be greater than 0");
+                }
+                if (request.getDiscountType() == DiscountType.PERCENT && request.getDiscountValue() > 100) {
+                    throw new BadRequestException("Percent discount cannot exceed 100");
+                }
+            }
+            case FIXED_PRICE -> {
+                if (!lineScope) {
+                    throw new BadRequestException("A fixed price applies to items or categories");
+                }
+                if (request.getDiscountValue() <= 0) {
+                    throw new BadRequestException("Fixed price must be greater than 0");
+                }
+            }
+            case BUY_X_GET_Y_FREE -> {
+                if (!lineScope) {
+                    throw new BadRequestException("Buy X get Y free applies to items or categories");
+                }
+                if (request.getBuyQty() == null || request.getBuyQty().signum() <= 0) {
+                    throw new BadRequestException("Buy quantity must be greater than 0");
+                }
+                if (request.getGetQty() == null || request.getGetQty().signum() <= 0) {
+                    throw new BadRequestException("Free quantity must be greater than 0");
+                }
+            }
+            case TIERED -> {
+                List<PromotionTierDto> tiers = request.getTiers() == null ? List.of() : request.getTiers();
+                if (tiers.isEmpty()) {
+                    throw new BadRequestException("Add at least one tier");
+                }
+                for (PromotionTierDto tier : tiers) {
+                    boolean hasQty = tier.getMinQty() != null && tier.getMinQty().signum() > 0;
+                    boolean hasAmount = tier.getMinAmount() != null && tier.getMinAmount().signum() > 0;
+                    if (lineScope && !hasQty) {
+                        throw new BadRequestException("Each tier needs a minimum quantity");
+                    }
+                    if (!lineScope && !hasAmount) {
+                        throw new BadRequestException("Each tier needs a minimum bill amount");
+                    }
+                    if (tier.getDiscountType() == null || tier.getDiscountType() == DiscountType.NONE) {
+                        throw new BadRequestException("Each tier needs a discount type");
+                    }
+                    if (tier.getDiscountValue() == null || tier.getDiscountValue().signum() <= 0) {
+                        throw new BadRequestException("Each tier needs a discount greater than 0");
+                    }
+                    if (tier.getDiscountType() == DiscountType.PERCENT && tier.getDiscountValue().doubleValue() > 100) {
+                        throw new BadRequestException("A tier's percent discount cannot exceed 100");
+                    }
+                }
+                long distinct = tiers.stream()
+                        .map(tier -> lineScope ? tier.getMinQty() : tier.getMinAmount())
+                        .map(BigDecimal::stripTrailingZeros)
+                        .distinct().count();
+                if (distinct != tiers.size()) {
+                    throw new BadRequestException("Two tiers share the same threshold");
+                }
+            }
+            case BUNDLE -> {
+                if (request.getBuyQty() == null || request.getBuyQty().compareTo(BigDecimal.valueOf(2)) < 0) {
+                    throw new BadRequestException("A bundle needs at least 2 items");
+                }
+                if (request.getDiscountValue() <= 0) {
+                    throw new BadRequestException("Bundle price must be greater than 0");
+                }
+            }
+            case CHEAPEST_FREE -> {
+                if (request.getBuyQty() == null || request.getBuyQty().compareTo(BigDecimal.valueOf(2)) < 0) {
+                    throw new BadRequestException("Cheapest-free needs a group of at least 2 items");
+                }
+            }
+        }
+    }
+
+    private void validateSchedules(PromotionRequest request) {
+        if (request.getSchedules() == null) {
+            return;
+        }
+        for (PromotionScheduleDto schedule : request.getSchedules()) {
+            if (schedule.getDaysOfWeek() < 0 || schedule.getDaysOfWeek() > 127) {
+                throw new BadRequestException("Schedule days are out of range");
+            }
+            if ((schedule.getStartTime() == null) != (schedule.getEndTime() == null)) {
+                throw new BadRequestException("A schedule needs both a start and an end time, or neither");
+            }
+        }
+    }
+
+    private void applyTiersAndSchedules(Promotion promotion, PromotionRequest request) {
+        if (request.resolvedEffectType() == PromotionEffectType.TIERED && request.getTiers() != null) {
+            int order = 0;
+            for (PromotionTierDto tier : request.getTiers()) {
+                promotion.getTiers().add(PromotionTier.builder()
+                        .promotion(promotion)
+                        .minQty(tier.getMinQty())
+                        .minAmount(tier.getMinAmount())
+                        .discountType(tier.getDiscountType())
+                        .discountValue(tier.getDiscountValue())
+                        .sortOrder(order++)
+                        .build());
+            }
+        }
+        if (request.getSchedules() != null) {
+            for (PromotionScheduleDto schedule : request.getSchedules()) {
+                promotion.getSchedules().add(PromotionSchedule.builder()
+                        .promotion(promotion)
+                        .daysOfWeek(schedule.getDaysOfWeek())
+                        .startTime(schedule.getStartTime())
+                        .endTime(schedule.getEndTime())
+                        .build());
+            }
+        }
     }
 
     private void validateTargets(PromotionRequest request) {
@@ -600,6 +757,11 @@ public class PromotionService {
                 .priority(source.getPriority())
                 .marginFloorPercent(source.getMarginFloorPercent())
                 .allowBelowCost(source.isAllowBelowCost())
+                .effectType(source.getEffectType())
+                .buyQty(source.getBuyQty())
+                .getQty(source.getGetQty())
+                .stackingMode(source.getStackingMode())
+                .allowManualStacking(source.isAllowManualStacking())
                 .build();
 
         source.getTargets().forEach(target -> copy.getTargets().add(PromotionTarget.builder()
@@ -613,6 +775,20 @@ public class PromotionService {
                 .discountValue(target.getDiscountValue())
                 .build()));
 
+        source.getTiers().forEach(tier -> copy.getTiers().add(PromotionTier.builder()
+                .promotion(copy)
+                .minQty(tier.getMinQty())
+                .minAmount(tier.getMinAmount())
+                .discountType(tier.getDiscountType())
+                .discountValue(tier.getDiscountValue())
+                .sortOrder(tier.getSortOrder())
+                .build()));
+        source.getSchedules().forEach(schedule -> copy.getSchedules().add(PromotionSchedule.builder()
+                .promotion(copy)
+                .daysOfWeek(schedule.getDaysOfWeek())
+                .startTime(schedule.getStartTime())
+                .endTime(schedule.getEndTime())
+                .build()));
         snapshotCache.evict();
         return mapResponse(promotionRepository.save(copy));
     }
@@ -774,6 +950,26 @@ public class PromotionService {
                 .priority(promotion.getPriority())
                 .marginFloorPercent(promotion.getMarginFloorPercent())
                 .allowBelowCost(promotion.isAllowBelowCost())
+                .effectType(promotion.getEffectType())
+                .buyQty(promotion.getBuyQty())
+                .getQty(promotion.getGetQty())
+                .stackingMode(promotion.getStackingMode())
+                .allowManualStacking(promotion.isAllowManualStacking())
+                .tiers(promotion.getTiers().stream()
+                        .map(tier -> PromotionTierDto.builder()
+                                .minQty(tier.getMinQty())
+                                .minAmount(tier.getMinAmount())
+                                .discountType(tier.getDiscountType())
+                                .discountValue(tier.getDiscountValue())
+                                .build())
+                        .toList())
+                .schedules(promotion.getSchedules().stream()
+                        .map(schedule -> PromotionScheduleDto.builder()
+                                .daysOfWeek(schedule.getDaysOfWeek())
+                                .startTime(schedule.getStartTime())
+                                .endTime(schedule.getEndTime())
+                                .build())
+                        .toList())
                 .itemIds(promotion.getTargets().stream().map(PromotionTarget::getItemId).filter(Objects::nonNull).toList())
                 .items(promotion.getTargets().stream()
                         .filter(target -> target.getItemId() != null)

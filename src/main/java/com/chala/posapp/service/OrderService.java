@@ -17,6 +17,7 @@ import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.promotion.engine.PricingLine;
 import com.chala.posapp.promotion.engine.PromotionApplication;
 import com.chala.posapp.promotion.engine.PromotionOrderApplication;
 import com.chala.posapp.promotion.engine.PromotionSnapshot;
@@ -276,6 +277,10 @@ public class OrderService {
                 ? List.of()
                 : promotionService.activePromotionsForBranch(branchId, soldAt);
         List<PreparedOrderItem> preparedItems = new ArrayList<>();
+        // The bill pass needs the cart as priced so far: bundles and cheapest-free count units
+        // from it, and an EXCLUSIVE line winner stands every bill-level promotion down.
+        List<PricingLine> pricedLines = new ArrayList<>();
+        boolean linesHaveExclusive = false;
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext =
                 buildStockOverrideContext(request, user, offlineOrderMetadata != null);
@@ -358,6 +363,8 @@ public class OrderService {
                     .build();
 
             preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages, consumption.overrides));
+            pricedLines.add(PricingLine.from(item, finalUnitPrice, normalizedQty, DiscountType.NONE, 0));
+            linesHaveExclusive |= promotionApplication.exclusive();
             subTotal += lineTotal;
         }
 
@@ -369,6 +376,8 @@ public class OrderService {
                 request.getCustomerId(),
                 subTotal,
                 billDiscount,
+                pricedLines,
+                linesHaveExclusive,
                 activePromotions
         );
         billDiscount = billPromotionApplication.appliedDiscountAmount();

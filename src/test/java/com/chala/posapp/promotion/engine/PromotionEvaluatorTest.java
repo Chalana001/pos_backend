@@ -2,7 +2,9 @@ package com.chala.posapp.promotion.engine;
 
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.PromotionEffectType;
 import com.chala.posapp.entity.PromotionScope;
+import com.chala.posapp.entity.StackingMode;
 import com.chala.posapp.promotion.engine.LineDecision.Outcome;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,14 +40,17 @@ class PromotionEvaluatorTest {
                 BigDecimal.valueOf(percent), BigDecimal.ZERO, BigDecimal.ZERO,
                 LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2026, 12, 31, 23, 59),
                 branchId, 0, null, false,
-                List.of(new TargetSnapshot(itemId, null, null, null, null, null, null)));
+                PromotionEffectType.DISCOUNT, null, null, StackingMode.BEST_ONLY, true,
+                List.of(new TargetSnapshot(itemId, null, null, null, null, null, null)), List.of(), List.of());
     }
 
     private static PromotionSnapshot billPromo(long id, double percent) {
         return new PromotionSnapshot(id, "Bill " + id, PromotionScope.BILL, DiscountType.PERCENT,
                 BigDecimal.valueOf(percent), BigDecimal.ZERO, BigDecimal.ZERO,
                 LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2026, 12, 31, 23, 59),
-                null, 0, null, false, List.of());
+                null, 0, null, false,
+                PromotionEffectType.DISCOUNT, null, null, StackingMode.BEST_ONLY, true,
+                List.of(), List.of(), List.of());
     }
 
     private static Map<Long, LineDecision> byPromotion(List<LineDecision> decisions) {
@@ -105,7 +110,8 @@ class PromotionEvaluatorTest {
                     DiscountType.PERCENT, BigDecimal.TEN, BigDecimal.valueOf(5000), BigDecimal.ZERO,
                     LocalDateTime.of(2026, 1, 1, 0, 0), LocalDateTime.of(2026, 12, 31, 23, 59),
                     null, 0, null, false,
-                    List.of(new TargetSnapshot(7L, null, null, null, null, null, null)));
+                    PromotionEffectType.DISCOUNT, null, null, StackingMode.BEST_ONLY, true,
+                    List.of(new TargetSnapshot(7L, null, null, null, null, null, null)), List.of(), List.of());
 
             LineEvaluation result = PromotionEvaluator.evaluateLine(
                     line(7, 100, 10), 1L, BigDecimal.valueOf(200), List.of(promo));
@@ -119,7 +125,7 @@ class PromotionEvaluatorTest {
         @DisplayName("at bill level a promotion beaten by the manual discount says so")
         void lostToManual() {
             OrderEvaluation result = PromotionEvaluator.evaluateOrder(
-                    1L, null, BigDecimal.valueOf(10_000), BigDecimal.valueOf(2_000), List.of(billPromo(1, 10)));
+                    1L, null, BigDecimal.valueOf(10_000), BigDecimal.valueOf(2_000), List.of(), false, List.of(billPromo(1, 10)));
 
             assertThat(result.application().promotionApplied()).isFalse();
             assertThat(result.application().appliedDiscountAmount()).isEqualTo(2_000.0);

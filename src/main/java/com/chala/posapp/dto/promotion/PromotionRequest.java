@@ -1,11 +1,13 @@
 package com.chala.posapp.dto.promotion;
 
 import com.chala.posapp.entity.DiscountType;
+import com.chala.posapp.entity.PromotionEffectType;
+import com.chala.posapp.entity.StackingMode;
 import com.chala.posapp.entity.PromotionScope;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -24,7 +26,8 @@ public class PromotionRequest {
     @NotNull
     private DiscountType discountType;
 
-    @Positive
+    /** Zero is legitimate for effects that are not a rate — buy-X-get-Y, tiers — so the floor is per effect, in the service. */
+    @PositiveOrZero
     private double discountValue;
 
     private double minBillAmount;
@@ -48,6 +51,41 @@ public class PromotionRequest {
 
     /** Lets this promotion price below cost on purpose. Below-cost pricing is refused without it. */
     private boolean allowBelowCost;
+
+    /** Which mechanic this is. Absent means DISCOUNT, the original rate-off-list behaviour. */
+    private PromotionEffectType effectType;
+
+    /** BUY_X_GET_Y_FREE: units to buy. BUNDLE / CHEAPEST_FREE: units per group. */
+    private BigDecimal buyQty;
+
+    /** BUY_X_GET_Y_FREE: units given free. */
+    private BigDecimal getQty;
+
+    /** How this combines with other promotions. Absent means BEST_ONLY. */
+    private StackingMode stackingMode;
+
+    /** Absent means true: a cashier's line discount may stack on top. */
+    private Boolean allowManualStacking;
+
+    /** TIERED only. */
+    @Valid
+    private List<PromotionTierDto> tiers;
+
+    /** Empty means the promotion runs whenever its dates say so. */
+    @Valid
+    private List<PromotionScheduleDto> schedules;
+
+    public PromotionEffectType resolvedEffectType() {
+        return effectType == null ? PromotionEffectType.DISCOUNT : effectType;
+    }
+
+    public StackingMode resolvedStackingMode() {
+        return stackingMode == null ? StackingMode.BEST_ONLY : stackingMode;
+    }
+
+    public boolean resolvedAllowManualStacking() {
+        return allowManualStacking == null || allowManualStacking;
+    }
 
     /**
      * Item targets without per-item pricing. Superseded by {@link #items} but still accepted:

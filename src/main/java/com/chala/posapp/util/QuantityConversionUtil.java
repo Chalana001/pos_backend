@@ -209,6 +209,17 @@ public final class QuantityConversionUtil {
     }
 
     /**
+     * A normalized quantity back in the item's primary unit — pieces, kilograms, litres — as an
+     * exact decimal. Buy-X-get-Y, bundles and quantity tiers are all expressed in primary units.
+     */
+    public static BigDecimal toPrimaryUnits(ItemType itemType, int normalizedQty) {
+        if (itemType != ItemType.NORMAL && itemType != ItemType.WEIGHT && itemType != ItemType.VOLUME) {
+            return BigDecimal.valueOf(normalizedQty);
+        }
+        return BigDecimal.valueOf(normalizedQty).divide(baseUnitsPerPrimaryUnit(itemType), 3, RoundingMode.HALF_UP);
+    }
+
+    /**
      * Same as {@link #calculateActualAmount(Item, BigDecimal, int)} without needing the entity.
      * The pricing engine works on plain snapshots and only knows the type.
      */

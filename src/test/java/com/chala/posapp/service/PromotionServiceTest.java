@@ -419,7 +419,7 @@ class PromotionServiceTest {
             promo.setMaxDiscountAmount(BigDecimal.valueOf(500));
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 0, snap(promo));
+                    1L, null, 10_000, 0, List.of(), false, snap(promo));
 
             assertThat(result.promotionApplied()).isTrue();
             assertThat(result.promotionDiscountAmount()).isEqualTo(500.0);
@@ -433,7 +433,7 @@ class PromotionServiceTest {
             promo.setMinBillAmount(BigDecimal.valueOf(5_000));
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 1_000, 0, snap(promo));
+                    1L, null, 1_000, 0, List.of(), false, snap(promo));
 
             assertThat(result.promotionApplied()).isFalse();
             assertThat(result.finalTotal()).isEqualTo(1_000.0);
@@ -447,12 +447,12 @@ class PromotionServiceTest {
             Promotion promo = billPromotion(1, DiscountType.PERCENT, 10);
 
             PromotionOrderApplication promotionWins = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 200, snap(promo));
+                    1L, null, 10_000, 200, List.of(), false, snap(promo));
             assertThat(promotionWins.promotionApplied()).isTrue();
             assertThat(promotionWins.appliedDiscountAmount()).isEqualTo(1_000.0);
 
             PromotionOrderApplication manualWins = service.calculateBestOrderDiscount(
-                    1L, null, 10_000, 2_000, snap(promo));
+                    1L, null, 10_000, 2_000, List.of(), false, snap(promo));
             assertThat(manualWins.promotionApplied()).isFalse();
             assertThat(manualWins.appliedDiscountAmount()).isEqualTo(2_000.0);
         }
@@ -463,7 +463,7 @@ class PromotionServiceTest {
             Promotion promo = billPromotion(1, DiscountType.FIXED, 50_000);
 
             PromotionOrderApplication result = service.calculateBestOrderDiscount(
-                    1L, null, 1_000, 0, snap(promo));
+                    1L, null, 1_000, 0, List.of(), false, snap(promo));
 
             assertThat(result.promotionDiscountAmount()).isEqualTo(1_000.0);
             assertThat(result.finalTotal()).isZero();

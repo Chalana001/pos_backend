@@ -85,6 +85,11 @@ public final class MoneyOps {
         return nz(unitPrice).multiply(ratio, INTERMEDIATE);
     }
 
+    /** A line's quantity in primary units — what buy-X-get-Y, bundles and tiers count in. */
+    public static BigDecimal primaryUnits(ItemType itemType, int normalizedQty) {
+        return QuantityConversionUtil.toPrimaryUnits(itemType, normalizedQty);
+    }
+
     /** Gross margin of a price over a cost, as a percentage of the price. Null when the price is zero. */
     public static BigDecimal marginPercent(BigDecimal price, BigDecimal cost) {
         if (!isPositive(price)) {

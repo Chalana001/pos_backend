@@ -90,6 +90,49 @@ public class Promotion extends TenantEntity {
     @Builder.Default
     private boolean allowBelowCost = false;
 
+    /** How this promotion discounts. Defaults to the original rate-off-list behaviour. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "effect_type", nullable = false, length = 24)
+    @Builder.Default
+    private PromotionEffectType effectType = PromotionEffectType.DISCOUNT;
+
+    /** BUY_X_GET_Y_FREE: units to buy. BUNDLE / CHEAPEST_FREE: units per group. Primary units. */
+    @Column(name = "buy_qty", precision = 12, scale = 3)
+    private BigDecimal buyQty;
+
+    /** BUY_X_GET_Y_FREE: units given free per group. */
+    @Column(name = "get_qty", precision = 12, scale = 3)
+    private BigDecimal getQty;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stacking_mode", nullable = false, length = 16)
+    @Builder.Default
+    private StackingMode stackingMode = StackingMode.BEST_ONLY;
+
+    /** When off, a cashier's line discount does not stack on top of this promotion. */
+    @Column(name = "allow_manual_stacking", nullable = false)
+    @Builder.Default
+    private boolean allowManualStacking = true;
+
+    /**
+     * Optimistic lock. Two managers editing the same promotion used to overwrite each other
+     * silently; now the second save fails and has to be redone against the current row.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("sortOrder ASC, id ASC")
+    @org.hibernate.annotations.BatchSize(size = 50)
+    @Builder.Default
+    private List<PromotionTier> tiers = new ArrayList<>();
+
+    @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true)
+    @org.hibernate.annotations.BatchSize(size = 50)
+    @Builder.Default
+    private List<PromotionSchedule> schedules = new ArrayList<>();
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

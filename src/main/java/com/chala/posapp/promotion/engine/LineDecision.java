@@ -17,10 +17,14 @@ public record LineDecision(
 ) {
 
     public enum Outcome {
-        /** Won the line and priced it. */
+        /** Won the line, or stacked onto it, and priced it. */
         APPLIED,
         /** Matched and would have discounted, but another promotion gave more. */
         LOST_TO_BETTER,
+        /** Would have stacked, but the winner is EXCLUSIVE — or a line winner was, at bill level. */
+        BLOCKED_BY_EXCLUSIVE,
+        /** The cashier typed a discount, but the applied promotion does not allow one on top. */
+        MANUAL_BLOCKED,
         /** A bill or customer promotion being asked about a line, or vice versa. */
         WRONG_SCOPE,
         BRANCH_MISMATCH,
@@ -30,6 +34,8 @@ public record LineDecision(
         /** Would have sold below cost and the promotion does not allow that. */
         BELOW_COST,
         BELOW_MARGIN_FLOOR,
+        /** TIERED: the line or bill did not reach the lowest step. */
+        NO_TIER_REACHED,
         /** Matched but the resulting discount was zero — an offer price at or above list, say. */
         NO_DISCOUNT,
         /** At bill level: the manual discount was larger, so the promotion stood down. */
