@@ -17,6 +17,21 @@ import java.util.Optional;
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByInvoiceNo(String invoiceNo);
 
+    /**
+     * Completed sales in a window, newest first, for replaying a promotion against real carts.
+     * Paged so a busy shop's year cannot be pulled into memory for a what-if.
+     */
+    @org.springframework.data.jpa.repository.Query(
+            "SELECT o FROM Order o WHERE o.status = :status "
+            + "AND (:branchId = 0 OR o.branchId = :branchId) "
+            + "AND o.createdAt BETWEEN :fromDate AND :toDate "
+            + "ORDER BY o.createdAt DESC")
+    List<Order> findForReplay(@org.springframework.data.repository.query.Param("status") com.chala.posapp.entity.OrderStatus status,
+                              @org.springframework.data.repository.query.Param("branchId") Long branchId,
+                              @org.springframework.data.repository.query.Param("fromDate") java.time.LocalDateTime fromDate,
+                              @org.springframework.data.repository.query.Param("toDate") java.time.LocalDateTime toDate,
+                              Pageable pageable);
+
     Optional<Order> findByClientSaleId(String clientSaleId);
 
     long countByBranchId(Long branchId);

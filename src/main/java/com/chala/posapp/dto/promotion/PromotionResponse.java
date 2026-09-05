@@ -4,6 +4,7 @@ import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.PromotionEffectType;
 import com.chala.posapp.entity.StackingMode;
 import com.chala.posapp.entity.PromotionScope;
+import com.chala.posapp.entity.PromotionStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -43,6 +44,16 @@ public class PromotionResponse {
     /** How many codes gate this promotion; zero means it applies automatically. */
     private int codeCount;
     private boolean exhausted;
+    /** DRAFT, PENDING_APPROVAL, ACTIVE or PAUSED — the stored half of the lifecycle. */
+    private PromotionStatus status;
+    /** Live, scheduled, ended, exhausted and so on — derived, what the list shows. */
+    private String lifecycle;
+    private Long createdBy;
+    private Long updatedBy;
+    private Long submittedBy;
+    private Long approvedBy;
+    private LocalDateTime approvedAt;
+    private String approvalNote;
     /** Item ids alone, for clients written before per-item pricing. Mirrors {@link #items}. */
     private List<Long> itemIds;
     /** Item targets with whatever price or rate each one carries. */

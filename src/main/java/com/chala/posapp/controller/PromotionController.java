@@ -72,6 +72,74 @@ public class PromotionController {
         return ResponseEntity.ok(promotionService.priceCheck(request));
     }
 
+    // ── lifecycle ────────────────────────────────────────────────────────────────────────
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/settings")
+    public ResponseEntity<PromotionSettingsDto> settings() {
+        return ResponseEntity.ok(promotionService.settings());
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PutMapping("/settings")
+    public ResponseEntity<PromotionSettingsDto> updateSettings(@RequestBody PromotionSettingsDto request) {
+        return ResponseEntity.ok(promotionService.updateSettings(request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/submit")
+    public ResponseEntity<PromotionResponse> submit(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.submit(id));
+    }
+
+    /** The second pair of eyes: admin only, and never the person who submitted it. */
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<PromotionResponse> approve(@PathVariable Long id, @RequestBody(required = false) LifecycleActionRequest request) {
+        return ResponseEntity.ok(promotionService.approve(id, request == null ? null : request.getNote()));
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @PostMapping("/{id}/reject")
+    public ResponseEntity<PromotionResponse> reject(@PathVariable Long id, @RequestBody(required = false) LifecycleActionRequest request) {
+        return ResponseEntity.ok(promotionService.reject(id, request == null ? null : request.getNote()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/pause")
+    public ResponseEntity<PromotionResponse> pause(@PathVariable Long id, @RequestBody(required = false) LifecycleActionRequest request) {
+        return ResponseEntity.ok(promotionService.pause(id, request == null ? null : request.getNote()));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/resume")
+    public ResponseEntity<PromotionResponse> resume(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.resume(id));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/{id}/audit")
+    public ResponseEntity<List<PromotionAuditDto>> audit(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.auditTrail(id));
+    }
+
+    /** Replays an unsaved promotion over recent real sales: what it would have cost. */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/simulate")
+    public ResponseEntity<PromotionSimulationResponse> simulate(@Valid @RequestBody PromotionSimulationRequest request) {
+        return ResponseEntity.ok(promotionService.simulate(request));
+    }
+
+    /** Pre-save: approval needed, deepest cut, collisions with running promotions. */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/check")
+    public ResponseEntity<PromotionCheckResponse> check(
+            @Valid @RequestBody PromotionRequest request,
+            @RequestParam(required = false) Long excludeId
+    ) {
+        return ResponseEntity.ok(promotionService.check(request, excludeId));
+    }
+
     /** Would this code work right now? Answered without consuming anything, for the till. */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/check-code")

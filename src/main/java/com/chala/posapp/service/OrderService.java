@@ -76,6 +76,7 @@ public class OrderService {
     private final PromotionService promotionService;
     private final PromotionGate promotionGate;
     private final PromotionRedemptionService promotionRedemptionService;
+    private final PromotionLifecycleService promotionLifecycleService;
     private final StockOverrideAuditRepository stockOverrideAuditRepository;
     private final PlatformTransactionManager transactionManager;
     private final UserRepository userRepository;
@@ -353,6 +354,15 @@ public class OrderService {
             );
             PromotionApplication promotionApplication = lineEvaluation.application();
             lineDecisions.add(lineEvaluation.decisions());
+            // A shop can reserve "discount on top of a promotion" for managers. The engine has
+            // already priced the stack; this is the role check the plan called
+            // OVERRIDE_PROMOTION_DISCOUNT, and it fails loudly so the cashier knows to ask.
+            if (promotionApplication.promotionApplied() && promotionApplication.manualDiscountAmount() > 0
+                    && user.getRole() == Role.CASHIER
+                    && !promotionLifecycleService.settings().isCashierManualStacking()) {
+                throw new BadRequestException("Only a manager can add a discount to a line that already has a promotion: "
+                        + item.getName());
+            }
             discountType = promotionApplication.discountType();
             discountValue = promotionApplication.discountValue();
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);

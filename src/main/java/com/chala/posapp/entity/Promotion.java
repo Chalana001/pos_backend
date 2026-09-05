@@ -163,6 +163,35 @@ public class Promotion extends TenantEntity {
     @org.hibernate.annotations.ColumnDefault("0")
     private BigDecimal budgetConsumed;
 
+    /**
+     * The stored half of the lifecycle. {@code active} stays the engine's switch and is kept in
+     * step with this by {@code PromotionLifecycleService}; live/scheduled/ended/exhausted are
+     * derived from dates and counters at read time.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private PromotionStatus status = PromotionStatus.ACTIVE;
+
+    @Column(name = "created_by")
+    private Long createdBy;
+
+    @Column(name = "updated_by")
+    private Long updatedBy;
+
+    /** Who sent it for approval; the approver must be someone else. */
+    @Column(name = "submitted_by")
+    private Long submittedBy;
+
+    @Column(name = "approved_by")
+    private Long approvedBy;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "approval_note", length = 255)
+    private String approvalNote;
+
     public boolean isCodeGated() {
         return codes != null && !codes.isEmpty();
     }

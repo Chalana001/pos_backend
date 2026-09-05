@@ -49,6 +49,8 @@ public class PromotionService {
     private final PromotionSnapshotCache snapshotCache;
     private final PromotionGate promotionGate;
     private final PromotionCodeRepository promotionCodeRepository;
+    private final PromotionLifecycleService lifecycleService;
+    private final PromotionSimulationService simulationService;
 
     public List<PromotionResponse> list() {
         return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
@@ -85,8 +87,12 @@ public class PromotionService {
                 .build();
         applyTargets(promotion, request);
         applyTiersAndSchedules(promotion, request);
+        User user = securityUtils.getCurrentUser();
+        lifecycleService.initialise(promotion, request.isActive(), user, this::sellingPriceOf);
+        Promotion saved = promotionRepository.save(promotion);
+        lifecycleService.audit(saved, PromotionAudit.Action.CREATED, user, null);
         snapshotCache.evict();
-        return mapResponse(promotionRepository.save(promotion));
+        return mapResponse(saved);
     }
 
     @Transactional
@@ -94,6 +100,7 @@ public class PromotionService {
         validateRequest(request);
         Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
+        String termsBefore = lifecycleService.termsFingerprint(promotion);
 
         promotion.setName(request.getName().trim());
         promotion.setScope(request.getScope());
@@ -104,7 +111,6 @@ public class PromotionService {
         promotion.setStartAt(request.getStartAt());
         promotion.setEndAt(request.getEndAt());
         promotion.setBranchId(normalizeBranchId(request.getBranchId()));
-        promotion.setActive(request.isActive());
         promotion.setPriority(request.getPriority());
         promotion.setMarginFloorPercent(request.getMarginFloorPercent());
         promotion.setAllowBelowCost(request.isAllowBelowCost());
@@ -121,6 +127,8 @@ public class PromotionService {
         promotion.getTiers().clear();
         promotion.getSchedules().clear();
         applyTiersAndSchedules(promotion, request);
+        boolean termsChanged = !termsBefore.equals(lifecycleService.termsFingerprint(promotion));
+        lifecycleService.onUpdated(promotion, termsChanged, request.isActive(), securityUtils.getCurrentUser(), this::sellingPriceOf);
         snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
@@ -129,7 +137,7 @@ public class PromotionService {
     public PromotionResponse updateStatus(Long id, boolean active) {
         Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
-        promotion.setActive(active);
+        lifecycleService.setActive(promotion, active, securityUtils.getCurrentUser(), this::sellingPriceOf);
         snapshotCache.evict();
         return mapResponse(promotionRepository.save(promotion));
     }
@@ -152,6 +160,7 @@ public class PromotionService {
         promotion.setActive(false);
         snapshotCache.evict();
         promotionRepository.save(promotion);
+        lifecycleService.audit(promotion, PromotionAudit.Action.ARCHIVED, securityUtils.getCurrentUser(), null);
     }
 
     /**
@@ -340,6 +349,69 @@ public class PromotionService {
 
     private static BigDecimal positiveOrNull(BigDecimal value) {
         return value == null || value.signum() <= 0 ? null : value;
+    }
+
+    private BigDecimal sellingPriceOf(Long itemId) {
+        return itemRepository.findById(itemId).map(Item::getSellingPrice).orElse(null);
+    }
+
+    public PromotionSettingsDto settings() {
+        return lifecycleService.toDto(lifecycleService.settings());
+    }
+
+    @Transactional
+    public PromotionSettingsDto updateSettings(PromotionSettingsDto request) {
+        return lifecycleService.updateSettings(request, securityUtils.getCurrentUser());
+    }
+
+    @Transactional
+    public PromotionResponse submit(Long id) {
+        Promotion promotion = requireLivePromotion(id);
+        lifecycleService.submit(promotion, securityUtils.getCurrentUser(), this::sellingPriceOf);
+        return mapResponse(promotionRepository.save(promotion));
+    }
+
+    @Transactional
+    public PromotionResponse approve(Long id, String note) {
+        Promotion promotion = requireLivePromotion(id);
+        lifecycleService.approve(promotion, securityUtils.getCurrentUser(), note);
+        return mapResponse(promotionRepository.save(promotion));
+    }
+
+    @Transactional
+    public PromotionResponse reject(Long id, String note) {
+        Promotion promotion = requireLivePromotion(id);
+        lifecycleService.reject(promotion, securityUtils.getCurrentUser(), note);
+        return mapResponse(promotionRepository.save(promotion));
+    }
+
+    @Transactional
+    public PromotionResponse pause(Long id, String note) {
+        Promotion promotion = requireLivePromotion(id);
+        lifecycleService.pause(promotion, securityUtils.getCurrentUser(), note);
+        return mapResponse(promotionRepository.save(promotion));
+    }
+
+    @Transactional
+    public PromotionResponse resume(Long id) {
+        Promotion promotion = requireLivePromotion(id);
+        lifecycleService.resume(promotion, securityUtils.getCurrentUser(), this::sellingPriceOf);
+        return mapResponse(promotionRepository.save(promotion));
+    }
+
+    public List<PromotionAuditDto> auditTrail(Long id) {
+        requireLivePromotion(id);
+        return lifecycleService.auditTrail(id);
+    }
+
+    public PromotionSimulationResponse simulate(PromotionSimulationRequest request) {
+        validateRequest(request.getPromotion());
+        return simulationService.simulate(request);
+    }
+
+    public PromotionCheckResponse check(PromotionRequest request, Long excludeId) {
+        validateRequest(request);
+        return simulationService.check(request, excludeId);
     }
 
     /** "Would this code work right now?" — for the till, without consuming anything. */
@@ -751,6 +823,12 @@ public class PromotionService {
         if (promotion.getDeletedAt() != null) {
             return "ARCHIVED";
         }
+        if (promotion.getStatus() == PromotionStatus.DRAFT) {
+            return "DRAFT";
+        }
+        if (promotion.getStatus() == PromotionStatus.PENDING_APPROVAL) {
+            return "PENDING_APPROVAL";
+        }
         if (promotion.getEndAt() != null && promotion.getEndAt().isBefore(now)) {
             return "ENDED";
         }
@@ -907,6 +985,7 @@ public class PromotionService {
                 .endAt(source.getEndAt())
                 .branchId(source.getBranchId())
                 .active(false)
+                .status(PromotionStatus.DRAFT)
                 .priority(source.getPriority())
                 .marginFloorPercent(source.getMarginFloorPercent())
                 .allowBelowCost(source.isAllowBelowCost())
@@ -947,8 +1026,13 @@ public class PromotionService {
                 .startTime(schedule.getStartTime())
                 .endTime(schedule.getEndTime())
                 .build()));
+        User duplicator = securityUtils.getCurrentUser();
+        copy.setCreatedBy(duplicator == null ? null : duplicator.getId());
+        copy.setUpdatedBy(copy.getCreatedBy());
+        Promotion savedCopy = promotionRepository.save(copy);
+        lifecycleService.audit(savedCopy, PromotionAudit.Action.DUPLICATED, duplicator, "Copied from '" + source.getName() + "'");
         snapshotCache.evict();
-        return mapResponse(promotionRepository.save(copy));
+        return mapResponse(savedCopy);
     }
 
     private String nextCopyName(String name) {
@@ -1120,6 +1204,14 @@ public class PromotionService {
                 .budgetConsumed(promotion.getBudgetConsumed() == null ? BigDecimal.ZERO : promotion.getBudgetConsumed())
                 .codeCount(promotion.getCodes() == null ? 0 : promotion.getCodes().size())
                 .exhausted(promotion.isExhausted())
+                .status(promotion.getStatus())
+                .lifecycle(lifecycleStatus(promotion, LocalDateTime.now()))
+                .createdBy(promotion.getCreatedBy())
+                .updatedBy(promotion.getUpdatedBy())
+                .submittedBy(promotion.getSubmittedBy())
+                .approvedBy(promotion.getApprovedBy())
+                .approvedAt(promotion.getApprovedAt())
+                .approvalNote(promotion.getApprovalNote())
                 .tiers(promotion.getTiers().stream()
                         .map(tier -> PromotionTierDto.builder()
                                 .minQty(tier.getMinQty())
