@@ -4,10 +4,12 @@ import com.chala.posapp.dto.promotion.*;
 import com.chala.posapp.service.PromotionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -58,5 +60,44 @@ public class PromotionController {
     @PostMapping("/preview")
     public ResponseEntity<PromotionPreviewResponse> preview(@Valid @RequestBody PromotionPreviewRequest request) {
         return ResponseEntity.ok(promotionService.preview(request));
+    }
+
+    /**
+     * Prices a proposed item list without saving it. Drives the margin badges in the builder,
+     * so a mistyped price is caught while it is being typed rather than at the till.
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/price-check")
+    public ResponseEntity<PromotionPriceCheckResponse> priceCheck(@Valid @RequestBody PromotionPriceCheckRequest request) {
+        return ResponseEntity.ok(promotionService.priceCheck(request));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PostMapping("/{id}/duplicate")
+    public ResponseEntity<PromotionResponse> duplicate(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.duplicate(id));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/history")
+    public ResponseEntity<List<PromotionHistoryResponse>> history(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
+    ) {
+        return ResponseEntity.ok(promotionService.history(branchId, from, to));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/redemptions")
+    public ResponseEntity<List<PromotionRedemptionResponse>> redemptions(
+            @RequestParam(required = false) Long promotionId,
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "100") int size
+    ) {
+        return ResponseEntity.ok(promotionService.redemptions(promotionId, branchId, from, to, page, size));
     }
 }

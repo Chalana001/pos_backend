@@ -114,7 +114,7 @@ public final class ModuleCatalog {
                     "Rule-based discounts, happy-hour pricing and bundle offers.",
                     SALES, "BadgePercent",
                     List.of(any("/promotions/**"), any("/promotions")),
-                    List.of("/promotions")),
+                    List.of("/promotions", "/promotions/history")),
 
             top("WARRANTIES", "Warranties",
                     "Issue warranty cards at checkout and look them up later.",

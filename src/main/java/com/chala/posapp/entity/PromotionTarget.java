@@ -3,6 +3,8 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "promotion_targets",
@@ -40,4 +42,32 @@ public class PromotionTarget extends TenantEntity {
 
     @Column(name = "customer_id")
     private Long customerId;
+
+    /**
+     * What this specific item sells for while the promotion runs, overriding the promotion's
+     * own discount. Null means "no per-item price".
+     *
+     * <p>Resolved ahead of {@link #discountType}: a price the operator typed is more specific
+     * than a rate, and it is how a seasonal price list is actually written down.
+     */
+    @Column(name = "offer_price", precision = 19, scale = 4)
+    private BigDecimal offerPrice;
+
+    /**
+     * A per-item discount rate, used when {@link #offerPrice} is null. Null here too means the
+     * item inherits the promotion's own {@code discountType}/{@code discountValue} — which is
+     * every row written before per-item pricing existed, and is why no backfill was needed.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", length = 20)
+    private DiscountType discountType;
+
+    @Column(name = "discount_value", precision = 19, scale = 4)
+    private BigDecimal discountValue;
+
+    /** True when this row carries a price or rate of its own rather than inheriting the promotion's. */
+    public boolean hasPriceOverride() {
+        return offerPrice != null
+                || (discountType != null && discountType != DiscountType.NONE && discountValue != null);
+    }
 }

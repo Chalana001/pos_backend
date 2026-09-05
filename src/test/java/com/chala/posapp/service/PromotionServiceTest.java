@@ -470,6 +470,202 @@ class PromotionServiceTest {
         assertThat(BigDecimal.valueOf(result.finalLineTotal()).scale()).isLessThanOrEqualTo(2);
     }
 
+    // ── per-item offer pricing ──────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("per-item offer price")
+    class PerItemPricing {
+
+        private Promotion promoWithTarget(PromotionTarget target, DiscountType type, double value) {
+            Promotion promotion = Promotion.builder()
+                    .id(1L).name("Christmas Sale").scope(PromotionScope.ITEM)
+                    .discountType(type).discountValue(value).active(true)
+                    .allowBelowCost(true)
+                    .build();
+            target.setPromotion(promotion);
+            promotion.getTargets().add(target);
+            return promotion;
+        }
+
+        @Test
+        @DisplayName("an offer price on the target overrides the promotion's own rate")
+        void offerPriceWins() {
+            PromotionTarget target = PromotionTarget.builder()
+                    .itemId(7L)
+                    .offerPrice(BigDecimal.valueOf(399))
+                    .build();
+            Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 50);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, List.of(promo));
+
+            assertThat(result.promotionApplied()).isTrue();
+            assertThat(result.finalLineTotal()).isEqualTo(798.0);
+            assertThat(result.promotionDiscountAmount()).isEqualTo(102.0);
+        }
+
+        @Test
+        @DisplayName("a per-item rate is used when there is no offer price")
+        void perItemRate() {
+            PromotionTarget target = PromotionTarget.builder()
+                    .itemId(7L)
+                    .discountType(DiscountType.PERCENT)
+                    .discountValue(BigDecimal.valueOf(25))
+                    .build();
+            Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionDiscountAmount()).isEqualTo(50.0);
+            assertThat(result.discountType()).isEqualTo(DiscountType.PERCENT);
+            assertThat(result.discountValue()).isEqualTo(25.0);
+        }
+
+        @Test
+        @DisplayName("a target with no override inherits the promotion's rate, as every old row does")
+        void inheritsPromotionRate() {
+            PromotionTarget target = PromotionTarget.builder().itemId(7L).build();
+            Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionDiscountAmount()).isEqualTo(20.0);
+            assertThat(result.discountType()).isEqualTo(DiscountType.PERCENT);
+            assertThat(result.discountValue()).isEqualTo(10.0);
+        }
+
+        @Test
+        @DisplayName("one promotion prices each of its items differently")
+        void differentPricesInOneCampaign() {
+            Promotion promo = Promotion.builder()
+                    .id(1L).name("Christmas Sale").scope(PromotionScope.ITEM)
+                    .discountType(DiscountType.PERCENT).discountValue(5).active(true)
+                    .allowBelowCost(true)
+                    .build();
+            promo.getTargets().add(PromotionTarget.builder()
+                    .promotion(promo).itemId(7L).offerPrice(BigDecimal.valueOf(399)).build());
+            promo.getTargets().add(PromotionTarget.builder()
+                    .promotion(promo).itemId(8L).offerPrice(BigDecimal.valueOf(250)).build());
+
+            PromotionApplication first = priceLine(item(7, 3, 2), 450, ONE_PIECE, 730, List.of(promo));
+            PromotionApplication second = priceLine(item(8, 3, 2), 280, ONE_PIECE, 730, List.of(promo));
+
+            assertThat(first.finalLineTotal()).isEqualTo(399.0);
+            assertThat(second.finalLineTotal()).isEqualTo(250.0);
+        }
+
+        @Test
+        @DisplayName("reports an offer price as a flat reduction, not as the promotion's percentage")
+        void offerPriceReportsAsFixed() {
+            // The caller replays type/value to rebuild the price. A percentage here would
+            // describe a discount the item is not actually getting.
+            PromotionTarget target = PromotionTarget.builder()
+                    .itemId(7L).offerPrice(BigDecimal.valueOf(399)).build();
+            Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 50);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, TWO_PIECES, 900, List.of(promo));
+
+            assertThat(result.discountType()).isEqualTo(DiscountType.FIXED);
+            assertThat(result.discountValue()).isEqualTo(51.0);
+        }
+
+        @Test
+        @DisplayName("clamps an offer price above list rather than charging above the shelf label")
+        void offerPriceAboveListIsClamped() {
+            PromotionTarget target = PromotionTarget.builder()
+                    .itemId(7L).offerPrice(BigDecimal.valueOf(900)).build();
+            Promotion promo = promoWithTarget(target, DiscountType.PERCENT, 10);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 450, ONE_PIECE, 450, List.of(promo));
+
+            assertThat(result.finalLineTotal()).isEqualTo(450.0);
+            assertThat(result.promotionApplied()).isFalse();
+        }
+    }
+
+    // ── margin guard ────────────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("margin guard")
+    class MarginGuard {
+
+        @Test
+        @DisplayName("a promotion that would sell below cost does not apply")
+        void belowCostIsSkipped() {
+            // The item costs 60. A 50% cut off 100 lands at 50 — the shape of 39.90 typed
+            // for 399.00.
+            Promotion promo = itemPromotion(1, "Half price", DiscountType.PERCENT, 50, 7L);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionApplied()).isFalse();
+            assertThat(result.finalLineTotal()).isEqualTo(200.0);
+        }
+
+        @Test
+        @DisplayName("allowBelowCost lets a deliberate loss leader through")
+        void belowCostAllowedExplicitly() {
+            Promotion promo = itemPromotion(1, "Loss leader", DiscountType.PERCENT, 50, 7L);
+            promo.setAllowBelowCost(true);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionApplied()).isTrue();
+            assertThat(result.finalLineTotal()).isEqualTo(100.0);
+        }
+
+        @Test
+        @DisplayName("a promotion below the margin floor does not apply")
+        void marginFloorIsEnforced() {
+            // 20% off 100 leaves 80 against a cost of 60 — a 25% margin, under the 30% floor.
+            Promotion promo = itemPromotion(1, "20% off", DiscountType.PERCENT, 20, 7L);
+            promo.setMarginFloorPercent(BigDecimal.valueOf(30));
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionApplied()).isFalse();
+        }
+
+        @Test
+        @DisplayName("a promotion comfortably above the floor applies")
+        void marginFloorAllowsHealthyDiscount() {
+            // 10% off 100 leaves 90 against a cost of 60 — a 33% margin, over the 30% floor.
+            Promotion promo = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
+            promo.setMarginFloorPercent(BigDecimal.valueOf(30));
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionApplied()).isTrue();
+        }
+
+        @Test
+        @DisplayName("an item with no cost price is left alone rather than refused")
+        void missingCostPriceDoesNotBlock() {
+            Item noCost = Item.builder()
+                    .id(7L).name("Item 7").itemType(ItemType.NORMAL).defaultUnit(MeasurementUnit.PCS)
+                    .sellingPrice(BigDecimal.valueOf(100))
+                    .subCategory(item(7, 3, 2).getSubCategory())
+                    .build();
+            Promotion promo = itemPromotion(1, "Half price", DiscountType.PERCENT, 50, 7L);
+
+            PromotionApplication result = priceLine(noCost, 100, TWO_PIECES, 200, List.of(promo));
+
+            assertThat(result.promotionApplied()).isTrue();
+        }
+
+        @Test
+        @DisplayName("a blocked promotion loses to one that clears the guard")
+        void guardedPromotionYieldsToAllowedOne() {
+            Promotion tooDeep = itemPromotion(1, "50% off", DiscountType.PERCENT, 50, 7L);
+            Promotion allowed = itemPromotion(2, "20% off", DiscountType.PERCENT, 20, 7L);
+
+            PromotionApplication result = priceLine(item(7, 3, 2), 100, TWO_PIECES, 200,
+                    List.of(tooDeep, allowed));
+
+            assertThat(result.promotionId()).isEqualTo(2L);
+            assertThat(result.promotionDiscountAmount()).isEqualTo(40.0);
+        }
+    }
+
     @Test
     @DisplayName("an empty promotion list leaves the line at list price")
     void noPromotionsLeavesListPrice() {

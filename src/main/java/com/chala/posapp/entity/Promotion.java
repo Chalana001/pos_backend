@@ -3,6 +3,7 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +66,26 @@ public class Promotion extends TenantEntity {
     @Column(nullable = false)
     @Builder.Default
     private int priority = 0;
+
+    /**
+     * Minimum gross margin, as a percentage of the discounted price, that a line must keep for
+     * this promotion to apply. Null means no floor.
+     *
+     * <p>Per-item pricing makes selling below cost easy — the price is typed straight in with
+     * nothing to compare it against — so this is the guard that catches 39.90 entered for
+     * 399.00 before it reaches a till.
+     */
+    @Column(name = "margin_floor_percent", precision = 5, scale = 2)
+    private BigDecimal marginFloorPercent;
+
+    /**
+     * Lets this promotion price below cost deliberately. A loss leader is a legitimate
+     * campaign; the flag is how an operator says so, and it is why below-cost pricing is
+     * refused rather than silently allowed by default.
+     */
+    @Column(name = "allow_below_cost", nullable = false)
+    @Builder.Default
+    private boolean allowBelowCost = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

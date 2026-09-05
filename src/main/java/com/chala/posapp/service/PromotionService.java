@@ -13,10 +13,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -53,6 +59,8 @@ public class PromotionService {
                 .branchId(normalizeBranchId(request.getBranchId()))
                 .active(request.isActive())
                 .priority(request.getPriority())
+                .marginFloorPercent(request.getMarginFloorPercent())
+                .allowBelowCost(request.isAllowBelowCost())
                 .build();
         applyTargets(promotion, request);
         return mapResponse(promotionRepository.save(promotion));
@@ -75,6 +83,8 @@ public class PromotionService {
         promotion.setBranchId(normalizeBranchId(request.getBranchId()));
         promotion.setActive(request.isActive());
         promotion.setPriority(request.getPriority());
+        promotion.setMarginFloorPercent(request.getMarginFloorPercent());
+        promotion.setAllowBelowCost(request.isAllowBelowCost());
         promotion.getTargets().clear();
         applyTargets(promotion, request);
         return mapResponse(promotionRepository.save(promotion));
@@ -141,7 +151,9 @@ public class PromotionService {
         double safeCartSubtotal = Math.max(0, cartBaseSubtotal);
 
         Promotion bestPromotion = null;
+        PromotionTarget bestTarget = null;
         double bestPromotionDiscount = 0.0;
+        double bestUncappedDiscount = 0.0;
 
         for (Promotion promotion : activePromotions == null ? List.<Promotion>of() : activePromotions) {
             if (promotion.getScope() != PromotionScope.ITEM && promotion.getScope() != PromotionScope.CATEGORY) {
@@ -150,15 +162,22 @@ public class PromotionService {
             if (safeCartSubtotal < Math.max(0, promotion.getMinBillAmount())) {
                 continue;
             }
-            if (!matches(promotion, item, branchId)) {
+            PromotionTarget target = matchingTarget(promotion, item, branchId);
+            if (target == null) {
                 continue;
             }
-            double promoFinalUnitPrice = calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
+            double promoFinalUnitPrice = resolveOfferUnitPrice(promotion, target, unitPrice);
+            if (!marginAllows(promotion, item, promoFinalUnitPrice)) {
+                continue;
+            }
             double promoLineTotal = lineTotal(item, promoFinalUnitPrice, normalizedQty);
-            double promoDiscount = capLineDiscount(promotion, roundMoney(baseLineTotal - promoLineTotal));
+            double uncappedDiscount = roundMoney(baseLineTotal - promoLineTotal);
+            double promoDiscount = capLineDiscount(promotion, uncappedDiscount);
             if (promoDiscount > bestPromotionDiscount) {
                 bestPromotion = promotion;
+                bestTarget = target;
                 bestPromotionDiscount = promoDiscount;
+                bestUncappedDiscount = uncappedDiscount;
             }
         }
 
@@ -170,18 +189,20 @@ public class PromotionService {
             double manualDiscountAmount = roundMoney(promoLineTotal - finalLineTotal);
             double appliedDiscountAmount = roundMoney(baseLineTotal - finalLineTotal);
             // The caller rebuilds the final unit price from this type/value pair, so it has to
-            // reproduce the price actually charged. The promotion's own PERCENT survives only
-            // when nothing altered it — a manual discount on top, or maxDiscountAmount biting,
-            // both mean the line no longer sells at that percentage and the pair collapses to
-            // the flat per-unit reduction. Returning PERCENT there would re-expand to the
-            // uncapped discount downstream.
-            boolean capApplied = capApplied(bestPromotion, unitPrice, baseLineTotal, normalizedQty, item);
-            boolean promotionRateIntact = normalizedManualType == DiscountType.NONE && !capApplied;
+            // reproduce the price actually charged. A rate survives only when nothing altered
+            // it: a manual discount on top, maxDiscountAmount biting, or a per-item offer price
+            // (which is a price, not a rate) all mean the line no longer sells at that rate, and
+            // the pair collapses to the flat per-unit reduction. Returning PERCENT there would
+            // re-expand to the uncapped discount downstream.
+            boolean capApplied = bestPromotionDiscount < bestUncappedDiscount;
+            boolean promotionRateIntact = normalizedManualType == DiscountType.NONE
+                    && !capApplied
+                    && bestTarget.getOfferPrice() == null;
             DiscountType effectiveDiscountType = promotionRateIntact
-                    ? bestPromotion.getDiscountType()
+                    ? effectiveRateType(bestPromotion, bestTarget)
                     : DiscountType.FIXED;
             double effectiveDiscountValue = promotionRateIntact
-                    ? bestPromotion.getDiscountValue()
+                    ? effectiveRateValue(bestPromotion, bestTarget)
                     : roundMoney(Math.max(0, unitPrice - stackedFinalUnitPrice));
 
             return new PromotionApplication(
@@ -377,13 +398,7 @@ public class PromotionService {
 
     private void validateTargets(PromotionRequest request) {
         if (request.getScope() == PromotionScope.ITEM) {
-            List<Long> itemIds = distinctIds(request.getItemIds());
-            if (itemIds.isEmpty()) {
-                throw new BadRequestException("At least one item is required for item promotion");
-            }
-            if (itemRepository.findAllById(itemIds).size() != itemIds.size()) {
-                throw new ResourceNotFoundException("One or more promotion items not found");
-            }
+            validateItemLines(request);
             return;
         }
 
@@ -415,12 +430,348 @@ public class PromotionService {
         }
     }
 
+    /**
+     * Every campaign with what it actually did, retired ones included.
+     *
+     * <p>Totals count line-level and bill-level discounts together. RPT-08 reads only
+     * {@code orders.bill_promotion_id}, so a shop running item promotions sees an empty
+     * report there and concludes nothing fired; this is the same question answered over
+     * both halves.
+     */
+    public List<PromotionHistoryResponse> history(Long branchId, LocalDate from, LocalDate to) {
+        LocalDateTime fromDate = (from == null ? LocalDate.now().minusYears(1) : from).atStartOfDay();
+        LocalDateTime toDate = (to == null ? LocalDate.now() : to).atTime(LocalTime.MAX);
+        long branchFilter = branchId == null || branchId <= 0 ? 0L : branchId;
+
+        Map<Long, long[]> counts = new LinkedHashMap<>();
+        Map<Long, double[]> money = new LinkedHashMap<>();
+        for (Object[] row : promotionRepository.promotionTotalsRaw(branchFilter, fromDate, toDate)) {
+            Long promotionId = toLong(row[0]);
+            if (promotionId == null) {
+                continue;
+            }
+            counts.put(promotionId, new long[]{toLong(row[1]) == null ? 0 : toLong(row[1])});
+            money.put(promotionId, new double[]{toDouble(row[2]), toDouble(row[3])});
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        return promotionRepository.findAllByOrderByStartAtDescIdDesc().stream()
+                .map(promotion -> {
+                    long[] applied = counts.get(promotion.getId());
+                    double[] amounts = money.get(promotion.getId());
+                    return PromotionHistoryResponse.builder()
+                            .id(promotion.getId())
+                            .name(promotion.getName())
+                            .scope(promotion.getScope())
+                            .discountType(promotion.getDiscountType())
+                            .discountValue(promotion.getDiscountValue())
+                            .startAt(promotion.getStartAt())
+                            .endAt(promotion.getEndAt())
+                            .branchId(promotion.getBranchId())
+                            .active(promotion.isActive())
+                            .deleted(promotion.getDeletedAt() != null)
+                            .status(lifecycleStatus(promotion, now))
+                            .targetCount(promotion.getTargets().size())
+                            .timesApplied(applied == null ? 0 : applied[0])
+                            .totalDiscountGiven(amounts == null ? 0 : roundMoney(amounts[0]))
+                            .totalRevenue(amounts == null ? 0 : roundMoney(amounts[1]))
+                            .build();
+                })
+                .toList();
+    }
+
+    public List<PromotionRedemptionResponse> redemptions(
+            Long promotionId, Long branchId, LocalDate from, LocalDate to, int page, int size) {
+        LocalDateTime fromDate = (from == null ? LocalDate.now().minusMonths(3) : from).atStartOfDay();
+        LocalDateTime toDate = (to == null ? LocalDate.now() : to).atTime(LocalTime.MAX);
+        int pageSize = Math.min(Math.max(size, 1), 500);
+        int offset = Math.max(page, 0) * pageSize;
+
+        return promotionRepository.promotionRedemptionsRaw(
+                        promotionId == null || promotionId <= 0 ? 0L : promotionId,
+                        branchId == null || branchId <= 0 ? 0L : branchId,
+                        fromDate, toDate, pageSize, offset)
+                .stream()
+                .map(row -> PromotionRedemptionResponse.builder()
+                        .orderId(toLong(row[0]))
+                        .invoiceNo(row[1] == null ? null : row[1].toString())
+                        .soldAt(toDateTime(row[2]))
+                        .branchId(toLong(row[3]))
+                        .promotionId(toLong(row[4]))
+                        .promotionName(row[5] == null ? null : row[5].toString())
+                        .level(row[6] == null ? null : row[6].toString())
+                        .itemId(toLong(row[7]))
+                        .itemName(row[8] == null ? null : row[8].toString())
+                        .discountAmount(roundMoney(toDouble(row[9])))
+                        .orderTotal(roundMoney(toDouble(row[10])))
+                        .build())
+                .toList();
+    }
+
+    /**
+     * What the list should call this promotion right now.
+     *
+     * <p>Derived rather than stored, because the stored {@code active} flag says nothing about
+     * the dates: a campaign that ended in March is still {@code active = true} and rendered as
+     * a green "Active" pill today.
+     */
+    private String lifecycleStatus(Promotion promotion, LocalDateTime now) {
+        if (promotion.getDeletedAt() != null) {
+            return "ARCHIVED";
+        }
+        if (promotion.getEndAt() != null && promotion.getEndAt().isBefore(now)) {
+            return "ENDED";
+        }
+        if (!promotion.isActive()) {
+            return "PAUSED";
+        }
+        if (promotion.getStartAt() != null && promotion.getStartAt().isAfter(now)) {
+            return "SCHEDULED";
+        }
+        return "LIVE";
+    }
+
+    private Long toLong(Object value) {
+        return value == null ? null : ((Number) value).longValue();
+    }
+
+    private double toDouble(Object value) {
+        return value == null ? 0 : ((Number) value).doubleValue();
+    }
+
+    private LocalDateTime toDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime;
+        }
+        return null;
+    }
+
+    /**
+     * Prices a proposed item list without saving it, so the builder can show margins and
+     * warnings while the operator types.
+     *
+     * <p>Deliberately never throws on a bad price: this answers "what would this do", and a
+     * half-finished price list is the normal state of the screen calling it. The refusals live
+     * in {@link #validateItemLines} on the save path; this reports the same conditions as
+     * statuses so the two cannot disagree about what counts as below cost.
+     */
+    public PromotionPriceCheckResponse priceCheck(PromotionPriceCheckRequest request) {
+        List<PromotionItemLine> lines = request.getItems() == null ? List.<PromotionItemLine>of() : request.getItems();
+        List<Long> itemIds = lines.stream()
+                .map(PromotionItemLine::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Item> itemsById = itemRepository.findAllById(itemIds).stream()
+                .collect(Collectors.toMap(Item::getId, Function.identity(), (a, b) -> a));
+
+        List<PromotionPriceCheckResponse.Line> results = new ArrayList<>();
+        int belowCost = 0;
+        int belowFloor = 0;
+        double discountPercentSum = 0;
+        double maxLineDiscount = 0;
+
+        for (PromotionItemLine line : lines) {
+            Item item = line.getId() == null ? null : itemsById.get(line.getId());
+            if (item == null) {
+                continue;
+            }
+            double normalPrice = item.getSellingPrice() == null ? 0 : item.getSellingPrice().doubleValue();
+            double cost = item.getCostPrice() == null ? 0 : item.getCostPrice().doubleValue();
+
+            double offerPrice = resolveCheckPrice(line, request, normalPrice);
+            double discountAmount = roundMoney(Math.max(0, normalPrice - offerPrice));
+            double discountPercent = normalPrice > 0 ? roundMoney((discountAmount / normalPrice) * 100.0) : 0;
+            double marginPercent = offerPrice > 0 ? roundMoney(((offerPrice - cost) / offerPrice) * 100.0) : 0;
+
+            String status = "OK";
+            String message = null;
+            if (line.getOfferPrice() != null && normalPrice > 0 && line.getOfferPrice().doubleValue() > normalPrice) {
+                status = "ABOVE_NORMAL_PRICE";
+                message = "Offer price is above the normal price";
+            } else if (item.getCostPrice() != null && offerPrice < cost) {
+                status = "BELOW_COST";
+                message = String.format("Sells at %.2f against a cost of %.2f", offerPrice, cost);
+                belowCost++;
+            } else if (request.getMarginFloorPercent() != null
+                    && marginPercent < request.getMarginFloorPercent().doubleValue()) {
+                status = "LOW_MARGIN";
+                message = String.format("Margin %.1f%% is below the %.1f%% floor",
+                        marginPercent, request.getMarginFloorPercent().doubleValue());
+                belowFloor++;
+            }
+
+            discountPercentSum += discountPercent;
+            maxLineDiscount = Math.max(maxLineDiscount, discountAmount);
+
+            results.add(PromotionPriceCheckResponse.Line.builder()
+                    .itemId(item.getId())
+                    .itemName(item.getName())
+                    .barcode(item.getBarcode())
+                    .normalPrice(bd(normalPrice))
+                    .costPrice(item.getCostPrice())
+                    .offerPrice(bd(offerPrice))
+                    .discountAmount(bd(discountAmount))
+                    .discountPercent(bd(discountPercent))
+                    .marginPercent(bd(marginPercent))
+                    .status(status)
+                    .message(message)
+                    .build());
+        }
+
+        return PromotionPriceCheckResponse.builder()
+                .items(results)
+                .belowCostCount(belowCost)
+                .belowFloorCount(belowFloor)
+                .averageDiscountPercent(bd(results.isEmpty() ? 0 : roundMoney(discountPercentSum / results.size())))
+                .maxLineDiscount(bd(maxLineDiscount))
+                .build();
+    }
+
+    private double resolveCheckPrice(PromotionItemLine line, PromotionPriceCheckRequest request, double normalPrice) {
+        if (line.getOfferPrice() != null) {
+            return Math.max(0, line.getOfferPrice().doubleValue());
+        }
+        if (line.getDiscountType() != null && line.getDiscountType() != DiscountType.NONE
+                && line.getDiscountValue() != null) {
+            return calculateFinalUnitPrice(normalPrice, line.getDiscountType(), line.getDiscountValue().doubleValue());
+        }
+        return calculateFinalUnitPrice(normalPrice, request.getDiscountType(), request.getDiscountValue());
+    }
+
+    private BigDecimal bd(double value) {
+        return BigDecimal.valueOf(roundMoney(value));
+    }
+
+    /**
+     * Copies a promotion as a fresh inactive one.
+     *
+     * <p>"Same as last Christmas, with new dates" is how a seasonal campaign is actually
+     * created, and retyping a forty-line price list to get there is where prices get mistyped.
+     * The copy comes back inactive so the operator sets the dates before it can price anything.
+     */
+    @Transactional
+    public PromotionResponse duplicate(Long id) {
+        Promotion source = promotionRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
+
+        Promotion copy = Promotion.builder()
+                .name(nextCopyName(source.getName()))
+                .scope(source.getScope())
+                .discountType(source.getDiscountType())
+                .discountValue(source.getDiscountValue())
+                .minBillAmount(source.getMinBillAmount())
+                .maxDiscountAmount(source.getMaxDiscountAmount())
+                .startAt(source.getStartAt())
+                .endAt(source.getEndAt())
+                .branchId(source.getBranchId())
+                .active(false)
+                .priority(source.getPriority())
+                .marginFloorPercent(source.getMarginFloorPercent())
+                .allowBelowCost(source.isAllowBelowCost())
+                .build();
+
+        source.getTargets().forEach(target -> copy.getTargets().add(PromotionTarget.builder()
+                .promotion(copy)
+                .itemId(target.getItemId())
+                .categoryId(target.getCategoryId())
+                .subCategoryId(target.getSubCategoryId())
+                .customerId(target.getCustomerId())
+                .offerPrice(target.getOfferPrice())
+                .discountType(target.getDiscountType())
+                .discountValue(target.getDiscountValue())
+                .build()));
+
+        return mapResponse(promotionRepository.save(copy));
+    }
+
+    private String nextCopyName(String name) {
+        String base = (name == null ? "Promotion" : name) + " (copy)";
+        return base.length() > 120 ? base.substring(0, 120) : base;
+    }
+
+    /**
+     * Checks the item list of an ITEM promotion, including any per-item prices on it.
+     *
+     * <p>Two refusals matter here and both are about a typo rather than a policy. An offer
+     * price above the item's own selling price is a price rise, which is never the intent. An
+     * offer price below cost is how 39.90 typed for 399.00 shows up — legitimate as a loss
+     * leader, which is what {@code allowBelowCost} is for, and a mistake otherwise. Both name
+     * the item and the numbers, because "invalid request" on a forty-line price list is
+     * useless.
+     */
+    private void validateItemLines(PromotionRequest request) {
+        List<PromotionItemLine> lines = distinctItemLines(request);
+        if (lines.isEmpty()) {
+            throw new BadRequestException("At least one item is required for item promotion");
+        }
+
+        List<Long> itemIds = lines.stream().map(PromotionItemLine::getId).toList();
+        Map<Long, Item> itemsById = itemRepository.findAllById(itemIds).stream()
+                .collect(Collectors.toMap(Item::getId, Function.identity(), (a, b) -> a));
+        if (itemsById.size() != itemIds.size()) {
+            throw new ResourceNotFoundException("One or more promotion items not found");
+        }
+
+        for (PromotionItemLine line : lines) {
+            Item item = itemsById.get(line.getId());
+            if (line.getDiscountType() == DiscountType.PERCENT
+                    && line.getDiscountValue() != null
+                    && line.getDiscountValue().doubleValue() > 100) {
+                throw new BadRequestException("Percent discount cannot exceed 100 for " + item.getName());
+            }
+            if (line.getOfferPrice() == null) {
+                continue;
+            }
+
+            double offerPrice = line.getOfferPrice().doubleValue();
+            if (offerPrice < 0) {
+                throw new BadRequestException("Offer price cannot be negative for " + item.getName());
+            }
+
+            BigDecimal sellingPrice = item.getSellingPrice();
+            if (sellingPrice != null && offerPrice > sellingPrice.doubleValue()) {
+                throw new BadRequestException(String.format(
+                        "Offer price %.2f is above the normal price %.2f for %s",
+                        offerPrice, sellingPrice.doubleValue(), item.getName()));
+            }
+
+            BigDecimal costPrice = item.getCostPrice();
+            if (!request.isAllowBelowCost() && costPrice != null && offerPrice < costPrice.doubleValue()) {
+                throw new BadRequestException(String.format(
+                        "Offer price %.2f is below the %.2f cost of %s. Allow below-cost pricing if this is deliberate.",
+                        offerPrice, costPrice.doubleValue(), item.getName()));
+            }
+        }
+    }
+
+    /** Item lines with blanks and duplicates removed, whichever request shape the client used. */
+    private List<PromotionItemLine> distinctItemLines(PromotionRequest request) {
+        Map<Long, PromotionItemLine> byId = new LinkedHashMap<>();
+        for (PromotionItemLine line : request.resolvedItemLines()) {
+            if (line == null || line.getId() == null || line.getId() <= 0) {
+                continue;
+            }
+            byId.putIfAbsent(line.getId(), line);
+        }
+        return List.copyOf(byId.values());
+    }
+
     private void applyTargets(Promotion promotion, PromotionRequest request) {
         if (promotion.getScope() == PromotionScope.ITEM) {
-            distinctIds(request.getItemIds()).forEach(itemId ->
+            distinctItemLines(request).forEach(line ->
                     promotion.getTargets().add(PromotionTarget.builder()
                             .promotion(promotion)
-                            .itemId(itemId)
+                            .itemId(line.getId())
+                            .offerPrice(line.getOfferPrice())
+                            .discountType(line.getDiscountType())
+                            .discountValue(line.getDiscountValue())
                             .build()));
             return;
         }
@@ -450,13 +801,27 @@ public class PromotionService {
                         .build()));
     }
 
-    private boolean matches(Promotion promotion, Item item, Long branchId) {
+    /**
+     * The target row this item matched, or null if the promotion does not cover it.
+     *
+     * <p>Returns the row rather than a boolean because the row is where a per-item offer price
+     * lives — the caller needs to know not just whether the promotion applies but which of its
+     * entries applied.
+     *
+     * <p>A category promotion matches on either the item's sub-category or its parent category.
+     * An item with no sub-category has neither and matches nothing; the schema still permits
+     * such a row even though the API requires one, so this degrades quietly rather than
+     * dereferencing null.
+     */
+    private PromotionTarget matchingTarget(Promotion promotion, Item item, Long branchId) {
         if (promotion.getBranchId() != null && !Objects.equals(promotion.getBranchId(), branchId)) {
-            return false;
+            return null;
         }
         if (promotion.getScope() == PromotionScope.ITEM) {
             return promotion.getTargets().stream()
-                    .anyMatch(target -> Objects.equals(target.getItemId(), item.getId()));
+                    .filter(target -> Objects.equals(target.getItemId(), item.getId()))
+                    .findFirst()
+                    .orElse(null);
         }
 
         SubCategory subCategory = item.getSubCategory();
@@ -465,9 +830,84 @@ public class PromotionService {
         Long categoryId = category != null ? category.getId() : null;
 
         return promotion.getTargets().stream()
-                .anyMatch(target ->
+                .filter(target ->
                         (target.getSubCategoryId() != null && Objects.equals(target.getSubCategoryId(), subCategoryId))
-                                || (target.getCategoryId() != null && Objects.equals(target.getCategoryId(), categoryId)));
+                                || (target.getCategoryId() != null && Objects.equals(target.getCategoryId(), categoryId)))
+                .findFirst()
+                .orElse(null);
+    }
+
+    /**
+     * The unit price this item sells at under this promotion.
+     *
+     * <p>Resolution order is offer price, then per-item rate, then the promotion's own rate.
+     * Each step is more specific than the next, and the last is what every target row written
+     * before per-item pricing existed falls through to.
+     *
+     * <p>An offer price above list is a price increase, which is never what was meant — save
+     * time rejects it, and anything that still reaches here is clamped to list rather than
+     * charging a customer more than the shelf label.
+     */
+    private double resolveOfferUnitPrice(Promotion promotion, PromotionTarget target, double unitPrice) {
+        if (target != null && target.getOfferPrice() != null) {
+            double offer = target.getOfferPrice().doubleValue();
+            if (offer < 0) {
+                return 0;
+            }
+            return Math.min(offer, unitPrice);
+        }
+        if (target != null && target.getDiscountType() != null
+                && target.getDiscountType() != DiscountType.NONE && target.getDiscountValue() != null) {
+            return calculateFinalUnitPrice(unitPrice, target.getDiscountType(), target.getDiscountValue().doubleValue());
+        }
+        return calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
+    }
+
+    private DiscountType effectiveRateType(Promotion promotion, PromotionTarget target) {
+        if (target != null && target.getDiscountType() != null && target.getDiscountType() != DiscountType.NONE) {
+            return target.getDiscountType();
+        }
+        return promotion.getDiscountType();
+    }
+
+    private double effectiveRateValue(Promotion promotion, PromotionTarget target) {
+        if (target != null && target.getDiscountType() != null
+                && target.getDiscountType() != DiscountType.NONE && target.getDiscountValue() != null) {
+            return target.getDiscountValue().doubleValue();
+        }
+        return promotion.getDiscountValue();
+    }
+
+    /**
+     * Whether a promotion may price this line, given what the item costs.
+     *
+     * <p>Both checks are silent skips rather than errors: a promotion that would sell one item
+     * below cost should stop applying to that item, not fail the sale. The operator is warned
+     * at configuration time instead, which is where the price was typed.
+     *
+     * <p>An item with no cost price is left alone — there is nothing to measure against, and
+     * refusing on missing data would disable promotions on incompletely set up catalogues.
+     */
+    private boolean marginAllows(Promotion promotion, Item item, double discountedUnitPrice) {
+        BigDecimal costPrice = item.getCostPrice();
+        if (costPrice == null) {
+            return true;
+        }
+        double cost = costPrice.doubleValue();
+
+        if (!promotion.isAllowBelowCost() && discountedUnitPrice < cost) {
+            return false;
+        }
+
+        BigDecimal floor = promotion.getMarginFloorPercent();
+        if (floor != null) {
+            if (discountedUnitPrice <= 0) {
+                return false;
+            }
+            double marginPercent = ((discountedUnitPrice - cost) / discountedUnitPrice) * 100.0;
+            return marginPercent >= floor.doubleValue();
+        }
+        return true;
     }
 
     private boolean matchesOrderPromotion(Promotion promotion, Long branchId, Long customerId, double baseTotal) {
@@ -552,7 +992,18 @@ public class PromotionService {
                 .branchId(promotion.getBranchId())
                 .active(promotion.isActive())
                 .priority(promotion.getPriority())
+                .marginFloorPercent(promotion.getMarginFloorPercent())
+                .allowBelowCost(promotion.isAllowBelowCost())
                 .itemIds(promotion.getTargets().stream().map(PromotionTarget::getItemId).filter(Objects::nonNull).toList())
+                .items(promotion.getTargets().stream()
+                        .filter(target -> target.getItemId() != null)
+                        .map(target -> PromotionItemLine.builder()
+                                .id(target.getItemId())
+                                .offerPrice(target.getOfferPrice())
+                                .discountType(target.getDiscountType())
+                                .discountValue(target.getDiscountValue())
+                                .build())
+                        .toList())
                 .categoryIds(promotion.getTargets().stream().map(PromotionTarget::getCategoryId).filter(Objects::nonNull).toList())
                 .subCategoryIds(promotion.getTargets().stream().map(PromotionTarget::getSubCategoryId).filter(Objects::nonNull).toList())
                 .customerIds(promotion.getTargets().stream().map(PromotionTarget::getCustomerId).filter(Objects::nonNull).toList())
@@ -590,17 +1041,6 @@ public class PromotionService {
             return lineDiscount;
         }
         return roundMoney(Math.min(lineDiscount, cap));
-    }
-
-    /** True when {@link #capLineDiscount} actually reduced what this promotion would have given. */
-    private boolean capApplied(Promotion promotion, double unitPrice, double baseLineTotal, int normalizedQty, Item item) {
-        double cap = Math.max(0, promotion.getMaxDiscountAmount());
-        if (cap <= 0) {
-            return false;
-        }
-        double uncappedUnitPrice = calculateFinalUnitPrice(unitPrice, promotion.getDiscountType(), promotion.getDiscountValue());
-        double uncappedDiscount = roundMoney(baseLineTotal - lineTotal(item, uncappedUnitPrice, normalizedQty));
-        return uncappedDiscount > cap;
     }
 
     /**
