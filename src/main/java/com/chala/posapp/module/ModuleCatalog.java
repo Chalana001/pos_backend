@@ -117,6 +117,12 @@ public final class ModuleCatalog {
                             any("/customer-segments"), any("/customer-segments/**")),
                     List.of("/promotions", "/promotions/history")),
 
+            top("LOYALTY", "Loyalty points",
+                    "Customers earn points as they spend and put them towards a later bill.",
+                    SALES, "Gift",
+                    List.of(any("/loyalty"), any("/loyalty/**")),
+                    List.of("/loyalty")),
+
             top("WARRANTIES", "Warranties",
                     "Issue warranty cards at checkout and look them up later.",
                     SALES, "ShieldCheck",

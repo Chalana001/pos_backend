@@ -77,6 +77,7 @@ public class OrderService {
     private final PromotionGate promotionGate;
     private final PromotionRedemptionService promotionRedemptionService;
     private final PromotionLifecycleService promotionLifecycleService;
+    private final LoyaltyService loyaltyService;
     private final StockOverrideAuditRepository stockOverrideAuditRepository;
     private final PlatformTransactionManager transactionManager;
     private final UserRepository userRepository;
@@ -474,7 +475,15 @@ public class OrderService {
             promotionDiscountTotal += orderBillPromotionDiscount;
         }
 
-        double grandTotal = roundRupee(subTotal - billDiscount);
+        // Loyalty is settled last, on what the promotions left. Points are a balance the
+        // customer already owns — closer to part-payment than to a discount rule — so they are
+        // not routed through the pricing engine and never affect which promotion wins.
+        LoyaltyService.Redemption redemption = offlineOrderMetadata != null
+                ? LoyaltyService.Redemption.NONE
+                : loyaltyService.quoteRedemption(request.getCustomerId(),
+                        request.getLoyaltyPointsToRedeem(), roundRupee(subTotal - billDiscount));
+
+        double grandTotal = roundRupee(subTotal - billDiscount - redemption.amount().doubleValue());
         double paidAmount = request.getPaidAmount();
         if (paidAmount < 0) paidAmount = 0;
         paidAmount = roundRupee(paidAmount);
@@ -542,6 +551,8 @@ public class OrderService {
                 .billPromotionName(orderBillPromotionName)
                 .billPromotionDiscountAmount(orderBillPromotionDiscount)
                 .promotionBundleVersion(offlineOrderMetadata != null ? offlineOrderMetadata.promotionBundleVersion : null)
+                .loyaltyPointsRedeemed(redemption.points())
+                .loyaltyDiscountAmount(java.math.BigDecimal.valueOf(redemption.amount().doubleValue()))
                 .grandTotal(grandTotal)
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
@@ -587,6 +598,18 @@ public class OrderService {
             }
             promotionRedemptionService.recordOffline(savedOrder, offlineLines,
                     orderBillPromotionId, orderBillPromotionName, BigDecimal.valueOf(orderBillPromotionDiscount));
+        }
+
+        // Inside this transaction, so a sale that fails later never leaves points spent or
+        // awarded. Earning is on what was actually paid — after every discount, points
+        // included — so the scheme never pays points on money that did not change hands.
+        if (offlineOrderMetadata == null && request.getCustomerId() != null) {
+            int earned = loyaltyService.applyToSale(request.getCustomerId(), savedOrder.getId(),
+                    user.getId(), redemption.points(), grandTotal);
+            if (earned > 0 || redemption.points() > 0) {
+                savedOrder.setLoyaltyPointsEarned(earned);
+                orderRepository.save(savedOrder);
+            }
         }
 
         List<OrderItemStockUsage> usagesToSave = new ArrayList<>();
@@ -698,6 +721,7 @@ public class OrderService {
         // The discount is given back, not erased: rows are marked reversed and the caps and
         // any code they consumed are released.
         promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
+        loyaltyService.reverseForOrder(order.getId(), user.getId());
 
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         for (OrderItem orderItem : items) {

@@ -138,6 +138,20 @@ public class Order extends TenantEntity {
     @Builder.Default
     private boolean offlineImported = false;
 
+    /** Points this sale earned the customer. */
+    @Column(name = "loyalty_points_earned", nullable = false)
+    @Builder.Default
+    private int loyaltyPointsEarned = 0;
+
+    /** Points the customer spent on this sale, and what they were worth. */
+    @Column(name = "loyalty_points_redeemed", nullable = false)
+    @Builder.Default
+    private int loyaltyPointsRedeemed = 0;
+
+    @Column(name = "loyalty_discount_amount", nullable = false, precision = 19, scale = 4)
+    @Builder.Default
+    private java.math.BigDecimal loyaltyDiscountAmount = java.math.BigDecimal.ZERO;
+
     /**
      * For an offline sale, the version of the promotion bundle the till priced it with. Null
      * for online sales and for offline sales made before the till carried promotions.

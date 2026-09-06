@@ -54,6 +54,17 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
                             "See exactly what a customer bought and when",
                             "Check what a cashier sold during any shift"))),
 
+            Map.entry("LOYALTY", new ModulePitch(
+                    "Give regulars a reason to come back to you",
+                    "Customers earn points on what they spend and put them towards a later bill. "
+                            + "The till shows the balance when the customer is on the sale, so the "
+                            + "cashier can offer it without looking anything up.",
+                    List.of(
+                            "Reward the customers who already spend the most",
+                            "Set what a point is worth to earn and to spend, separately",
+                            "Give bigger spenders a higher earning rate with tiers",
+                            "Every movement is on the ledger, so a disputed balance can be checked"))),
+
             Map.entry("PROMOTIONS", new ModulePitch(
                     "Run a discount without trusting anyone to remember it",
                     "Set the rule once and the POS applies it automatically at checkout. No mental "

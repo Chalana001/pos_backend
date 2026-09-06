@@ -34,6 +34,13 @@ public class CreateOrderRequest {
     /** A promo code the customer presented. Validated and consumed inside the order transaction. */
     private String promotionCode;
 
+    /**
+     * Loyalty points the customer wants to spend on this sale. Applied after promotions, against
+     * what they leave behind — points are a balance the customer owns, closer to part-payment
+     * than to a discount rule.
+     */
+    private int loyaltyPointsToRedeem;
+
     @Min(0)
     private double paidAmount; // for CASH
 
