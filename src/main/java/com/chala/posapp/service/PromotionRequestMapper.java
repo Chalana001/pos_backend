@@ -53,6 +53,10 @@ final class PromotionRequestMapper {
                 if (request.getCustomerIds() != null) {
                     request.getCustomerIds().forEach(c -> targets.add(new TargetSnapshot(null, null, null, c, null, null, null)));
                 }
+                if (request.getSegmentIds() != null) {
+                    request.getSegmentIds().forEach(sid ->
+                            targets.add(new TargetSnapshot(null, null, null, null, null, null, null, sid)));
+                }
             }
             case BILL -> { }
         }

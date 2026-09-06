@@ -112,6 +112,9 @@ public class PromotionRequest {
     private List<Long> subCategoryIds;
     private List<Long> customerIds;
 
+    /** Segment targets for a CUSTOMER promotion — a rule instead of a list of people. */
+    private List<Long> segmentIds;
+
     /**
      * The item targets to persist, preferring the richer list. Collapsing the two shapes here
      * keeps every caller — validation, target building, margin checks — from having to know

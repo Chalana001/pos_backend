@@ -4,6 +4,7 @@ import com.chala.posapp.config.CacheConfig;
 import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.entity.Branch;
+import com.chala.posapp.entity.Promotion;
 import com.chala.posapp.entity.CashShift;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.User;
@@ -26,9 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.sql.Date;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -43,6 +47,7 @@ public class NewReportService {
     private final BranchRepository        branchRepository;
     private final UserRepository          userRepository;
     private final SecurityUtils           securityUtils;
+    private final PromotionRepository     promotionRepository;
 
     private Long resolveBranchId(User user, Long requested) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) return requested;
@@ -654,15 +659,86 @@ public class NewReportService {
         Long branchId = resolveBranchId(user, requestedBranchId);
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(from, to);
 
-        return reportRepository.promotionEffectivenessRaw(qb(branchId), range.from(), range.to())
-                .stream()
-                .map(r -> PromotionEffectivenessResponse.builder()
-                        .promotionId(toLong(r[0])).promotionName(toStr(r[1]))
-                        .discountType(toStr(r[2])).discountValue(toDouble(r[3]))
-                        .timesApplied(toLong(r[4])).totalDiscountGiven(toDouble(r[5]))
-                        .totalRevenue(toDouble(r[6])).avgOrderValue(toDouble(r[7]))
-                        .build())
+        Long qbBranch = qb(branchId);
+        Map<Long, Object[]> orderTotals = indexById(
+                reportRepository.promotionOrderTotalsRaw(qbBranch, range.from(), range.to()));
+        Map<Long, Object[]> margins = indexById(
+                reportRepository.promotionBasketMarginRaw(qbBranch, range.from(), range.to()));
+        Map<Long, Object[]> units = indexById(
+                reportRepository.promotionUnitsRaw(qbBranch, range.from(), range.to()));
+        Map<Long, Object[]> codes = indexById(reportRepository.promotionCodeUsageRaw());
+
+        // One baseline for the whole period, not one per promotion: the comparison is against
+        // "a sale nothing discounted", which is the same set whichever promotion is being read.
+        List<Object[]> baselineRows = reportRepository.unpromotedBaselineRaw(qbBranch, range.from(), range.to());
+        double baselineBasket = baselineRows.isEmpty() ? 0 : toDouble(baselineRows.get(0)[1]);
+
+        Map<Long, Promotion> promotions = promotionRepository.findAllById(orderTotals.keySet()).stream()
+                .collect(Collectors.toMap(Promotion::getId, Function.identity(), (a, b) -> a));
+
+        return orderTotals.entrySet().stream()
+                .map(entry -> {
+                    Long id = entry.getKey();
+                    Object[] totals = entry.getValue();
+                    Object[] margin = margins.get(id);
+                    Object[] unit = units.get(id);
+                    Object[] code = codes.get(id);
+                    Promotion promotion = promotions.get(id);
+
+                    long orders = toLong(totals[1]);
+                    double revenue = toDouble(totals[2]);
+                    double discount = toDouble(totals[3]);
+                    double basketRevenue = margin == null ? 0 : toDouble(margin[1]);
+                    double basketCost = margin == null ? 0 : toDouble(margin[2]);
+                    double marginBefore = basketRevenue - basketCost;
+                    double avgBasket = orders == 0 ? 0 : revenue / orders;
+                    long issued = code == null ? 0 : toLong(code[1]);
+                    long used = code == null ? 0 : toLong(code[2]);
+
+                    return PromotionEffectivenessResponse.builder()
+                            .promotionId(id)
+                            // A retired promotion keeps its row (soft delete), so the ledger can
+                            // still be read back to a name months after the campaign ended.
+                            .promotionName(promotion == null ? "Promotion " + id : promotion.getName())
+                            .scope(promotion == null || promotion.getScope() == null ? null : promotion.getScope().name())
+                            .effectType(promotion == null || promotion.getEffectType() == null ? null : promotion.getEffectType().name())
+                            .discountType(promotion == null || promotion.getDiscountType() == null ? null : promotion.getDiscountType().name())
+                            .discountValue(promotion == null || promotion.getDiscountValue() == null ? 0 : promotion.getDiscountValue().doubleValue())
+                            .timesApplied(orders)
+                            .totalDiscountGiven(round2(discount))
+                            .totalRevenue(round2(revenue))
+                            .avgOrderValue(round2(avgBasket))
+                            .unitsMoved(unit == null ? 0 : round2(toDouble(unit[1]) / 1000.0))
+                            .itemsDiscounted(unit == null ? 0 : toLong(unit[2]))
+                            .grossMarginBefore(round2(marginBefore))
+                            .grossMarginAfter(round2(marginBefore - discount))
+                            .marginErosionPercent(marginBefore <= 0 ? null : round2(discount * 100.0 / marginBefore))
+                            .avgBasketWithPromotion(round2(avgBasket))
+                            .avgBasketWithout(round2(baselineBasket))
+                            .basketLiftPercent(baselineBasket <= 0 ? null
+                                    : round2((avgBasket - baselineBasket) * 100.0 / baselineBasket))
+                            .codesIssued(issued)
+                            .codesUsed(used)
+                            .codeRedemptionRatePercent(issued == 0 ? null : round2(used * 100.0 / issued))
+                            .build();
+                })
+                .sorted(Comparator.comparingDouble(PromotionEffectivenessResponse::getTotalDiscountGiven).reversed())
                 .toList();
+    }
+
+    /** Raw aggregate rows keyed by the promotion id in column 0. */
+    private static Map<Long, Object[]> indexById(List<Object[]> rows) {
+        Map<Long, Object[]> byId = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] != null) {
+                byId.put(((Number) row[0]).longValue(), row);
+            }
+        }
+        return byId;
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     // ═══════════════════════════════════════════════════════════════════════

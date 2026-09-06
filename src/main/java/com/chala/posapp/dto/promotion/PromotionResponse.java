@@ -61,4 +61,5 @@ public class PromotionResponse {
     private List<Long> categoryIds;
     private List<Long> subCategoryIds;
     private List<Long> customerIds;
+    private List<Long> segmentIds;
 }

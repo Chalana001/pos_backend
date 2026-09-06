@@ -49,6 +49,7 @@ public class PromotionService {
     private final PromotionSnapshotCache snapshotCache;
     private final PromotionGate promotionGate;
     private final PromotionCodeRepository promotionCodeRepository;
+    private final CustomerSegmentRepository customerSegmentRepository;
     private final PromotionLifecycleService lifecycleService;
     private final PromotionSimulationService simulationService;
 
@@ -782,11 +783,15 @@ public class PromotionService {
 
         if (request.getScope() == PromotionScope.CUSTOMER) {
             List<Long> customerIds = distinctIds(request.getCustomerIds());
-            if (customerIds.isEmpty()) {
-                throw new BadRequestException("At least one customer is required for customer promotion");
+            List<Long> segmentIds = distinctIds(request.getSegmentIds());
+            if (customerIds.isEmpty() && segmentIds.isEmpty()) {
+                throw new BadRequestException("Choose at least one customer or segment for a customer promotion");
             }
-            if (customerRepository.findAllById(customerIds).size() != customerIds.size()) {
+            if (!customerIds.isEmpty() && customerRepository.findAllById(customerIds).size() != customerIds.size()) {
                 throw new ResourceNotFoundException("One or more promotion customers not found");
+            }
+            if (!segmentIds.isEmpty() && customerSegmentRepository.findAllById(segmentIds).size() != segmentIds.size()) {
+                throw new ResourceNotFoundException("One or more promotion segments not found");
             }
             return;
         }
@@ -1200,6 +1205,11 @@ public class PromotionService {
                             .promotion(promotion)
                             .customerId(customerId)
                             .build()));
+            distinctIds(request.getSegmentIds()).forEach(segmentId ->
+                    promotion.getTargets().add(PromotionTarget.builder()
+                            .promotion(promotion)
+                            .segmentId(segmentId)
+                            .build()));
             return;
         }
 
@@ -1310,6 +1320,7 @@ public class PromotionService {
                 .categoryIds(promotion.getTargets().stream().map(PromotionTarget::getCategoryId).filter(Objects::nonNull).toList())
                 .subCategoryIds(promotion.getTargets().stream().map(PromotionTarget::getSubCategoryId).filter(Objects::nonNull).toList())
                 .customerIds(promotion.getTargets().stream().map(PromotionTarget::getCustomerId).filter(Objects::nonNull).toList())
+                .segmentIds(promotion.getTargets().stream().map(PromotionTarget::getSegmentId).filter(Objects::nonNull).toList())
                 .build();
     }
 

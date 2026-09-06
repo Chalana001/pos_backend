@@ -1456,6 +1456,145 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             @Param("toDate") LocalDateTime toDate);
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // RPT-08 v2: Promotion effectiveness from the redemption ledger.
+    //
+    // The query above keys on orders.bill_promotion_id, so it can only ever see bill-level
+    // promotions: a shop running item campaigns opens this report and sees nothing, and
+    // concludes none of them fired. promotion_redemptions carries both levels, one row per
+    // promotion per line or bill, which also means a line two promotions stacked on is
+    // attributed to each of them instead of only to the larger. Reversed rows — a cancelled
+    // sale gave the discount back — are excluded everywhere below.
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Orders touched, revenue on those orders, and discount given, per promotion.
+     *
+     * <p>Aggregated per order first so an order the promotion discounted on three lines counts
+     * once and contributes its basket total once — summing {@code grand_total} across the raw
+     * rows would multiply the same basket by the number of lines.
+     *
+     * <p>Columns: promotionId, orders, revenue, discountGiven.
+     */
+    @Query(value = """
+        SELECT promotion_id, COUNT(*), COALESCE(SUM(order_total), 0), COALESCE(SUM(order_discount), 0)
+        FROM (
+            SELECT r.promotion_id                AS promotion_id,
+                   o.id                          AS order_id,
+                   MAX(o.grand_total)            AS order_total,
+                   SUM(r.discount_amount)        AS order_discount
+            FROM promotion_redemptions r
+            JOIN orders o ON o.id = r.order_id
+            WHERE r.reversed_at IS NULL
+              AND o.status = 'COMPLETED'
+              AND (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.created_at BETWEEN :fromDate AND :toDate
+            GROUP BY r.promotion_id, o.id
+        ) per_order
+        GROUP BY promotion_id
+        """, nativeQuery = true)
+    List<Object[]> promotionOrderTotalsRaw(
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate);
+
+    /**
+     * Gross revenue and cost across the whole baskets a promotion appeared on, so margin can be
+     * stated for bill-level promotions too — they have no lines of their own.
+     *
+     * <p>Columns: promotionId, basketRevenue, basketCost.
+     */
+    @Query(value = """
+        SELECT rel.promotion_id,
+               COALESCE(SUM(oi.line_total), 0),
+               COALESCE(SUM(oi.line_cost), 0)
+        FROM (
+            SELECT DISTINCT r.promotion_id, r.order_id
+            FROM promotion_redemptions r
+            JOIN orders o ON o.id = r.order_id
+            WHERE r.reversed_at IS NULL
+              AND o.status = 'COMPLETED'
+              AND (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.created_at BETWEEN :fromDate AND :toDate
+        ) rel
+        JOIN order_items oi ON oi.order_id = rel.order_id
+        GROUP BY rel.promotion_id
+        """, nativeQuery = true)
+    List<Object[]> promotionBasketMarginRaw(
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate);
+
+    /**
+     * Units actually moved on discounted lines, and how many distinct items a promotion touched.
+     * Line-level only — a bill promotion discounts a total, not a quantity.
+     *
+     * <p>Columns: promotionId, unitsMoved (normalized base units), distinctItems.
+     */
+    @Query(value = """
+        SELECT r.promotion_id,
+               COALESCE(SUM(oi.qty), 0),
+               COUNT(DISTINCT oi.item_id)
+        FROM promotion_redemptions r
+        JOIN order_items oi ON oi.id = r.order_item_id
+        JOIN orders o ON o.id = r.order_id
+        WHERE r.reversed_at IS NULL
+          AND r.level = 'LINE'
+          AND o.status = 'COMPLETED'
+          AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.created_at BETWEEN :fromDate AND :toDate
+        GROUP BY r.promotion_id
+        """, nativeQuery = true)
+    List<Object[]> promotionUnitsRaw(
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate);
+
+    /**
+     * The baseline every promotion is measured against: completed orders in the same period
+     * that no promotion touched.
+     *
+     * <p>This is what turns "associated revenue" — a number that says nothing, because the
+     * customer might have bought the same basket anyway — into basket lift. It is still not a
+     * controlled experiment: the same shop, the same period, promoted and unpromoted baskets
+     * differ for reasons other than the promotion. It is an indication, and the report says so.
+     *
+     * <p>Columns: orders, averageBasket.
+     */
+    @Query(value = """
+        SELECT COUNT(*), COALESCE(AVG(o.grand_total), 0)
+        FROM orders o
+        WHERE o.status = 'COMPLETED'
+          AND (:branchId = 0 OR o.branch_id = :branchId)
+          AND o.created_at BETWEEN :fromDate AND :toDate
+          AND NOT EXISTS (
+              SELECT 1 FROM promotion_redemptions r
+              WHERE r.order_id = o.id AND r.reversed_at IS NULL
+          )
+        """, nativeQuery = true)
+    List<Object[]> unpromotedBaselineRaw(
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate);
+
+    /**
+     * Codes minted and codes used, per promotion — the redemption rate of a coded campaign,
+     * which is the only honest measure of whether the vouchers were worth printing.
+     *
+     * <p>Not date-filtered: a code issued last month and redeemed this one belongs to the
+     * campaign, not to the reporting window.
+     *
+     * <p>Columns: promotionId, codesIssued, codesUsed.
+     */
+    @Query(value = """
+        SELECT c.promotion_id,
+               COUNT(*),
+               COALESCE(SUM(CASE WHEN c.redemptions_used > 0 THEN 1 ELSE 0 END), 0)
+        FROM promotion_codes c
+        GROUP BY c.promotion_id
+        """, nativeQuery = true)
+    List<Object[]> promotionCodeUsageRaw();
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // RPT-09: Warranty Report
     // ═══════════════════════════════════════════════════════════════════════════
 

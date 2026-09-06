@@ -44,6 +44,18 @@ public class PromotionTarget extends TenantEntity {
     private Long customerId;
 
     /**
+     * A rule instead of a person. The alternative to {@link #customerId} on a CUSTOMER-scope
+     * target: one names someone, the other names everyone a {@link CustomerSegment} picks out.
+     *
+     * <p>The engine never sees this. {@code PromotionGate} resolves the sale's customer into
+     * their segments and rewrites a matching target as that customer's id, so segment matching
+     * stays a database concern and the pricing engine keeps matching on explicit ids — which
+     * is also what keeps the JS port and the fixture corpus valid without touching either.
+     */
+    @Column(name = "segment_id")
+    private Long segmentId;
+
+    /**
      * What this specific item sells for while the promotion runs, overriding the promotion's
      * own discount. Null means "no per-item price".
      *

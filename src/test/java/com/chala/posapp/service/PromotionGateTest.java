@@ -49,6 +49,7 @@ class PromotionGateTest {
     private PromotionCodeRepository codeRepository;
     private PromotionRedemptionRepository redemptionRepository;
     private PromotionGate gate;
+    private CustomerSegmentService segmentService;
     private PromotionRedemptionService ledger;
 
     @BeforeEach
@@ -56,7 +57,9 @@ class PromotionGateTest {
         promotionRepository = mock(PromotionRepository.class);
         codeRepository = mock(PromotionCodeRepository.class);
         redemptionRepository = mock(PromotionRedemptionRepository.class);
-        gate = new PromotionGate(promotionRepository, codeRepository, redemptionRepository);
+        segmentService = mock(CustomerSegmentService.class);
+        when(segmentService.segmentIdsForCustomer(any())).thenReturn(java.util.Set.of());
+        gate = new PromotionGate(promotionRepository, codeRepository, redemptionRepository, segmentService);
         ledger = new PromotionRedemptionService(promotionRepository, codeRepository, redemptionRepository);
     }
 
@@ -236,6 +239,60 @@ class PromotionGateTest {
                     .isEqualTo("This customer has already used this code");
             assertThat(gate.gate(List.of(snapshot(1, "A")), "ONCE", null, NOW).codeStatus().getMessage())
                     .isEqualTo("This code needs a customer on the sale");
+        }
+    }
+
+    @Nested
+    @DisplayName("segments")
+    class Segments {
+
+        private PromotionSnapshot segmentPromo(long id, long segmentId) {
+            return new PromotionSnapshot(id, "Loyal customers", PromotionScope.CUSTOMER, DiscountType.PERCENT,
+                    BigDecimal.TEN, BigDecimal.ZERO, BigDecimal.ZERO, NOW.minusDays(1), NOW.plusDays(1), null, 0,
+                    null, false, PromotionEffectType.DISCOUNT, null, null, StackingMode.BEST_ONLY, true,
+                    List.of(new com.chala.posapp.promotion.engine.TargetSnapshot(
+                            null, null, null, null, null, null, null, segmentId)),
+                    List.of(), List.of());
+        }
+
+        @Test
+        @DisplayName("a segment the customer is in is rewritten to name them, so the engine matches on an id")
+        void resolvedToCustomer() {
+            limits(1, null, null, null, 0, 0, 0);
+            when(segmentService.segmentIdsForCustomer(42L)).thenReturn(java.util.Set.of(5L));
+
+            PromotionGate.Result result = gate.gate(List.of(segmentPromo(1, 5L)), null, 42L, NOW);
+
+            assertThat(result.eligible()).singleElement().satisfies(promotion ->
+                    assertThat(promotion.targets()).singleElement().satisfies(target -> {
+                        assertThat(target.customerId()).isEqualTo(42L);
+                        assertThat(target.segmentId()).isEqualTo(5L);
+                    }));
+        }
+
+        @Test
+        @DisplayName("a segment the customer is not in is left alone, so it simply fails to match")
+        void notAMember() {
+            limits(1, null, null, null, 0, 0, 0);
+            when(segmentService.segmentIdsForCustomer(42L)).thenReturn(java.util.Set.of(9L));
+
+            PromotionGate.Result result = gate.gate(List.of(segmentPromo(1, 5L)), null, 42L, NOW);
+
+            assertThat(result.eligible()).singleElement().satisfies(promotion ->
+                    assertThat(promotion.targets()).singleElement()
+                            .satisfies(target -> assertThat(target.customerId()).isNull()));
+        }
+
+        @Test
+        @DisplayName("a walk-in has no segments, so nothing is rewritten")
+        void walkIn() {
+            limits(1, null, null, null, 0, 0, 0);
+
+            PromotionGate.Result result = gate.gate(List.of(segmentPromo(1, 5L)), null, null, NOW);
+
+            assertThat(result.eligible()).singleElement().satisfies(promotion ->
+                    assertThat(promotion.targets()).singleElement()
+                            .satisfies(target -> assertThat(target.customerId()).isNull()));
         }
     }
 

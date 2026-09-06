@@ -5,6 +5,7 @@ import com.chala.posapp.entity.PromotionCode;
 import com.chala.posapp.promotion.engine.LineDecision;
 import com.chala.posapp.promotion.engine.LineDecision.Outcome;
 import com.chala.posapp.promotion.engine.PromotionSnapshot;
+import com.chala.posapp.promotion.engine.TargetSnapshot;
 import com.chala.posapp.repository.PromotionCodeRepository;
 import com.chala.posapp.repository.PromotionRedemptionRepository;
 import com.chala.posapp.repository.PromotionRepository;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Decides which of the running promotions this particular sale may use.
@@ -39,6 +41,7 @@ public class PromotionGate {
     private final PromotionRepository promotionRepository;
     private final PromotionCodeRepository codeRepository;
     private final PromotionRedemptionRepository redemptionRepository;
+    private final CustomerSegmentService segmentService;
 
     /**
      * @param eligible   what the engine may now consider
@@ -85,6 +88,11 @@ public class PromotionGate {
             }
         }
 
+        // Which segments this customer is in, looked up once. A promotion targeting a segment
+        // they belong to is rewritten below to name them directly, so the engine goes on
+        // matching explicit ids and never learns segments exist.
+        Set<Long> customerSegments = segmentService.segmentIdsForCustomer(customerId);
+
         List<PromotionSnapshot> eligible = new ArrayList<>();
         List<LineDecision> excluded = new ArrayList<>();
         for (PromotionSnapshot promotion : pool) {
@@ -112,9 +120,38 @@ public class PromotionGate {
                 excluded.add(LineDecision.of(promotion.id(), promotion.name(), Outcome.CUSTOMER_LIMIT_REACHED));
                 continue;
             }
-            eligible.add(promotion);
+            eligible.add(resolveSegments(promotion, customerId, customerSegments));
         }
         return new Result(eligible, excluded, code, codeStatus);
+    }
+
+    /**
+     * Turns "anyone in this segment" into "this customer", for a promotion that targets a
+     * segment this customer is in. Anything else is returned untouched — including a segment
+     * target they are not in, which then simply fails to match, exactly as a target naming
+     * someone else would.
+     */
+    private PromotionSnapshot resolveSegments(PromotionSnapshot promotion, Long customerId, Set<Long> customerSegments) {
+        if (customerId == null || customerId <= 0 || customerSegments.isEmpty()) {
+            return promotion;
+        }
+        boolean any = promotion.targets().stream()
+                .anyMatch(target -> target.segmentId() != null && customerSegments.contains(target.segmentId()));
+        if (!any) {
+            return promotion;
+        }
+        List<TargetSnapshot> resolved = promotion.targets().stream()
+                .map(target -> target.segmentId() != null && customerSegments.contains(target.segmentId())
+                        ? target.asCustomer(customerId)
+                        : target)
+                .toList();
+        return new PromotionSnapshot(
+                promotion.id(), promotion.name(), promotion.scope(), promotion.discountType(),
+                promotion.discountValue(), promotion.minBillAmount(), promotion.maxDiscountAmount(),
+                promotion.startAt(), promotion.endAt(), promotion.branchId(), promotion.priority(),
+                promotion.marginFloorPercent(), promotion.allowBelowCost(), promotion.effectType(),
+                promotion.buyQty(), promotion.getQty(), promotion.stackingMode(),
+                promotion.allowManualStacking(), resolved, promotion.tiers(), promotion.schedules());
     }
 
     /** The message a customer should hear, or null if the code is good for this sale. */

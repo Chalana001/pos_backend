@@ -113,7 +113,8 @@ public final class ModuleCatalog {
             top("PROMOTIONS", "Promotions & discounts",
                     "Rule-based discounts, happy-hour pricing and bundle offers.",
                     SALES, "BadgePercent",
-                    List.of(any("/promotions/**"), any("/promotions")),
+                    List.of(any("/promotions/**"), any("/promotions"),
+                            any("/customer-segments"), any("/customer-segments/**")),
                     List.of("/promotions", "/promotions/history")),
 
             top("WARRANTIES", "Warranties",
