@@ -92,6 +92,63 @@ public class PromotionRedemptionService {
         redemptionRepository.saveAll(rows);
     }
 
+    /** One line of an imported offline sale with the promotion the till says it applied. */
+    public record OfflineLine(Long orderItemId, Long itemId, Long promotionId, String promotionName, BigDecimal discount) {
+    }
+
+    /**
+     * Books what an offline till already gave away.
+     *
+     * <p>The sale happened; the customer paid the discounted price and holds the receipt. So
+     * this never refuses: rows are written from the till's attribution and the caps are
+     * counted up with no ceiling. A promotion that was at its limit while the till was offline
+     * overshoots by that sale — recorded, visible, and the honest alternative to booking a
+     * discount the customer did not get or refusing a sale that has already happened.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordOffline(Order order, List<OfflineLine> lines,
+                              Long billPromotionId, String billPromotionName, BigDecimal billDiscount) {
+        LocalDateTime now = LocalDateTime.now();
+        List<PromotionRedemption> rows = new ArrayList<>();
+        Map<Long, BigDecimal> perPromotion = new LinkedHashMap<>();
+
+        for (OfflineLine line : lines == null ? List.<OfflineLine>of() : lines) {
+            if (line.promotionId() == null || line.discount() == null || line.discount().signum() <= 0) {
+                continue;
+            }
+            rows.add(offlineRow(order, line.promotionId(), PromotionRedemption.Level.LINE,
+                    line.orderItemId(), line.itemId(), line.discount(), now));
+            perPromotion.merge(line.promotionId(), line.discount(), BigDecimal::add);
+        }
+        if (billPromotionId != null && billDiscount != null && billDiscount.signum() > 0) {
+            rows.add(offlineRow(order, billPromotionId, PromotionRedemption.Level.BILL, null, null, billDiscount, now));
+            perPromotion.merge(billPromotionId, billDiscount, BigDecimal::add);
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        perPromotion.forEach(promotionRepository::consumeUnchecked);
+        redemptionRepository.saveAll(rows);
+        log.info("Booked {} offline promotion redemption(s) on order {} (bundle {})",
+                rows.size(), order.getId(), order.getPromotionBundleVersion());
+    }
+
+    private PromotionRedemption offlineRow(Order order, Long promotionId, PromotionRedemption.Level level,
+                                           Long orderItemId, Long itemId, BigDecimal amount, LocalDateTime now) {
+        return PromotionRedemption.builder()
+                .promotionId(promotionId)
+                .orderId(order.getId())
+                .orderItemId(orderItemId)
+                .itemId(itemId)
+                .customerId(order.getCustomerId())
+                .branchId(order.getBranchId())
+                .userId(order.getCashierUserId())
+                .level(level)
+                .discountAmount(amount)
+                .redeemedAt(order.getOfflineSoldAt() != null ? order.getOfflineSoldAt() : now)
+                .build();
+    }
+
     /**
      * Gives back every redemption on an order. The rows stay — reversed, not deleted — and the
      * counters and any code they consumed are released so the cap frees up.

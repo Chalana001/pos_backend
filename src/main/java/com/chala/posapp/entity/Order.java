@@ -138,6 +138,13 @@ public class Order extends TenantEntity {
     @Builder.Default
     private boolean offlineImported = false;
 
+    /**
+     * For an offline sale, the version of the promotion bundle the till priced it with. Null
+     * for online sales and for offline sales made before the till carried promotions.
+     */
+    @Column(name = "promotion_bundle_version", length = 40)
+    private String promotionBundleVersion;
+
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 

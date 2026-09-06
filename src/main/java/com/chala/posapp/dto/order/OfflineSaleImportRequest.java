@@ -50,6 +50,14 @@ public class OfflineSaleImportRequest {
     @Min(0)
     private double billDiscount;
 
+    /** The promotion bundle the till priced with; null when it carried none. */
+    private String promotionBundleVersion;
+
+    /** Bill-level promotion the till applied, if any — trusted, recorded, not recomputed. */
+    private Long billPromotionId;
+    private String billPromotionName;
+    private Double billPromotionDiscountAmount;
+
     @Min(0)
     private double paidAmount;
 

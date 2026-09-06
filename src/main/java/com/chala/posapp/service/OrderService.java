@@ -153,7 +153,11 @@ public class OrderService {
                         request.getClientSaleId(),
                         request.getOfflineSoldAt(),
                         request.getInvoiceNo(),
-                        request.getOfflineCashierUserId()
+                        request.getOfflineCashierUserId(),
+                        request.getPromotionBundleVersion(),
+                        request.getBillPromotionId(),
+                        request.getBillPromotionName(),
+                        request.getBillPromotionDiscountAmount()
                 )
         );
 
@@ -266,19 +270,25 @@ public class OrderService {
         LocalDateTime soldAt = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
                 ? offlineOrderMetadata.offlineSoldAt
                 : LocalDateTime.now();
-        // Promotions are deliberately NOT applied to an imported offline sale.
+        // Promotions are never re-priced on an imported offline sale — but they are no longer
+        // absent from one either.
         //
-        // The till was offline when it priced this. It could not know which promotions
-        // were running, so it charged and PRINTED list price, and that is what the
-        // customer handed over. Applying a discount here would make the ledger disagree
-        // with the receipt in their hand and book a discount nobody received — and
-        // min(paidAmount, grandTotal) below would quietly absorb the difference as change
-        // that was never given, showing up only as an unexplained cash surplus at day end.
+        // The rule that has always governed this path still holds: whatever the till printed is
+        // what the customer handed over, so the server must bank that number. Re-pricing here
+        // would make the ledger disagree with the receipt in their hand, and
+        // min(paidAmount, grandTotal) below would quietly absorb the difference as change that
+        // was never given, showing up only as an unexplained cash surplus at day end.
         //
-        // The alternative — caching promotions and pricing them in the browser — means a
-        // second implementation of scopes, targets, caps, priority and best-of selection.
-        // Any drift between the two reintroduces exactly this mismatch, so the sale is
-        // banked at the price it was actually sold for instead.
+        // What changed is what the till knows. It now carries a versioned bundle of the running
+        // promotions and prices with a port of this same engine, so it can print a discounted
+        // price instead of list. The objection to that used to be that a second implementation
+        // of scopes, targets, caps, priority and best-of selection would drift from this one —
+        // which is why the two are pinned to a shared fixture corpus that fails the build on any
+        // divergence (backend PromotionCorpusTest, frontend promotionEngine.corpus.test.mjs).
+        //
+        // So: the price is taken as given, the till's attribution is recorded as given, and the
+        // bundle version rides along on the order so a sale priced by stale rules is visible in
+        // reporting rather than silently corrected into a different total.
         // The gate removes what a code, a cap, a budget or a per-customer limit rules out. A
         // presented code that does not work refuses the sale outright: the customer expects
         // the discount, and silently charging full price is the one outcome nobody wants.
@@ -303,6 +313,9 @@ public class OrderService {
         // Index-aligned with preparedItems: the engine's verdicts per line, written to the
         // redemption ledger once the order items have ids.
         List<List<LineDecision>> lineDecisions = new ArrayList<>();
+        // Which of those lines carry a promotion — used by the offline path, where the verdicts
+        // are the till's rather than this engine's.
+        List<Integer> offlineLineIndexes = new ArrayList<>();
         boolean linesHaveExclusive = false;
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext =
@@ -367,8 +380,31 @@ public class OrderService {
             discountValue = promotionApplication.discountValue();
             double finalUnitPrice = calculateFinalUnitPrice(unitPrice, discountType, discountValue);
             double lineTotal = QuantityConversionUtil.calculateActualAmount(item, BigDecimal.valueOf(finalUnitPrice), normalizedQty).doubleValue();
-            if (promotionApplication.promotionApplied()) {
-                promotionDiscountTotal += promotionApplication.promotionDiscountAmount();
+            // Who gets credit for the discount on this line.
+            //
+            // Online, the engine just decided it. Offline, the till decided it with its own copy
+            // of the same engine and the bundle it held, and the customer has already paid that
+            // price and holds the receipt — so the till's attribution is recorded as given. The
+            // arithmetic is not touched either way: discountType/discountValue above already
+            // produced the price that was charged.
+            Long linePromotionId;
+            String linePromotionName;
+            double linePromotionDiscount;
+            if (offlineOrderMetadata != null) {
+                linePromotionId = itemReq.getPromotionId();
+                linePromotionName = itemReq.getPromotionName();
+                linePromotionDiscount = linePromotionId == null || itemReq.getPromotionDiscountAmount() == null
+                        ? 0.0
+                        : Math.max(0, itemReq.getPromotionDiscountAmount());
+            } else {
+                linePromotionId = promotionApplication.promotionApplied() ? promotionApplication.promotionId() : null;
+                linePromotionName = promotionApplication.promotionApplied() ? promotionApplication.promotionName() : null;
+                linePromotionDiscount = promotionApplication.promotionApplied()
+                        ? promotionApplication.promotionDiscountAmount() : 0.0;
+            }
+            if (linePromotionId != null) {
+                promotionDiscountTotal += linePromotionDiscount;
+                offlineLineIndexes.add(preparedItems.size());
             }
 
             OrderItem orderItem = OrderItem.builder()
@@ -385,9 +421,9 @@ public class OrderService {
                     .costPrice(consumption.unitCost)
                     .discountType(discountType)
                     .discountValue(discountValue)
-                    .promotionId(promotionApplication.promotionApplied() ? promotionApplication.promotionId() : null)
-                    .promotionName(promotionApplication.promotionApplied() ? promotionApplication.promotionName() : null)
-                    .promotionDiscountAmount(promotionApplication.promotionApplied() ? promotionApplication.promotionDiscountAmount() : 0.0)
+                    .promotionId(linePromotionId)
+                    .promotionName(linePromotionName)
+                    .promotionDiscountAmount(linePromotionDiscount)
                     .finalUnitPrice(finalUnitPrice)
                     .lineCost(consumption.lineCost)
                     .lineTotal(lineTotal)
@@ -416,8 +452,26 @@ public class OrderService {
         );
         PromotionOrderApplication billPromotionApplication = billEvaluation.application();
         billDiscount = billPromotionApplication.appliedDiscountAmount();
-        if (billPromotionApplication.promotionApplied()) {
-            promotionDiscountTotal += billPromotionApplication.promotionDiscountAmount();
+
+        // Same rule as the lines: offline, the bill promotion the till applied is recorded as
+        // given. billDiscount already carries its amount — the till sent it as the bill
+        // discount — so only the attribution is taken from the metadata.
+        Long orderBillPromotionId;
+        String orderBillPromotionName;
+        double orderBillPromotionDiscount;
+        if (offlineOrderMetadata != null) {
+            orderBillPromotionId = offlineOrderMetadata.billPromotionId;
+            orderBillPromotionName = offlineOrderMetadata.billPromotionName;
+            orderBillPromotionDiscount = orderBillPromotionId == null ? 0.0
+                    : offlineOrderMetadata.billPromotionDiscountAmount;
+        } else {
+            orderBillPromotionId = billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionId() : null;
+            orderBillPromotionName = billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionName() : null;
+            orderBillPromotionDiscount = billPromotionApplication.promotionApplied()
+                    ? billPromotionApplication.promotionDiscountAmount() : 0.0;
+        }
+        if (orderBillPromotionId != null) {
+            promotionDiscountTotal += orderBillPromotionDiscount;
         }
 
         double grandTotal = roundRupee(subTotal - billDiscount);
@@ -484,9 +538,10 @@ public class OrderService {
                 .subTotal(subTotal)
                 .billDiscount(billDiscount)
                 .promotionDiscountTotal(promotionDiscountTotal)
-                .billPromotionId(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionId() : null)
-                .billPromotionName(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionName() : null)
-                .billPromotionDiscountAmount(billPromotionApplication.promotionApplied() ? billPromotionApplication.promotionDiscountAmount() : 0.0)
+                .billPromotionId(orderBillPromotionId)
+                .billPromotionName(orderBillPromotionName)
+                .billPromotionDiscountAmount(orderBillPromotionDiscount)
+                .promotionBundleVersion(offlineOrderMetadata != null ? offlineOrderMetadata.promotionBundleVersion : null)
                 .grandTotal(grandTotal)
                 .paidAmount(paidAmount)
                 .dueAmount(dueAmount)
@@ -519,6 +574,19 @@ public class OrderService {
             }
             promotionRedemptionService.record(savedOrder, lineRedemptions, billEvaluation.decisions(),
                     promotionGateResult.code());
+        } else if (offlineOrderMetadata != null) {
+            // The offline half of the ledger. Booked without checking caps: the sale already
+            // happened, and a promotion that filled up while the till was disconnected
+            // overshoots rather than the sale being refused after the fact.
+            List<PromotionRedemptionService.OfflineLine> offlineLines = new ArrayList<>();
+            for (Integer index : offlineLineIndexes) {
+                OrderItem savedItem = savedOrderItems.get(index);
+                offlineLines.add(new PromotionRedemptionService.OfflineLine(
+                        savedItem.getId(), savedItem.getItemId(), savedItem.getPromotionId(),
+                        savedItem.getPromotionName(), BigDecimal.valueOf(savedItem.getPromotionDiscountAmount())));
+            }
+            promotionRedemptionService.recordOffline(savedOrder, offlineLines,
+                    orderBillPromotionId, orderBillPromotionName, BigDecimal.valueOf(orderBillPromotionDiscount));
         }
 
         List<OrderItemStockUsage> usagesToSave = new ArrayList<>();
@@ -1632,22 +1700,40 @@ public class OrderService {
         }
     }
 
+    /**
+     * What the till knew that the server cannot re-derive: the number it printed, who took the
+     * money, and — since the till carries the promotion bundle — which promotions it applied
+     * and under which version of the rules.
+     */
     private static final class OfflineOrderMetadata {
         private final String clientSaleId;
         private final LocalDateTime offlineSoldAt;
         private final String invoiceNo;
         private final Long cashierUserId;
+        private final String promotionBundleVersion;
+        private final Long billPromotionId;
+        private final String billPromotionName;
+        private final double billPromotionDiscountAmount;
 
         private OfflineOrderMetadata(
                 String clientSaleId,
                 LocalDateTime offlineSoldAt,
                 String invoiceNo,
-                Long cashierUserId
+                Long cashierUserId,
+                String promotionBundleVersion,
+                Long billPromotionId,
+                String billPromotionName,
+                Double billPromotionDiscountAmount
         ) {
             this.clientSaleId = clientSaleId;
             this.offlineSoldAt = offlineSoldAt;
             this.invoiceNo = invoiceNo;
             this.cashierUserId = cashierUserId;
+            this.promotionBundleVersion = promotionBundleVersion;
+            this.billPromotionId = billPromotionId;
+            this.billPromotionName = billPromotionName;
+            this.billPromotionDiscountAmount = billPromotionDiscountAmount == null ? 0.0
+                    : Math.max(0, billPromotionDiscountAmount);
         }
     }
 

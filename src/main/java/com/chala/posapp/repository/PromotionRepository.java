@@ -79,6 +79,20 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
         """, nativeQuery = true)
     int consume(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
 
+    /**
+     * Counts a redemption that already happened. An offline till cannot see the caps, and the
+     * customer has already paid and left, so the sale is recorded as it was made and the
+     * counters catch up — even past the limit. The limit still stops new online sales.
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE promotions
+        SET times_redeemed = times_redeemed + 1,
+            budget_consumed = budget_consumed + :amount
+        WHERE id = :id
+        """, nativeQuery = true)
+    int consumeUnchecked(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
+
     /** Gives a redemption and its budget back on refund, floored at zero. */
     @Modifying
     @Query(value = """

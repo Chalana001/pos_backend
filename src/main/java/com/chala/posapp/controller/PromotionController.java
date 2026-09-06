@@ -72,6 +72,16 @@ public class PromotionController {
         return ResponseEntity.ok(promotionService.priceCheck(request));
     }
 
+    /**
+     * The running promotions for a branch, as the till's own engine will evaluate them. Fetched
+     * while online, kept in IndexedDB, priced with while offline.
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/bundle")
+    public ResponseEntity<PromotionBundleResponse> bundle(@RequestParam(required = false) Long branchId) {
+        return ResponseEntity.ok(promotionService.bundle(branchId));
+    }
+
     // ── lifecycle ────────────────────────────────────────────────────────────────────────
 
     @PreAuthorize("hasRole('ADMIN')")

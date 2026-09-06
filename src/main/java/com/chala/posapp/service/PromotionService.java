@@ -414,6 +414,76 @@ public class PromotionService {
         return simulationService.check(request, excludeId);
     }
 
+    /**
+     * The running promotions for a branch as the till's engine will see them, versioned.
+     *
+     * <p>Sends every switched-on, non-deleted promotion covering the branch, including ones
+     * scheduled for later — the till checks dates itself, so a bundle fetched at 09:00 still
+     * prices the lunch special at 12:00. Withheld: code-gated promotions (a code cannot be
+     * validated or consumed without the server) and promotions already at their cap.
+     *
+     * <p>The version is a hash of the contents. Two bundles with the same promotions have the
+     * same version, so the till knows when nothing changed and reporting can tell which rules
+     * priced an offline sale.
+     */
+    public PromotionBundleResponse bundle(Long requestedBranchId) {
+        User user = securityUtils.getCurrentUser();
+        Long branchId = resolveBranchId(user, requestedBranchId);
+        List<PromotionSnapshot> candidates = snapshotCache.candidates().stream()
+                .filter(promotion -> promotion.coversBranch(branchId))
+                .toList();
+
+        Map<Long, Object[]> state = new LinkedHashMap<>();
+        if (!candidates.isEmpty()) {
+            for (Object[] row : promotionRepository.limitStateRaw(candidates.stream().map(PromotionSnapshot::id).toList())) {
+                state.put(toLong(row[0]), row);
+            }
+        }
+        List<PromotionSnapshot> included = new ArrayList<>();
+        List<String> onlineOnly = new ArrayList<>();
+        for (PromotionSnapshot promotion : candidates) {
+            Object[] row = state.get(promotion.id());
+            long codeCount = row == null || row[6] == null ? 0 : ((Number) row[6]).longValue();
+            Integer maxTotal = row == null || row[1] == null ? null : ((Number) row[1]).intValue();
+            int used = row == null || row[4] == null ? 0 : ((Number) row[4]).intValue();
+            BigDecimal budget = row == null ? null : (BigDecimal) row[3];
+            BigDecimal consumed = row == null || row[5] == null ? BigDecimal.ZERO : (BigDecimal) row[5];
+            boolean exhausted = (maxTotal != null && used >= maxTotal)
+                    || (budget != null && consumed.compareTo(budget) >= 0);
+            if (codeCount > 0) {
+                onlineOnly.add(promotion.name());
+            } else if (!exhausted) {
+                included.add(promotion);
+            }
+        }
+
+        return PromotionBundleResponse.builder()
+                .version(bundleVersion(included))
+                .generatedAt(LocalDateTime.now())
+                .branchId(branchId)
+                .promotions(included)
+                .onlineOnly(onlineOnly)
+                .build();
+    }
+
+    /** SHA-256 over the snapshots' canonical form, shortened; records give a stable toString. */
+    private static String bundleVersion(List<PromotionSnapshot> promotions) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            for (PromotionSnapshot promotion : promotions) {
+                digest.update(promotion.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                digest.update((byte) '\n');
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** "Would this code work right now?" — for the till, without consuming anything. */
     public CodeCheckResponse checkCode(CodeCheckRequest request) {
         User user = securityUtils.getCurrentUser();
