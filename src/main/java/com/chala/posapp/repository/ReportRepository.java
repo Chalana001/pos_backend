@@ -1428,34 +1428,6 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     List<Object[]> supplierPayablesAgingRaw(@Param("branchId") Long branchId);
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // RPT-08: Promotion Effectiveness
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    @Query(value = """
-        SELECT
-            o.bill_promotion_id                             AS promotionId,
-            o.bill_promotion_name                           AS promotionName,
-            p.discount_type                                 AS discountType,
-            p.discount_value                                AS discountValue,
-            COUNT(o.id)                                     AS timesApplied,
-            COALESCE(SUM(o.bill_promotion_discount_amount), 0) AS totalDiscountGiven,
-            COALESCE(SUM(o.grand_total), 0)                 AS totalRevenue,
-            COALESCE(AVG(o.grand_total), 0)                 AS avgOrderValue
-        FROM orders o
-        LEFT JOIN promotions p ON p.id = o.bill_promotion_id
-        WHERE o.bill_promotion_id IS NOT NULL
-          AND (:branchId = 0 OR o.branch_id = :branchId)
-          AND o.status = 'COMPLETED'
-          AND o.created_at BETWEEN :fromDate AND :toDate
-        GROUP BY o.bill_promotion_id, o.bill_promotion_name, p.discount_type, p.discount_value
-        ORDER BY totalDiscountGiven DESC
-    """, nativeQuery = true)
-    List<Object[]> promotionEffectivenessRaw(
-            @Param("branchId") Long branchId,
-            @Param("fromDate") LocalDateTime fromDate,
-            @Param("toDate") LocalDateTime toDate);
-
-    // ═══════════════════════════════════════════════════════════════════════════
     // RPT-08 v2: Promotion effectiveness from the redemption ledger.
     //
     // The query above keys on orders.bill_promotion_id, so it can only ever see bill-level
