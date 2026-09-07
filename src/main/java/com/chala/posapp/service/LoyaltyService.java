@@ -286,6 +286,56 @@ public class LoyaltyService {
         log.info("Reversed {} loyalty movement(s) on order {}", rows.size(), orderId);
     }
 
+    /**
+     * Takes back the points a partial return undid.
+     *
+     * <p>Only points <em>earned</em> on the sale, in proportion to the value returned. Points the
+     * customer <em>spent</em> are left alone: they paid for goods, and the customer is keeping
+     * some of them. Returning spent points as well as refunding the money would pay the return
+     * twice. A full return is not this path — the caller sends it to {@link #reverseForOrder},
+     * which undoes the sale entirely.
+     *
+     * <p>The balance may go negative, and is left to: the customer may already have spent what
+     * this sale earned them, and clamping at zero would quietly hand them the difference.
+     */
+    @Transactional
+    public void clawBackForReturn(Long orderId, Long userId, BigDecimal share) {
+        if (share == null || share.signum() <= 0) {
+            return;
+        }
+        List<LoyaltyTransaction> earned = transactionRepository.findByOrderIdAndReversedAtIsNull(orderId).stream()
+                .filter(row -> row.getType() == LoyaltyTransaction.Type.EARN)
+                .toList();
+        if (earned.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (LoyaltyTransaction row : earned) {
+            int clawBack = BigDecimal.valueOf(row.getPoints())
+                    .multiply(share.min(BigDecimal.ONE))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .intValue();
+            if (clawBack <= 0) {
+                continue;
+            }
+            LoyaltyAccount account = accountRepository.findByCustomerId(row.getCustomerId()).orElse(null);
+            if (account == null) {
+                continue;
+            }
+            account.setPointsBalance(account.getPointsBalance() - clawBack);
+            account.setLifetimePoints(Math.max(0, account.getLifetimePoints() - clawBack));
+            account.setTierId(tierFor(account.getLifetimePoints()));
+            account.setUpdatedAt(now);
+            accountRepository.save(account);
+
+            transactionRepository.save(LoyaltyTransaction.builder()
+                    .customerId(row.getCustomerId()).orderId(orderId)
+                    .type(LoyaltyTransaction.Type.REVERSAL)
+                    .points(-clawBack).balanceAfter(account.getPointsBalance())
+                    .note("Goods returned").userId(userId).at(now).build());
+        }
+    }
+
     /** A manual correction — a goodwill award, or taking back points given in error. */
     @Transactional
     public LoyaltyAccountDto adjust(Long customerId, int points, String note, User user) {

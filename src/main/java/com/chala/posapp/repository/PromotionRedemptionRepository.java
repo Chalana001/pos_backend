@@ -13,6 +13,19 @@ public interface PromotionRedemptionRepository extends JpaRepository<PromotionRe
 
     List<PromotionRedemption> findByOrderIdAndReversedAtIsNull(Long orderId);
 
+    /**
+     * The live line-level rows for one order item — what a return of that line has to give back.
+     * Excludes reversal rows themselves, which carry a negative amount and are the giving-back.
+     */
+    @Query("SELECT r FROM PromotionRedemption r WHERE r.orderItemId = :orderItemId "
+           + "AND r.reversedAt IS NULL AND r.reversalOfId IS NULL")
+    List<PromotionRedemption> findLiveForOrderItem(@Param("orderItemId") Long orderItemId);
+
+    /** How much of one redemption has already been given back by earlier partial returns. */
+    @Query("SELECT COALESCE(SUM(r.discountAmount), 0) FROM PromotionRedemption r "
+           + "WHERE r.reversalOfId = :redemptionId")
+    java.math.BigDecimal reversedSoFar(@Param("redemptionId") Long redemptionId);
+
     /** Orders — not lines — on which this promotion has been given to this customer and not reversed. */
     @Query("SELECT COUNT(DISTINCT r.orderId) FROM PromotionRedemption r " +
            "WHERE r.promotionId = :promotionId AND r.customerId = :customerId AND r.reversedAt IS NULL")

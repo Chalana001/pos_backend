@@ -76,4 +76,20 @@ public class PromotionRedemption extends TenantEntity {
 
     @Column(name = "reversal_order_id")
     private Long reversalOrderId;
+
+    /**
+     * Set on a row that gives part of another row back. Such a row carries a negative
+     * {@link #discountAmount}, so every sum over the ledger nets the refund out on its own,
+     * while the order still counts once as one the promotion was used on — which it was, for
+     * the goods the customer kept.
+     *
+     * <p>A <em>full</em> return does not use this shape: it undoes the sale, so it takes the
+     * whole-order path and marks the originals reversed.
+     */
+    @Column(name = "reversal_of_id")
+    private Long reversalOfId;
+
+    /** The return that produced this reversal, for tracing a refund back to its paperwork. */
+    @Column(name = "order_return_id")
+    private Long orderReturnId;
 }

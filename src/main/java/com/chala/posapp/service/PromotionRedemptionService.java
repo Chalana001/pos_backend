@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -147,6 +148,76 @@ public class PromotionRedemptionService {
                 .discountAmount(amount)
                 .redeemedAt(order.getOfflineSoldAt() != null ? order.getOfflineSoldAt() : now)
                 .build();
+    }
+
+    /** One returned line: which order item, and what share of it came back. */
+    public record ReturnedLine(Long orderItemId, BigDecimal share) {
+    }
+
+    /**
+     * Gives back the part of each promotion that a return undid.
+     *
+     * <p>Proportional to the quantity returned, and never more than is left: two partial returns
+     * that together take the whole line give back exactly the whole discount, because each looks
+     * at what earlier ones already released.
+     *
+     * <p>The budget is released — that money genuinely came back — but the redemption count is
+     * not. A customer who returned one of three items still used the promotion on that order,
+     * and a per-customer cap should go on saying so. A <em>full</em> return is a different
+     * thing: the caller sends it to {@link #reverseForOrder}, which undoes the sale entirely.
+     */
+    @Transactional
+    public void reverseForReturn(Long orderId, Long orderReturnId, Long userId, List<ReturnedLine> lines) {
+        if (lines == null || lines.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<PromotionRedemption> rows = new ArrayList<>();
+        Map<Long, BigDecimal> perPromotion = new LinkedHashMap<>();
+
+        for (ReturnedLine line : lines) {
+            if (line.share() == null || line.share().signum() <= 0) {
+                continue;
+            }
+            for (PromotionRedemption original : redemptionRepository.findLiveForOrderItem(line.orderItemId())) {
+                BigDecimal alreadyBack = redemptionRepository.reversedSoFar(original.getId()).abs();
+                BigDecimal remaining = original.getDiscountAmount().subtract(alreadyBack);
+                if (remaining.signum() <= 0) {
+                    continue;
+                }
+                BigDecimal giveBack = original.getDiscountAmount()
+                        .multiply(line.share())
+                        .setScale(2, RoundingMode.HALF_UP)
+                        .min(remaining);
+                if (giveBack.signum() <= 0) {
+                    continue;
+                }
+                rows.add(PromotionRedemption.builder()
+                        .promotionId(original.getPromotionId())
+                        .promotionCodeId(original.getPromotionCodeId())
+                        .orderId(orderId)
+                        .orderItemId(original.getOrderItemId())
+                        .itemId(original.getItemId())
+                        .customerId(original.getCustomerId())
+                        .branchId(original.getBranchId())
+                        .userId(userId)
+                        .level(original.getLevel())
+                        .discountAmount(giveBack.negate())
+                        .redeemedAt(now)
+                        .reversalOfId(original.getId())
+                        .orderReturnId(orderReturnId)
+                        .build());
+                perPromotion.merge(original.getPromotionId(), giveBack, BigDecimal::add);
+            }
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        // Budget only. The money came back; the promotion was still used on this order.
+        perPromotion.forEach(promotionRepository::releaseBudget);
+        redemptionRepository.saveAll(rows);
+        log.info("Return {} gave back {} promotion redemption part(s) on order {}",
+                orderReturnId, rows.size(), orderId);
     }
 
     /**

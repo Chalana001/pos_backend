@@ -93,6 +93,21 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
         """, nativeQuery = true)
     int consumeUnchecked(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
 
+    /**
+     * Gives budget back without giving a redemption back — what a partial return does.
+     *
+     * <p>The money came back, so the budget should reflect that. The promotion was still used on
+     * that order, so the count should not move: a customer who returned one of three items has
+     * had the promotion, and a per-customer cap must go on saying so.
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE promotions
+        SET budget_consumed = GREATEST(0, budget_consumed - :amount)
+        WHERE id = :id
+        """, nativeQuery = true)
+    int releaseBudget(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
+
     /** Gives a redemption and its budget back on refund, floored at zero. */
     @Modifying
     @Query(value = """

@@ -11,6 +11,9 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.SecurityUtils;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +41,8 @@ public class OrderReturnService {
     private final WarrantyRepository            warrantyRepository;
     private final UserRepository                userRepository;
     private final ReportCacheInvalidator        reportCacheInvalidator;
+    private final PromotionRedemptionService    promotionRedemptionService;
+    private final LoyaltyService                loyaltyService;
 
     // ---------------------------------------------------------------
     // Helpers — mirrors OrderService pattern exactly
@@ -170,6 +175,42 @@ public class OrderReturnService {
                     .build();
 
             savedReturnItems.add(orderReturnItemRepository.save(returnItem));
+        }
+
+        // 6b. Give back the promotions and points this return undid.
+        //
+        // Returning goods used to reverse neither: a capped campaign with a normal rate of
+        // returns exhausted its cap early and nothing said why, and points earned on goods that
+        // came back stayed in the customer's balance.
+        //
+        // A return that empties the order is the sale being undone, so it takes the same path a
+        // cancellation does — the redemption count is released too. Anything less is
+        // proportional: the money comes off the budget, but the promotion was still used on the
+        // order for whatever the customer kept.
+        boolean fullyReturned = allOrderItems.stream().allMatch(item ->
+                orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()) >= item.getQty());
+
+        if (fullyReturned) {
+            promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
+            loyaltyService.reverseForOrder(order.getId(), user.getId());
+        } else {
+            List<PromotionRedemptionService.ReturnedLine> returnedShares = validatedLines.stream()
+                    .filter(line -> line.originalItem.getQty() > 0)
+                    .map(line -> new PromotionRedemptionService.ReturnedLine(
+                            line.originalItem.getId(),
+                            BigDecimal.valueOf(line.returnQty)
+                                    .divide(BigDecimal.valueOf(line.originalItem.getQty()), 6, RoundingMode.HALF_UP)))
+                    .toList();
+            promotionRedemptionService.reverseForReturn(
+                    order.getId(), savedReturn.getId(), user.getId(), returnedShares);
+
+            // Points were earned on what the customer actually paid, so they come back in
+            // proportion to what this refund gives back of it.
+            double orderValue = order.getGrandTotal();
+            if (orderValue > 0) {
+                loyaltyService.clawBackForReturn(order.getId(), user.getId(),
+                        BigDecimal.valueOf(totalRefund).divide(BigDecimal.valueOf(orderValue), 6, RoundingMode.HALF_UP));
+            }
         }
 
         // 7. Adjust credit customer due for STORE_CREDIT refund
