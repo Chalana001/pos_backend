@@ -1610,6 +1610,10 @@ public class OrderService {
                 .billPromotionId(order.getBillPromotionId())
                 .billPromotionName(order.getBillPromotionName())
                 .billPromotionDiscountAmount(order.getBillPromotionDiscountAmount())
+                .loyaltyPointsEarned(order.getLoyaltyPointsEarned())
+                .loyaltyPointsRedeemed(order.getLoyaltyPointsRedeemed())
+                .loyaltyDiscountAmount(order.getLoyaltyDiscountAmount() == null
+                        ? 0.0 : order.getLoyaltyDiscountAmount().doubleValue())
                 .grandTotal(order.getGrandTotal())
                 .paidAmount(order.getPaidAmount())
                 .dueAmount(order.getDueAmount())

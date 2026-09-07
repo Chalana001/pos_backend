@@ -37,6 +37,11 @@ public class OrderResponse {
     private Long billPromotionId;
     private String billPromotionName;
     private double billPromotionDiscountAmount;
+
+    /** What this sale did to the customer's points, so a receipt can still show it later. */
+    private int loyaltyPointsEarned;
+    private int loyaltyPointsRedeemed;
+    private double loyaltyDiscountAmount;
     private double grandTotal;
     private double paidAmount;
     private double dueAmount;
