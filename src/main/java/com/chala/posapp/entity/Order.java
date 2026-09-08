@@ -153,6 +153,15 @@ public class Order extends TenantEntity {
     private java.math.BigDecimal loyaltyDiscountAmount = java.math.BigDecimal.ZERO;
 
     /**
+     * The balance those movements left, as at this sale — not the customer's balance now.
+     * A receipt reprinted next month has to show what the original slip showed.
+     */
+    @Column(name = "loyalty_points_balance", nullable = false)
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Builder.Default
+    private int loyaltyPointsBalance = 0;
+
+    /**
      * For an offline sale, the version of the promotion bundle the till priced it with. Null
      * for online sales and for offline sales made before the till carried promotions.
      */

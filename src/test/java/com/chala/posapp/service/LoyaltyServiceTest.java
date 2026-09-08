@@ -162,7 +162,7 @@ class LoyaltyServiceTest {
             scheme(0.5, 1.0, null, null);
             balance(42L, 0, 0);
 
-            int earned = service.applyToSale(42L, 100L, 7L, 0, 999);
+            int earned = service.applyToSale(42L, 100L, 7L, 0, 999).earned();
 
             // 999 * 0.5 = 499.5 -> 499. Rounding up would pay for money that did not arrive.
             assertThat(earned).isEqualTo(499);
@@ -179,7 +179,7 @@ class LoyaltyServiceTest {
                     .id(9L).name("Gold").minLifetimePoints(5000)
                     .earnMultiplier(BigDecimal.valueOf(1.5)).active(true).build()));
 
-            assertThat(service.applyToSale(42L, 100L, 7L, 0, 1000)).isEqualTo(1500);
+            assertThat(service.applyToSale(42L, 100L, 7L, 0, 1000).earned()).isEqualTo(1500);
         }
 
         @Test
@@ -188,7 +188,7 @@ class LoyaltyServiceTest {
             scheme(1.0, 1.0, null, null);
             balance(42L, 500, 500);
 
-            service.applyToSale(42L, 100L, 7L, 200, 800);
+            LoyaltyService.SaleOutcome outcome = service.applyToSale(42L, 100L, 7L, 200, 800);
 
             ArgumentCaptor<LoyaltyTransaction> rows = ArgumentCaptor.forClass(LoyaltyTransaction.class);
             verify(transactionRepository, org.mockito.Mockito.times(2)).save(rows.capture());
@@ -198,6 +198,9 @@ class LoyaltyServiceTest {
                             org.assertj.core.groups.Tuple.tuple(LoyaltyTransaction.Type.EARN, 800));
             // 500 - 200 + 800
             assertThat(rows.getAllValues().get(1).getBalanceAfter()).isEqualTo(1100);
+            // And the same figure comes back to the caller, which is what the receipt prints.
+            assertThat(outcome.balanceAfter()).isEqualTo(1100);
+            assertThat(outcome.earned()).isEqualTo(800);
         }
 
         @Test
@@ -222,7 +225,7 @@ class LoyaltyServiceTest {
         void disabledEarnsNothing() {
             when(settingsRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.empty());
 
-            assertThat(service.applyToSale(42L, 100L, 7L, 0, 1000)).isZero();
+            assertThat(service.applyToSale(42L, 100L, 7L, 0, 1000).earned()).isZero();
             verify(accountRepository, never()).save(any());
         }
     }

@@ -604,10 +604,12 @@ public class OrderService {
         // awarded. Earning is on what was actually paid — after every discount, points
         // included — so the scheme never pays points on money that did not change hands.
         if (offlineOrderMetadata == null && request.getCustomerId() != null) {
-            int earned = loyaltyService.applyToSale(request.getCustomerId(), savedOrder.getId(),
-                    user.getId(), redemption.points(), grandTotal);
-            if (earned > 0 || redemption.points() > 0) {
-                savedOrder.setLoyaltyPointsEarned(earned);
+            LoyaltyService.SaleOutcome outcome = loyaltyService.applyToSale(request.getCustomerId(),
+                    savedOrder.getId(), user.getId(), redemption.points(), grandTotal);
+            if (outcome.earned() > 0 || redemption.points() > 0) {
+                savedOrder.setLoyaltyPointsEarned(outcome.earned());
+                // The balance as at this sale, so a reprint shows what the original slip showed.
+                savedOrder.setLoyaltyPointsBalance(outcome.balanceAfter());
                 orderRepository.save(savedOrder);
             }
         }
@@ -1614,6 +1616,7 @@ public class OrderService {
                 .loyaltyPointsRedeemed(order.getLoyaltyPointsRedeemed())
                 .loyaltyDiscountAmount(order.getLoyaltyDiscountAmount() == null
                         ? 0.0 : order.getLoyaltyDiscountAmount().doubleValue())
+                .loyaltyPointsBalance(order.getLoyaltyPointsBalance())
                 .grandTotal(order.getGrandTotal())
                 .paidAmount(order.getPaidAmount())
                 .dueAmount(order.getDueAmount())

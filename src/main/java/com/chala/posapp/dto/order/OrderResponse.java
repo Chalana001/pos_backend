@@ -42,6 +42,8 @@ public class OrderResponse {
     private int loyaltyPointsEarned;
     private int loyaltyPointsRedeemed;
     private double loyaltyDiscountAmount;
+    /** The balance as at this sale — not the customer's balance now. */
+    private int loyaltyPointsBalance;
     private double grandTotal;
     private double paidAmount;
     private double dueAmount;

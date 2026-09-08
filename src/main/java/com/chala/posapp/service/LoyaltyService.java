@@ -55,6 +55,17 @@ public class LoyaltyService {
         public boolean isNothing() { return points <= 0 || amount.signum() <= 0; }
     }
 
+    /**
+     * What a sale did to a balance, and what it left behind.
+     *
+     * <p>The balance is returned rather than looked up again later because the receipt has to
+     * print the balance <em>as at this sale</em>. Read from the account at print time, a
+     * reprint a month later would show today's figure beside a month-old invoice.
+     */
+    public record SaleOutcome(int earned, int balanceAfter) {
+        public static final SaleOutcome NONE = new SaleOutcome(0, 0);
+    }
+
     // ── settings and tiers ──────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
@@ -209,10 +220,10 @@ public class LoyaltyService {
      * every promotion the shop runs.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    public int applyToSale(Long customerId, Long orderId, Long userId, int redeemedPoints, double paidTotal) {
+    public SaleOutcome applyToSale(Long customerId, Long orderId, Long userId, int redeemedPoints, double paidTotal) {
         LoyaltySettings settings = settings();
         if (!settings.isEnabled() || customerId == null || customerId <= 0) {
-            return 0;
+            return SaleOutcome.NONE;
         }
         LoyaltyAccount account = accountRepository.findByCustomerId(customerId)
                 .orElseGet(() -> LoyaltyAccount.builder()
@@ -244,7 +255,7 @@ public class LoyaltyService {
         account.setTierId(tierFor(account.getLifetimePoints()));
         account.setUpdatedAt(now);
         accountRepository.save(account);
-        return earned;
+        return new SaleOutcome(earned, account.getPointsBalance());
     }
 
     /**
