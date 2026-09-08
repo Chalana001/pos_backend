@@ -87,6 +87,16 @@ public class OrderReturn extends TenantEntity {
     @Builder.Default
     private int loyaltyPointsBalance = 0;
 
+    /**
+     * How much of the returned goods' value had been paid in points — the figure that turns
+     * "goods returned 1,180" into "refund 200" on the slip. The points count above does not
+     * do that job at any rate other than one rupee a point.
+     */
+    @Column(name = "loyalty_value_returned", nullable = false, precision = 19, scale = 4)
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Builder.Default
+    private java.math.BigDecimal loyaltyValueReturned = java.math.BigDecimal.ZERO;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();

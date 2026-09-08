@@ -240,10 +240,11 @@ public class OrderReturnService {
 
         // Kept on the return so its receipt can account for the points as well as the money —
         // the half of the transaction the customer cannot check for themselves.
-        if (!pointsMoved.movedNothing()) {
+        if (!pointsMoved.movedNothing() || pointsValueBack > 0) {
             savedReturn.setLoyaltyPointsTakenBack(pointsMoved.takenBack());
             savedReturn.setLoyaltyPointsGivenBack(pointsMoved.givenBack());
             savedReturn.setLoyaltyPointsBalance(pointsMoved.balanceAfter());
+            savedReturn.setLoyaltyValueReturned(BigDecimal.valueOf(pointsValueBack));
             savedReturn = orderReturnRepository.save(savedReturn);
         }
 
@@ -455,6 +456,8 @@ public class OrderReturnService {
                 .loyaltyPointsTakenBack(r.getLoyaltyPointsTakenBack())
                 .loyaltyPointsGivenBack(r.getLoyaltyPointsGivenBack())
                 .loyaltyPointsBalance(r.getLoyaltyPointsBalance())
+                .loyaltyValueReturned(r.getLoyaltyValueReturned() == null
+                        ? 0.0 : r.getLoyaltyValueReturned().doubleValue())
                 .items(itemResponses)
                 .build();
     }

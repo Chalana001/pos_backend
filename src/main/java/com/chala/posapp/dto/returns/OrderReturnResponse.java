@@ -45,6 +45,8 @@ public class OrderReturnResponse {
     private int loyaltyPointsTakenBack;
     private int loyaltyPointsGivenBack;
     private int loyaltyPointsBalance;
+    /** In money: the part of the returned goods that points had paid for. */
+    private double loyaltyValueReturned;
 
     private List<OrderReturnItemResponse> items;
 }
