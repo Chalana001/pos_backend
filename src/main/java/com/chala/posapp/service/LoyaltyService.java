@@ -157,6 +157,8 @@ public class LoyaltyService {
                     .customerId(customerId).pointsBalance(0).lifetimePoints(0)
                     .pointsValue(BigDecimal.ZERO).enabled(settings.isEnabled())
                     .minRedemptionPoints(settings.getMinRedemptionPoints())
+                    .currencyPerPoint(settings.getCurrencyPerPoint())
+                    .maxRedemptionPercent(settings.getMaxRedemptionPercent())
                     .build();
         }
         LoyaltyTier tier = account.getTierId() == null ? null
@@ -170,6 +172,8 @@ public class LoyaltyService {
                 .pointsValue(valueOf(account.getPointsBalance(), settings))
                 .enabled(settings.isEnabled())
                 .minRedemptionPoints(settings.getMinRedemptionPoints())
+                .currencyPerPoint(settings.getCurrencyPerPoint())
+                .maxRedemptionPercent(settings.getMaxRedemptionPercent())
                 .build();
     }
 

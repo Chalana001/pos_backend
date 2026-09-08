@@ -21,4 +21,14 @@ public class LoyaltyAccountDto {
     private BigDecimal pointsValue;
     private boolean enabled;
     private int minRedemptionPoints;
+
+    /**
+     * The scheme's own terms, so the till can price a redemption the same way the server will.
+     *
+     * <p>Without these the cart could only guess — dividing pointsValue by the balance for a
+     * rate, and knowing nothing of the ceiling — and a cashier would read out a total the
+     * server then disagreed with.
+     */
+    private BigDecimal currencyPerPoint;
+    private BigDecimal maxRedemptionPercent;
 }
