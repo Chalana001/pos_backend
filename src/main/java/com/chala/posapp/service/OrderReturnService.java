@@ -213,8 +213,15 @@ public class OrderReturnService {
         boolean fullyReturned = allOrderItems.stream().allMatch(item ->
                 orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()) >= item.getQty());
 
+        // The whole-order path is for a single return that undoes the whole sale. A return that
+        // merely completes an order after earlier partials is still a partial: the whole-order
+        // path reverses every ledger row, including the reversal rows those earlier returns
+        // wrote, and would hand back points already handed back and release budget already
+        // released. The proportional path gets the remainder right and its caps hold.
+        boolean undoesWholeSale = fullyReturned && existingCount == 0;
+
         LoyaltyService.ReversalOutcome pointsMoved;
-        if (fullyReturned) {
+        if (undoesWholeSale) {
             promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
             pointsMoved = loyaltyService.reverseForOrder(order.getId(), user.getId());
         } else {
