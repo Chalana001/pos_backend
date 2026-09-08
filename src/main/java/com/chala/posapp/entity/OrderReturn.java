@@ -65,6 +65,28 @@ public class OrderReturn extends TenantEntity {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /** Points this return took back — what the returned goods had earned. */
+    @Column(name = "loyalty_points_taken_back", nullable = false)
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Builder.Default
+    private int loyaltyPointsTakenBack = 0;
+
+    /**
+     * Points handed back to the customer. Only a full return does this: it undoes the sale, so
+     * points spent on it are returned. A partial return leaves them alone — the customer paid
+     * with them and is keeping some of the goods.
+     */
+    @Column(name = "loyalty_points_given_back", nullable = false)
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Builder.Default
+    private int loyaltyPointsGivenBack = 0;
+
+    /** The balance this return left, so a reprint agrees with the slip it copies. */
+    @Column(name = "loyalty_points_balance", nullable = false)
+    @org.hibernate.annotations.ColumnDefault("0")
+    @Builder.Default
+    private int loyaltyPointsBalance = 0;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();

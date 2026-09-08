@@ -190,9 +190,10 @@ public class OrderReturnService {
         boolean fullyReturned = allOrderItems.stream().allMatch(item ->
                 orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()) >= item.getQty());
 
+        LoyaltyService.ReversalOutcome pointsMoved;
         if (fullyReturned) {
             promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
-            loyaltyService.reverseForOrder(order.getId(), user.getId());
+            pointsMoved = loyaltyService.reverseForOrder(order.getId(), user.getId());
         } else {
             List<PromotionRedemptionService.ReturnedLine> returnedShares = validatedLines.stream()
                     .filter(line -> line.originalItem.getQty() > 0)
@@ -207,10 +208,19 @@ public class OrderReturnService {
             // Points were earned on what the customer actually paid, so they come back in
             // proportion to what this refund gives back of it.
             double orderValue = order.getGrandTotal();
-            if (orderValue > 0) {
-                loyaltyService.clawBackForReturn(order.getId(), user.getId(),
-                        BigDecimal.valueOf(totalRefund).divide(BigDecimal.valueOf(orderValue), 6, RoundingMode.HALF_UP));
-            }
+            pointsMoved = orderValue > 0
+                    ? loyaltyService.clawBackForReturn(order.getId(), user.getId(),
+                            BigDecimal.valueOf(totalRefund).divide(BigDecimal.valueOf(orderValue), 6, RoundingMode.HALF_UP))
+                    : LoyaltyService.ReversalOutcome.NONE;
+        }
+
+        // Kept on the return so its receipt can account for the points as well as the money —
+        // the half of the transaction the customer cannot check for themselves.
+        if (!pointsMoved.movedNothing()) {
+            savedReturn.setLoyaltyPointsTakenBack(pointsMoved.takenBack());
+            savedReturn.setLoyaltyPointsGivenBack(pointsMoved.givenBack());
+            savedReturn.setLoyaltyPointsBalance(pointsMoved.balanceAfter());
+            savedReturn = orderReturnRepository.save(savedReturn);
         }
 
         // 7. Adjust credit customer due for STORE_CREDIT refund
@@ -418,6 +428,9 @@ public class OrderReturnService {
                 .reason(r.getReason())
                 .cashierNote(r.getCashierNote())
                 .createdAt(r.getCreatedAt())
+                .loyaltyPointsTakenBack(r.getLoyaltyPointsTakenBack())
+                .loyaltyPointsGivenBack(r.getLoyaltyPointsGivenBack())
+                .loyaltyPointsBalance(r.getLoyaltyPointsBalance())
                 .items(itemResponses)
                 .build();
     }

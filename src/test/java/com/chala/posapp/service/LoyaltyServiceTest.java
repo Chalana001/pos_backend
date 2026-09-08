@@ -245,7 +245,14 @@ class LoyaltyServiceTest {
                     LoyaltyTransaction.builder().id(2L).customerId(42L).orderId(100L)
                             .type(LoyaltyTransaction.Type.EARN).points(800).balanceAfter(1100).at(LocalDateTime.now()).build()));
 
-            service.reverseForOrder(100L, 7L);
+            LoyaltyService.ReversalOutcome moved = service.reverseForOrder(100L, 7L);
+
+            // Two directions, reported separately: netting them would tell a customer whose
+            // return moved 800 out and 200 back that nothing happened to their points.
+            assertThat(moved.takenBack()).isEqualTo(800);
+            assertThat(moved.givenBack()).isEqualTo(200);
+            // 1100 + 200 - 800
+            assertThat(moved.balanceAfter()).isEqualTo(500);
 
             ArgumentCaptor<LoyaltyTransaction> saved = ArgumentCaptor.forClass(LoyaltyTransaction.class);
             verify(transactionRepository, org.mockito.Mockito.atLeast(4)).save(saved.capture());
@@ -263,9 +270,30 @@ class LoyaltyServiceTest {
         void nothingToReverse() {
             when(transactionRepository.findByOrderIdAndReversedAtIsNull(100L)).thenReturn(List.of());
 
-            service.reverseForOrder(100L, 7L);
+            assertThat(service.reverseForOrder(100L, 7L).movedNothing()).isTrue();
 
             verify(accountRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("a partial return takes back what came back and hands nothing over")
+        void partialReturnTakesBackOnly() {
+            scheme(1.0, 1.0, null, null);
+            balance(42L, 1100, 1000);
+            when(transactionRepository.findByOrderIdAndReversedAtIsNull(100L)).thenReturn(List.of(
+                    LoyaltyTransaction.builder().id(1L).customerId(42L).orderId(100L)
+                            .type(LoyaltyTransaction.Type.REDEEM).points(-200).balanceAfter(300).at(LocalDateTime.now()).build(),
+                    LoyaltyTransaction.builder().id(2L).customerId(42L).orderId(100L)
+                            .type(LoyaltyTransaction.Type.EARN).points(800).balanceAfter(1100).at(LocalDateTime.now()).build()));
+
+            // A quarter of the sale came back.
+            LoyaltyService.ReversalOutcome moved =
+                    service.clawBackForReturn(100L, 7L, BigDecimal.valueOf(0.25));
+
+            assertThat(moved.takenBack()).isEqualTo(200);
+            // The points they spent stay spent: they paid with them and kept most of the goods.
+            assertThat(moved.givenBack()).isZero();
+            assertThat(moved.balanceAfter()).isEqualTo(900);
         }
     }
 

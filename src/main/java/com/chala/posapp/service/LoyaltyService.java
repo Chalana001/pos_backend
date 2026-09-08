@@ -66,6 +66,20 @@ public class LoyaltyService {
         public static final SaleOutcome NONE = new SaleOutcome(0, 0);
     }
 
+    /**
+     * What undoing a sale moved, in both directions.
+     *
+     * <p>Two figures rather than one net movement. A partial return takes back what the
+     * returned goods earned. A full return is the sale undone, so it also hands back the
+     * points the customer spent on it. Netted together they would print "0 points" on a return
+     * that moved four hundred of them each way, which is exactly the receipt a customer
+     * queries at the counter.
+     */
+    public record ReversalOutcome(int takenBack, int givenBack, int balanceAfter) {
+        public static final ReversalOutcome NONE = new ReversalOutcome(0, 0, 0);
+        public boolean movedNothing() { return takenBack == 0 && givenBack == 0; }
+    }
+
     // ── settings and tiers ──────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
@@ -268,12 +282,15 @@ public class LoyaltyService {
      * difference.
      */
     @Transactional
-    public void reverseForOrder(Long orderId, Long userId) {
+    public ReversalOutcome reverseForOrder(Long orderId, Long userId) {
         List<LoyaltyTransaction> rows = transactionRepository.findByOrderIdAndReversedAtIsNull(orderId);
         if (rows.isEmpty()) {
-            return;
+            return ReversalOutcome.NONE;
         }
         LocalDateTime now = LocalDateTime.now();
+        int takenBack = 0;
+        int givenBack = 0;
+        int balanceAfter = 0;
         for (LoyaltyTransaction row : rows) {
             LoyaltyAccount account = accountRepository.findByCustomerId(row.getCustomerId()).orElse(null);
             if (account == null) {
@@ -283,9 +300,14 @@ public class LoyaltyService {
             if (row.getType() == LoyaltyTransaction.Type.EARN) {
                 account.setLifetimePoints(Math.max(0, account.getLifetimePoints() - row.getPoints()));
                 account.setTierId(tierFor(account.getLifetimePoints()));
+                takenBack += row.getPoints();
+            } else if (row.getType() == LoyaltyTransaction.Type.REDEEM) {
+                // A REDEEM row carries negative points, so undoing it hands them back.
+                givenBack += -row.getPoints();
             }
             account.setUpdatedAt(now);
             accountRepository.save(account);
+            balanceAfter = account.getPointsBalance();
 
             row.setReversedAt(now);
             transactionRepository.save(row);
@@ -295,6 +317,7 @@ public class LoyaltyService {
                     .note("Sale cancelled").userId(userId).at(now).build());
         }
         log.info("Reversed {} loyalty movement(s) on order {}", rows.size(), orderId);
+        return new ReversalOutcome(takenBack, givenBack, balanceAfter);
     }
 
     /**
@@ -310,17 +333,19 @@ public class LoyaltyService {
      * this sale earned them, and clamping at zero would quietly hand them the difference.
      */
     @Transactional
-    public void clawBackForReturn(Long orderId, Long userId, BigDecimal share) {
+    public ReversalOutcome clawBackForReturn(Long orderId, Long userId, BigDecimal share) {
         if (share == null || share.signum() <= 0) {
-            return;
+            return ReversalOutcome.NONE;
         }
         List<LoyaltyTransaction> earned = transactionRepository.findByOrderIdAndReversedAtIsNull(orderId).stream()
                 .filter(row -> row.getType() == LoyaltyTransaction.Type.EARN)
                 .toList();
         if (earned.isEmpty()) {
-            return;
+            return ReversalOutcome.NONE;
         }
         LocalDateTime now = LocalDateTime.now();
+        int takenBack = 0;
+        int balanceAfter = 0;
         for (LoyaltyTransaction row : earned) {
             int clawBack = BigDecimal.valueOf(row.getPoints())
                     .multiply(share.min(BigDecimal.ONE))
@@ -338,6 +363,8 @@ public class LoyaltyService {
             account.setTierId(tierFor(account.getLifetimePoints()));
             account.setUpdatedAt(now);
             accountRepository.save(account);
+            takenBack += clawBack;
+            balanceAfter = account.getPointsBalance();
 
             transactionRepository.save(LoyaltyTransaction.builder()
                     .customerId(row.getCustomerId()).orderId(orderId)
@@ -345,6 +372,9 @@ public class LoyaltyService {
                     .points(-clawBack).balanceAfter(account.getPointsBalance())
                     .note("Goods returned").userId(userId).at(now).build());
         }
+        // Nothing is given back here: the customer paid with those points and is keeping
+        // some of the goods. Refunding the points as well as the money pays the return twice.
+        return new ReversalOutcome(takenBack, 0, balanceAfter);
     }
 
     /** A manual correction — a goodwill award, or taking back points given in error. */

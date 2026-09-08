@@ -41,5 +41,10 @@ public class OrderReturnResponse {
 
     private LocalDateTime createdAt;
 
+    /** What this return did to the customer's points, and the balance it left. */
+    private int loyaltyPointsTakenBack;
+    private int loyaltyPointsGivenBack;
+    private int loyaltyPointsBalance;
+
     private List<OrderReturnItemResponse> items;
 }
