@@ -120,13 +120,36 @@ public class OrderReturnService {
                                 + " for item '" + originalItem.getItemName() + "'");
             }
 
-            double refundLine = roundMoney(itemReq.getReturnQty() * originalItem.getFinalUnitPrice());
-            validatedLines.add(new ValidatedReturnLine(originalItem, itemReq.getReturnQty(), refundLine));
+            double ticketLine = roundMoney(itemReq.getReturnQty() * originalItem.getFinalUnitPrice());
+            validatedLines.add(new ValidatedReturnLine(originalItem, itemReq.getReturnQty(), ticketLine));
         }
 
-        // 3. Calculate total refund
+        // 3. Calculate the refund — what the customer actually handed over for these goods.
+        //
+        // finalUnitPrice x qty is the line's ticket price, not what was charged for it. A
+        // bill-level discount came off the whole sale, and points the customer spent paid for
+        // part of it. Refunding the ticket price hands back money that never arrived: on a
+        // 1,180 sale settled with 200 in cash and 970 in points, returning everything paid out
+        // 1,180 in cash — the shop lost 980 on a return of its own goods.
+        //
+        // So the ticket is split the way the sale was settled. The cash share is refunded; the
+        // points share goes back as points, below.
+        double ticketTotal = roundMoney(
+                validatedLines.stream().mapToDouble(l -> l.refundLineAmount).sum());
+        double saleValue = order.getSubTotal();
+        double pointsCharged = order.getLoyaltyDiscountAmount() == null
+                ? 0.0 : order.getLoyaltyDiscountAmount().doubleValue();
+        // A sale with no value to divide by can only refund what the lines say.
+        double cashShare = saleValue > 0 ? order.getGrandTotal() / saleValue : 1.0;
+        double pointsShare = saleValue > 0 ? pointsCharged / saleValue : 0.0;
+
+        validatedLines.replaceAll(line -> new ValidatedReturnLine(
+                line.originalItem, line.returnQty, roundMoney(line.refundLineAmount * cashShare)));
+
         double totalRefund = roundMoney(
                 validatedLines.stream().mapToDouble(l -> l.refundLineAmount).sum());
+        // What the points paid for, in money. Converted to points and handed back below.
+        double pointsValueBack = roundMoney(ticketTotal * pointsShare);
 
         // 4. Generate return number  e.g. RTN-2026-06-B1-000042-R1
         long existingCount = orderReturnRepository.countByOriginalOrderId(order.getId());
@@ -205,13 +228,14 @@ public class OrderReturnService {
             promotionRedemptionService.reverseForReturn(
                     order.getId(), savedReturn.getId(), user.getId(), returnedShares);
 
-            // Points were earned on what the customer actually paid, so they come back in
-            // proportion to what this refund gives back of it.
-            double orderValue = order.getGrandTotal();
-            pointsMoved = orderValue > 0
-                    ? loyaltyService.clawBackForReturn(order.getId(), user.getId(),
-                            BigDecimal.valueOf(totalRefund).divide(BigDecimal.valueOf(orderValue), 6, RoundingMode.HALF_UP))
-                    : LoyaltyService.ReversalOutcome.NONE;
+            // Earned points come back in proportion to the share of the sale returned — which
+            // is the share of its value, not of its cash, or a sale settled mostly in points
+            // would claw back several times what it awarded.
+            pointsMoved = loyaltyService.clawBackForReturn(order.getId(), user.getId(),
+                    saleValue > 0
+                            ? BigDecimal.valueOf(ticketTotal).divide(BigDecimal.valueOf(saleValue), 6, RoundingMode.HALF_UP)
+                            : BigDecimal.ONE,
+                    BigDecimal.valueOf(pointsValueBack));
         }
 
         // Kept on the return so its receipt can account for the points as well as the money —

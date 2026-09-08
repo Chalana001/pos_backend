@@ -286,14 +286,49 @@ class LoyaltyServiceTest {
                     LoyaltyTransaction.builder().id(2L).customerId(42L).orderId(100L)
                             .type(LoyaltyTransaction.Type.EARN).points(800).balanceAfter(1100).at(LocalDateTime.now()).build()));
 
-            // A quarter of the sale came back.
+            // A quarter of the sale came back, and none of it was paid for with points.
             LoyaltyService.ReversalOutcome moved =
-                    service.clawBackForReturn(100L, 7L, BigDecimal.valueOf(0.25));
+                    service.clawBackForReturn(100L, 7L, BigDecimal.valueOf(0.25), BigDecimal.ZERO);
 
             assertThat(moved.takenBack()).isEqualTo(200);
-            // The points they spent stay spent: they paid with them and kept most of the goods.
             assertThat(moved.givenBack()).isZero();
             assertThat(moved.balanceAfter()).isEqualTo(900);
+        }
+
+        @Test
+        @DisplayName("points that paid for the returned goods come back, capped at what the sale spent")
+        void spentPointsComeBack() {
+            scheme(1.0, 1.0, null, null);
+            balance(42L, 1100, 1000);
+            when(transactionRepository.findByOrderIdAndReversedAtIsNull(100L)).thenReturn(List.of(
+                    LoyaltyTransaction.builder().id(1L).customerId(42L).orderId(100L)
+                            .type(LoyaltyTransaction.Type.REDEEM).points(-200).balanceAfter(300).at(LocalDateTime.now()).build()));
+
+            // The returned goods were worth 150, all of it paid in points.
+            LoyaltyService.ReversalOutcome moved =
+                    service.clawBackForReturn(100L, 7L, BigDecimal.ZERO, BigDecimal.valueOf(150));
+
+            assertThat(moved.givenBack()).isEqualTo(150);
+            assertThat(moved.takenBack()).isZero();
+            assertThat(moved.balanceAfter()).isEqualTo(1250);
+        }
+
+        @Test
+        @DisplayName("more points cannot come back than the sale ever spent")
+        void cappedAtWhatWasSpent() {
+            scheme(1.0, 1.0, null, null);
+            balance(42L, 1100, 1000);
+            when(transactionRepository.findByOrderIdAndReversedAtIsNull(100L)).thenReturn(List.of(
+                    LoyaltyTransaction.builder().id(1L).customerId(42L).orderId(100L)
+                            .type(LoyaltyTransaction.Type.REDEEM).points(-200).balanceAfter(300).at(LocalDateTime.now()).build(),
+                    // An earlier partial return already handed 120 of them back.
+                    LoyaltyTransaction.builder().id(2L).customerId(42L).orderId(100L)
+                            .type(LoyaltyTransaction.Type.REVERSAL).points(120).balanceAfter(420).at(LocalDateTime.now()).build()));
+
+            LoyaltyService.ReversalOutcome moved =
+                    service.clawBackForReturn(100L, 7L, BigDecimal.ZERO, BigDecimal.valueOf(500));
+
+            assertThat(moved.givenBack()).isEqualTo(80);
         }
     }
 

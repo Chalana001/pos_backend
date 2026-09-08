@@ -327,26 +327,24 @@ public class LoyaltyService {
     /**
      * Takes back the points a partial return undid.
      *
-     * <p>Only points <em>earned</em> on the sale, in proportion to the value returned. Points the
-     * customer <em>spent</em> are left alone: they paid for goods, and the customer is keeping
-     * some of them. Returning spent points as well as refunding the money would pay the return
-     * twice. A full return is not this path — the caller sends it to {@link #reverseForOrder},
+     * <p>Two movements, in opposite directions. Points <em>earned</em> on the sale are clawed
+     * back in proportion to the value returned. Points the customer <em>spent</em> come back to
+     * them, because the refund is only the cash share of the returned goods — the rest of their
+     * price was paid in points, and a shop that refunds neither has kept it.
+     *
+     * <p>A full return is not this path — the caller sends it to {@link #reverseForOrder},
      * which undoes the sale entirely.
      *
      * <p>The balance may go negative, and is left to: the customer may already have spent what
      * this sale earned them, and clamping at zero would quietly hand them the difference.
      */
     @Transactional
-    public ReversalOutcome clawBackForReturn(Long orderId, Long userId, BigDecimal share) {
-        if (share == null || share.signum() <= 0) {
-            return ReversalOutcome.NONE;
-        }
-        List<LoyaltyTransaction> earned = transactionRepository.findByOrderIdAndReversedAtIsNull(orderId).stream()
-                .filter(row -> row.getType() == LoyaltyTransaction.Type.EARN)
-                .toList();
-        if (earned.isEmpty()) {
-            return ReversalOutcome.NONE;
-        }
+    public ReversalOutcome clawBackForReturn(Long orderId, Long userId, BigDecimal share,
+                                             BigDecimal redeemedValueBack) {
+        List<LoyaltyTransaction> rows = transactionRepository.findByOrderIdAndReversedAtIsNull(orderId);
+        List<LoyaltyTransaction> earned = share == null || share.signum() <= 0
+                ? List.of()
+                : rows.stream().filter(row -> row.getType() == LoyaltyTransaction.Type.EARN).toList();
         LocalDateTime now = LocalDateTime.now();
         int takenBack = 0;
         int balanceAfter = 0;
@@ -376,9 +374,47 @@ public class LoyaltyService {
                     .points(-clawBack).balanceAfter(account.getPointsBalance())
                     .note("Goods returned").userId(userId).at(now).build());
         }
-        // Nothing is given back here: the customer paid with those points and is keeping
-        // some of the goods. Refunding the points as well as the money pays the return twice.
-        return new ReversalOutcome(takenBack, 0, balanceAfter);
+
+        // And the points the customer spent on the goods that came back.
+        //
+        // The refund itself is only the cash share of those goods, so without this the points
+        // half of what they paid would simply be kept by the shop. Capped at what this order
+        // actually redeemed, less anything an earlier partial return already handed back.
+        int givenBack = 0;
+        LoyaltySettings settings = redeemedValueBack != null && redeemedValueBack.signum() > 0
+                ? settings() : null;
+        if (settings != null && settings.getCurrencyPerPoint().signum() > 0) {
+            int redeemed = rows.stream()
+                    .filter(row -> row.getType() == LoyaltyTransaction.Type.REDEEM)
+                    .mapToInt(row -> -row.getPoints()).sum();
+            int alreadyBack = rows.stream()
+                    .filter(row -> row.getType() == LoyaltyTransaction.Type.REVERSAL && row.getPoints() > 0)
+                    .mapToInt(LoyaltyTransaction::getPoints).sum();
+            int wanted = redeemedValueBack
+                    .divide(settings.getCurrencyPerPoint(), 0, RoundingMode.HALF_UP).intValue();
+            givenBack = Math.max(0, Math.min(wanted, redeemed - alreadyBack));
+
+            if (givenBack > 0) {
+                LoyaltyAccount account = accountRepository.findByCustomerId(
+                        rows.stream().map(LoyaltyTransaction::getCustomerId).findFirst().orElse(null)).orElse(null);
+                if (account != null) {
+                    account.setPointsBalance(account.getPointsBalance() + givenBack);
+                    // Lifetime is untouched: these points were spent, not earned, and handing
+                    // them back is not an achievement that should move a customer up a tier.
+                    account.setUpdatedAt(now);
+                    accountRepository.save(account);
+                    balanceAfter = account.getPointsBalance();
+                    transactionRepository.save(LoyaltyTransaction.builder()
+                            .customerId(account.getCustomerId()).orderId(orderId)
+                            .type(LoyaltyTransaction.Type.REVERSAL)
+                            .points(givenBack).balanceAfter(account.getPointsBalance())
+                            .note("Goods returned").userId(userId).at(now).build());
+                } else {
+                    givenBack = 0;
+                }
+            }
+        }
+        return new ReversalOutcome(takenBack, givenBack, balanceAfter);
     }
 
     /** A manual correction — a goodwill award, or taking back points given in error. */

@@ -194,7 +194,7 @@ class PromotionReturnReversalTest {
                     LoyaltyAccount.builder().id(1L).customerId(42L).pointsBalance(1000).lifetimePoints(1000)
                             .updatedAt(LocalDateTime.now()).build()));
 
-            loyalty.clawBackForReturn(500L, 7L, new BigDecimal("0.250000"));
+            loyalty.clawBackForReturn(500L, 7L, new BigDecimal("0.250000"), BigDecimal.ZERO);
 
             ArgumentCaptor<LoyaltyTransaction> row = ArgumentCaptor.forClass(LoyaltyTransaction.class);
             verify(loyaltyTransactionRepository).save(row.capture());
@@ -204,14 +204,14 @@ class PromotionReturnReversalTest {
         }
 
         @Test
-        @DisplayName("points the customer spent are left alone — the refund already gives that money back")
+        @DisplayName("a return that gives no points back leaves the ones the customer spent alone")
         void spentPointsUntouched() {
             when(loyaltyTransactionRepository.findByOrderIdAndReversedAtIsNull(500L)).thenReturn(List.of(
                     LoyaltyTransaction.builder().id(1L).customerId(42L).orderId(500L)
                             .type(LoyaltyTransaction.Type.REDEEM).points(-200).balanceAfter(300)
                             .at(LocalDateTime.now()).build()));
 
-            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE);
+            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE, BigDecimal.ZERO);
 
             verify(loyaltyTransactionRepository, never()).save(any());
             verify(accountRepository, never()).save(any());
@@ -228,7 +228,7 @@ class PromotionReturnReversalTest {
                     LoyaltyAccount.builder().id(1L).customerId(42L).pointsBalance(5000).lifetimePoints(5000)
                             .updatedAt(LocalDateTime.now()).build()));
 
-            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE);
+            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE, BigDecimal.ZERO);
 
             ArgumentCaptor<LoyaltyAccount> account = ArgumentCaptor.forClass(LoyaltyAccount.class);
             verify(accountRepository).save(account.capture());
@@ -241,7 +241,7 @@ class PromotionReturnReversalTest {
         void nothingEarned() {
             when(loyaltyTransactionRepository.findByOrderIdAndReversedAtIsNull(500L)).thenReturn(List.of());
 
-            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE);
+            loyalty.clawBackForReturn(500L, 7L, BigDecimal.ONE, BigDecimal.ZERO);
 
             verify(accountRepository, never()).save(any());
         }
