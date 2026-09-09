@@ -24,6 +24,15 @@ public class ItemImportRowData {
     private String name;
     private String altName;
     private String enteredMainCategory;
+
+    /**
+     * A category named in the sheet that does not exist yet and will be created on import.
+     *
+     * <p>Set during preview, acted on during import. Preview is a read-only look at a file
+     * nobody has committed to yet: uploading a spreadsheet to see what is in it must not
+     * leave categories behind in the shop.
+     */
+    private String subCategoryToCreate;
     private Long categoryId;
     private String categoryName;
     private String enteredSubCategory;

@@ -12,6 +12,7 @@ import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.RecipeIngredient;
+import com.chala.posapp.entity.CategoryMode;
 import com.chala.posapp.entity.SubCategory;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.repository.BranchRepository;
@@ -88,6 +89,7 @@ public class ItemExcelImportService {
     private final CategoryRepository categoryRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final BranchRepository branchRepository;
+    private final AppConfigurationService appConfigurationService;
     private final RecipeIngredientRepository recipeIngredientRepository;
 
     @Transactional(readOnly = true)
@@ -146,7 +148,7 @@ public class ItemExcelImportService {
                 continue;
             }
 
-            ValidationResult validation = validateAndResolve(inputRow);
+            ValidationResult validation = validateAndResolve(inputRow, true);
             if (validation.row.getStatus() == ItemImportRowStatus.ERROR) {
                 resultByRowNumber.put(inputRow.getRowNumber(), validation.row);
                 continue;
@@ -680,7 +682,7 @@ public class ItemExcelImportService {
                 .branchIds(parseBranchIds(readCell(row, headers.get("branchIds"), formatter)))
                 .build();
 
-        ValidationResult validationResult = validateAndResolve(rowData);
+        ValidationResult validationResult = validateAndResolve(rowData, false);
         if (!parseErrors.isEmpty()) {
             validationResult.row.setStatus(ItemImportRowStatus.ERROR);
             validationResult.row.setMessage(joinMessages(validationResult.row.getMessage(), parseErrors));
@@ -688,7 +690,14 @@ public class ItemExcelImportService {
         return validationResult.row;
     }
 
-    private ValidationResult validateAndResolve(ItemImportRowData inputRow) {
+    /**
+     * @param mayCreateCategories true only on the import itself. A category named in the sheet
+     *                            but missing from the shop is created here rather than sending
+     *                            the operator away to make it by hand - but only once they have
+     *                            pressed Import. Preview says what will be created and creates
+     *                            nothing, so looking at a file leaves no trace of it.
+     */
+    private ValidationResult validateAndResolve(ItemImportRowData inputRow, boolean mayCreateCategories) {
         ItemImportRowData row = ItemImportRowData.builder()
                 .rowNumber(inputRow.getRowNumber())
                 .selected(inputRow.getSelected() == null || inputRow.getSelected())
@@ -717,7 +726,7 @@ public class ItemExcelImportService {
         List<String> errors = new ArrayList<>();
 
         Category category = resolveCategory(row, errors);
-        SubCategory subCategory = resolveSubCategory(row, category, errors);
+        SubCategory subCategory = resolveSubCategory(row, category, errors, mayCreateCategories);
         if (category == null && subCategory != null) {
             category = subCategory.getCategory();
         }
@@ -785,7 +794,7 @@ public class ItemExcelImportService {
         row.setCategoryId(category != null ? category.getId() : null);
         row.setCategoryName(category != null ? category.getName() : null);
         row.setSubCategoryId(subCategory != null ? subCategory.getId() : null);
-        row.setSubCategoryName(subCategory != null ? subCategory.getName() : null);
+        row.setSubCategoryName(subCategory != null ? subCategory.getName() : row.getSubCategoryToCreate());
 
         if (!errors.isEmpty()) {
             row.setStatus(ItemImportRowStatus.ERROR);
@@ -811,7 +820,11 @@ public class ItemExcelImportService {
 
         row.setStatus(ItemImportRowStatus.READY);
         int ingredientCount = row.getIngredients() == null ? 0 : row.getIngredients().size();
-        row.setMessage(ingredientCount > 0 ? "Ready (" + ingredientCount + " ingredients)" : "Ready");
+        String readyMessage = ingredientCount > 0 ? "Ready (" + ingredientCount + " ingredients)" : "Ready";
+        if (row.getSubCategoryToCreate() != null) {
+            readyMessage = readyMessage + " — will create category: " + row.getSubCategoryToCreate();
+        }
+        row.setMessage(readyMessage);
         return new ValidationResult(row, request);
     }
 
@@ -836,7 +849,40 @@ public class ItemExcelImportService {
                 });
     }
 
-    private SubCategory resolveSubCategory(ItemImportRowData row, Category category, List<String> errors) {
+    private static final String SINGLE_CATEGORY_PARENT_NAME = "General";
+
+    /**
+     * The category a missing name would be created under, or null when there is nothing to
+     * infer from.
+     *
+     * <p>A shop in SINGLE_CATEGORY mode keeps one parent - "General" - and everything it calls
+     * a category is a sub-category of it, which is exactly what the Add Category screen makes.
+     * A shop with main and sub categories only has a parent when the sheet names one, and
+     * guessing one would bury five thousand items under a category nobody chose.
+     */
+    private Category parentForNewSubCategory(Category namedMainCategory, boolean mayCreate) {
+        if (appConfigurationService.getCategoryMode() != CategoryMode.SINGLE_CATEGORY) {
+            return namedMainCategory;
+        }
+        Optional<Category> parent = categoryRepository.findByNameIgnoreCase(SINGLE_CATEGORY_PARENT_NAME);
+        if (parent.isPresent()) {
+            return parent.get();
+        }
+        if (!mayCreate) {
+            // Preview: the parent does not exist yet either, but it will by the time we need it.
+            // Returning a detached stand-in would be a lie; the caller only needs to know that
+            // a parent is obtainable, and in this mode it always is.
+            Category pending = new Category();
+            pending.setName(SINGLE_CATEGORY_PARENT_NAME);
+            return pending;
+        }
+        Category created = new Category();
+        created.setName(SINGLE_CATEGORY_PARENT_NAME);
+        return categoryRepository.save(created);
+    }
+
+    private SubCategory resolveSubCategory(ItemImportRowData row, Category category, List<String> errors,
+                                           boolean mayCreateCategories) {
         if (row.getSubCategoryId() != null) {
             Optional<SubCategory> subCategory = subCategoryRepository.findById(row.getSubCategoryId());
             if (subCategory.isPresent()) {
@@ -865,17 +911,38 @@ public class ItemExcelImportService {
                 return null;
             }
             return subCategoryRepository.findByNameIgnoreCase(row.getEnteredSubCategory())
-                    .orElseGet(() -> {
-                        errors.add("Sub category not found: " + row.getEnteredSubCategory());
-                        return null;
-                    });
+                    .orElseGet(() -> createOrPromise(row, null, errors, mayCreateCategories,
+                            "Sub category not found: " + row.getEnteredSubCategory()));
         }
 
         return subCategoryRepository.findByCategoryIdAndNameIgnoreCase(category.getId(), row.getEnteredSubCategory())
-                .orElseGet(() -> {
-                    errors.add("Sub category not found under main category: " + row.getEnteredSubCategory());
-                    return null;
-                });
+                .orElseGet(() -> createOrPromise(row, category, errors, mayCreateCategories,
+                        "Sub category not found under main category: " + row.getEnteredSubCategory()));
+    }
+
+    /**
+     * Create the missing category, or - during preview - promise to.
+     *
+     * <p>Returns null either way when it cannot be created, having recorded why. A row whose
+     * category is merely missing is not a broken row: the sheet said what it wanted, the shop
+     * just does not have it yet.
+     */
+    private SubCategory createOrPromise(ItemImportRowData row, Category namedMainCategory,
+                                        List<String> errors, boolean mayCreateCategories,
+                                        String notCreatableMessage) {
+        Category parent = parentForNewSubCategory(namedMainCategory, mayCreateCategories);
+        if (parent == null) {
+            errors.add(notCreatableMessage);
+            return null;
+        }
+        if (!mayCreateCategories) {
+            row.setSubCategoryToCreate(row.getEnteredSubCategory());
+            return null;
+        }
+        SubCategory created = new SubCategory();
+        created.setName(row.getEnteredSubCategory().trim());
+        created.setCategory(parent);
+        return subCategoryRepository.save(created);
     }
 
     private List<ItemIngredientRequest> resolveIngredientRequests(

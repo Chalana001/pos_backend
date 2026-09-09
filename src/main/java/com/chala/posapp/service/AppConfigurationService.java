@@ -131,6 +131,14 @@ public class AppConfigurationService {
         };
     }
 
+    public CategoryMode getCategoryMode() {
+        return getCategoryMode(resolveRuntimeBranchId());
+    }
+
+    public CategoryMode getCategoryMode(Long branchId) {
+        return getOrDefault(branchId).getCategoryMode();
+    }
+
     public boolean isKotEnabled() {
         return isKotEnabled(resolveRuntimeBranchId());
     }
