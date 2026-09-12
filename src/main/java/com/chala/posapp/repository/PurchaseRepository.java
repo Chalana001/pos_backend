@@ -13,6 +13,25 @@ import java.util.List;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     Page<Purchase> findAllByOrderByIdDesc(Pageable pageable);
+
+    /**
+     * Is this supplier invoice number already in use by a LIVE bill other than this one?
+     *
+     * Scoped to COMPLETED on purpose. A cancelled bill keeps the supplier's real invoice
+     * number — it is the number on the paper, and rewriting it would corrupt the audit
+     * trail and supplier reconciliation — so the number has to be free to be used again by
+     * the replacement. V47 enforces the same rule in the database through a generated
+     * column; this exists so the user gets a sentence instead of a constraint violation,
+     * and because the test profile builds its schema from the entity and never runs V47.
+     *
+     * excludeId is the bill being superseded, which is still COMPLETED at the moment the
+     * replacement is validated.
+     */
+    boolean existsBySupplierIdAndInvoiceNoAndStatusAndIdNot(
+            Long supplierId, String invoiceNo, PurchaseStatus status, Long excludeId);
+
+    boolean existsBySupplierIdAndInvoiceNoAndStatus(
+            Long supplierId, String invoiceNo, PurchaseStatus status);
     List<Purchase> findAllByOrderByIdDesc();
 
     // Purchases paid out of a specific shift's cash drawer (see

@@ -1078,6 +1078,10 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
+          /* A superseded bill keeps its GRN rows — only its stock batches are deleted — so
+             without this every cancel-and-rebuild counts both the old and the new GRN and
+             overstates purchase and paid totals by a whole bill. */
+          AND (p.id IS NULL OR p.status = 'COMPLETED')
         ORDER BY g.received_at DESC
         LIMIT :limitValue OFFSET :offsetValue
     """, nativeQuery = true)
@@ -1095,6 +1099,9 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
+          /* Must match grnReportRaw exactly, or the count disagrees with the rows. */
+          AND NOT EXISTS (SELECT 1 FROM purchase pc
+                          WHERE pc.id = g.purchase_id AND pc.status = 'CANCELED')
     """, nativeQuery = true)
     long countGrnReport(
             @Param("branchId") Long branchId,
@@ -1105,11 +1112,11 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     @Query(value = """
         SELECT
             COALESCE(SUM(g.total_amount), 0) AS totalAmount,
-            COALESCE((SELECT SUM(p2.paid_amount) FROM purchase p2 WHERE p2.id IN (
+            COALESCE((SELECT SUM(p2.paid_amount) FROM purchase p2 WHERE p2.status = 'COMPLETED' AND p2.id IN (
                 SELECT DISTINCT g2.purchase_id FROM grn g2 JOIN suppliers s2 ON s2.id = g2.supplier_id
                 WHERE (:branchId = 0 OR g2.branch_id = :branchId) AND g2.received_at BETWEEN :fromDate AND :toDate
                   AND (:supplierId = 0 OR s2.id = :supplierId))), 0) AS totalPaid,
-            COALESCE((SELECT SUM(p3.due_amount) FROM purchase p3 WHERE p3.id IN (
+            COALESCE((SELECT SUM(p3.due_amount) FROM purchase p3 WHERE p3.status = 'COMPLETED' AND p3.id IN (
                 SELECT DISTINCT g3.purchase_id FROM grn g3 JOIN suppliers s3 ON s3.id = g3.supplier_id
                 WHERE (:branchId = 0 OR g3.branch_id = :branchId) AND g3.received_at BETWEEN :fromDate AND :toDate
                   AND (:supplierId = 0 OR s3.id = :supplierId))), 0) AS totalDue,
@@ -1117,13 +1124,20 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                 WHERE pr.status = 'COMPLETED' AND pr.grn_id IN (
                     SELECT g4.id FROM grn g4 JOIN suppliers s4 ON s4.id = g4.supplier_id
                     WHERE (:branchId = 0 OR g4.branch_id = :branchId) AND g4.received_at BETWEEN :fromDate AND :toDate
-                      AND (:supplierId = 0 OR s4.id = :supplierId))), 0) AS totalReturns,
+                      AND (:supplierId = 0 OR s4.id = :supplierId)
+                      AND NOT EXISTS (SELECT 1 FROM purchase pc WHERE pc.id = g4.purchase_id
+                                        AND pc.status = 'CANCELED'))), 0) AS totalReturns,
             COUNT(DISTINCT g.purchase_id) AS uniquePurchaseCount
         FROM grn g
         JOIN suppliers s ON s.id = g.supplier_id
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
+          /* A superseded bill keeps its GRN rows — only its stock batches are deleted — so
+             without this every cancel-and-rebuild counts both the old and the new GRN and
+             overstates purchase and paid totals by a whole bill. */
+          AND NOT EXISTS (SELECT 1 FROM purchase pc
+                          WHERE pc.id = g.purchase_id AND pc.status = 'CANCELED')
     """, nativeQuery = true)
     List<Object[]> grnReportTotals(
             @Param("branchId") Long branchId,

@@ -10,12 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-@Table(
-        name = "purchase",
-        uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"supplier_id", "invoice_no"})
-        }
-)
+// No uniqueConstraints here any more. (supplier_id, invoice_no) used to be unique across
+// every row, which made a supersede impossible: the cancelled original keeps the supplier's
+// real invoice number — it is the number printed on the paper — so the replacement
+// collided with it. V47 replaces that with a unique index over COMPLETED rows only, via a
+// generated column MySQL can index and leave NULL for cancelled bills.
+//
+// The database still enforces it, just more narrowly; PurchaseService also checks, because
+// a constraint violation is not a message anyone can act on, and under the test profile
+// Hibernate builds this schema from the annotations and never sees V47 at all.
+@Table(name = "purchase")
 @Getter @Setter
 @Builder
 @NoArgsConstructor
@@ -75,6 +79,18 @@ public class Purchase extends TenantEntity {
 
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
+
+    /** Who voided it. Null for bills cancelled before V48 — nothing honest to backfill. */
+    @Column(name = "canceled_by_user_id")
+    private Long canceledByUserId;
+
+    /** The bill this one was created to correct, if any. Set on the replacement. */
+    @Column(name = "replaces_purchase_id")
+    private Long replacesPurchaseId;
+
+    /** The bill that corrected this one, if any. Set on the original when it is superseded. */
+    @Column(name = "replaced_by_purchase_id")
+    private Long replacedByPurchaseId;
 
     @OneToMany(mappedBy = "purchase", cascade = CascadeType.ALL)
     @Builder.Default

@@ -101,6 +101,48 @@ class ModuleAccessTest {
             assertThat(module).isEmpty();
             assertThat(resolver.unmappedPaths()).contains("GET /something-nobody-declared");
         }
+
+        @Test
+        @DisplayName("cancel & rebuild is claimed, and does not swallow ordinary purchase routes")
+        void purchaseAmendIsClaimed() {
+            // An unclaimed route is ungated and cannot be sold or switched off, which is what
+            // the panel's System health page exists to catch.
+            assertThat(resolver.resolve("/purchases/42/replace", "POST")).contains("PURCHASES_AMEND");
+
+            // The wildcard must not reach past its own segment onto the bills themselves.
+            assertThat(resolver.resolve("/purchases", "POST")).contains("PURCHASES");
+            assertThat(resolver.resolve("/purchases/42", "GET")).contains("PURCHASES");
+            assertThat(resolver.resolve("/purchases/42/cancel", "POST")).contains("PURCHASES");
+        }
+    }
+
+    @Nested
+    @DisplayName("draft recovery is a behaviour flag, not a screen")
+    class DraftRecovery {
+
+        @Test
+        @DisplayName("it claims no UI path, so switching it off cannot take a page down with it")
+        void claimsNoUiPath() {
+            ModuleDefinition draftRecovery = ModuleCatalog.byKey("DRAFT_RECOVERY");
+            assertThat(draftRecovery).isNotNull();
+            assertThat(draftRecovery.isTopLevel()).isTrue();
+
+            // The real trap: moduleForPath keeps the LONGEST pattern match, so claiming
+            // "/purchases/new" here would beat PURCHASES' own "/purchases" and turning draft
+            // recovery off would block the purchase screen outright. The POS app gates this
+            // with hasModule("DRAFT_RECOVERY") from inside the hook instead.
+            assertThat(draftRecovery.uiPaths()).isEmpty();
+            assertThat(draftRecovery.routes()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("no route resolves to it, so it can never gate an API call")
+        void ownsNoRoutes() {
+            assertThat(resolver.resolve("/purchases/new", "GET")).isNotEqualTo(Optional.of("DRAFT_RECOVERY"));
+            assertThat(ModuleCatalog.all())
+                    .filteredOn(definition -> "DRAFT_RECOVERY".equals(definition.key()))
+                    .allSatisfy(definition -> assertThat(definition.routes()).isEmpty());
+        }
     }
 
     @Nested

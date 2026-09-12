@@ -65,6 +65,26 @@ public class PurchaseController {
         return ResponseEntity.ok(purchaseService.cancelPurchase(id, request));
     }
 
+    /**
+     * Cancel this bill and issue a corrected one in a single transaction.
+     *
+     * Does the work of both {@code POST /purchases} and {@code POST /purchases/{id}/cancel},
+     * so it carries the same authority as those two — and must stay one call. Splitting it
+     * across two requests from the browser leaves the shop with the original's stock
+     * deleted and no replacement whenever the second request is the one that fails.
+     *
+     * Clients should send an Idempotency-Key: DuplicateRequestFilter's default window is
+     * short for an operation this heavy, and a replayed replace would void a bill twice.
+     */
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PostMapping("/{id}/replace")
+    public ResponseEntity<PurchaseResponse> replace(
+            @PathVariable(name = "id") Long id,
+            @RequestBody CreatePurchaseRequest request
+    ) {
+        return ResponseEntity.ok(purchaseService.replacePurchase(id, request));
+    }
+
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
     @GetMapping("/import/template")
     public ResponseEntity<byte[]> downloadImportTemplate() {

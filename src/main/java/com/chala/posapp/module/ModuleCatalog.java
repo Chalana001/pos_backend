@@ -218,6 +218,12 @@ public final class ModuleCatalog {
                     PURCHASING, "PackageCheck",
                     List.of(any("/grn"), any("/grn/**")),
                     List.of()),
+            child("PURCHASES_AMEND", "PURCHASES", "Cancel & rebuild a purchase",
+                    "Correct a wrong supplier bill: cancel it and re-issue it in one step, "
+                            + "with both bills kept and linked.",
+                    PURCHASING, "RefreshCw",
+                    List.of(any("/purchases/*/replace")),
+                    List.of()),
             child("PURCHASES_RETURNS", "PURCHASES", "Purchase returns",
                     "Send goods back to a supplier and raise a debit note.",
                     PURCHASING, "Undo2",
@@ -376,7 +382,28 @@ public final class ModuleCatalog {
                     "Create cashier and manager logins and set their roles.",
                     ADMIN, "UserCog",
                     List.of(any("/users"), any("/users/**")),
-                    List.of("/users"))
+                    List.of("/users")),
+
+            // A behaviour flag, not a screen — which is why both lists are empty.
+            //
+            // uiPaths MUST stay empty. moduleForPath keeps the LONGEST pattern match, so
+            // claiming "/purchases/new" here would beat PURCHASES' own "/purchases" and
+            // switching draft recovery off would block the purchase screen outright.
+            // Turning off a convenience must never take down the page it assists. The POS
+            // app gates this with hasModule("DRAFT_RECOVERY") from inside the hook instead.
+            //
+            // routes is empty because nothing server-side is involved yet: drafts live in
+            // the browser's IndexedDB. The cross-device mirror will arrive as a child of
+            // this key, DRAFT_RECOVERY_SYNC, in the same release as the endpoint it needs —
+            // declaring it earlier would put a switch in the panel, on for every shop, that
+            // controls nothing.
+            top("DRAFT_RECOVERY", "Draft recovery",
+                    "Autosave half-finished purchases, bulk item entry and promotions on "
+                            + "this device and offer them back after a dropped connection, "
+                            + "a crash or an accidental refresh.",
+                    ADMIN, "Save",
+                    List.of(),
+                    List.of())
     );
 
     private static final Map<String, ModuleDefinition> BY_KEY;
