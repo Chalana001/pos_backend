@@ -5,7 +5,10 @@ import com.chala.posapp.dto.CreatePurchaseRequest;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.CashShift;
 import com.chala.posapp.entity.CashSource;
+import com.chala.posapp.dto.grn.GrnItemResponse;
 import com.chala.posapp.entity.GRN;
+import com.chala.posapp.entity.GrnItem;
+import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.Purchase;
 import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
@@ -60,6 +63,8 @@ class PurchaseSupersedeTest {
     private PurchaseRepository purchaseRepository;
     private StockBatchRepository stockBatchRepository;
     private SupplierPaymentRepository supplierPaymentRepository;
+    private GrnItemRepository grnItemRepository;
+    private PurchaseReturnRepository purchaseReturnRepository;
     private UserRepository userRepository;
     private CashShiftRepository cashShiftRepository;
     private SecurityUtils securityUtils;
@@ -74,6 +79,8 @@ class PurchaseSupersedeTest {
         purchaseRepository = mock(PurchaseRepository.class);
         stockBatchRepository = mock(StockBatchRepository.class);
         supplierPaymentRepository = mock(SupplierPaymentRepository.class);
+        grnItemRepository = mock(GrnItemRepository.class);
+        purchaseReturnRepository = mock(PurchaseReturnRepository.class);
         userRepository = mock(UserRepository.class);
         cashShiftRepository = mock(CashShiftRepository.class);
         securityUtils = mock(SecurityUtils.class);
@@ -81,10 +88,10 @@ class PurchaseSupersedeTest {
         service = new PurchaseService(
                 purchaseRepository,
                 mock(GrnRepository.class),
-                mock(GrnItemRepository.class),
+                grnItemRepository,
                 mock(ItemRepository.class),
                 stockBatchRepository,
-                mock(PurchaseReturnRepository.class),
+                purchaseReturnRepository,
                 mock(BranchRepository.class),
                 mock(SupplierRepository.class),
                 mock(GrnNumberService.class),
@@ -224,6 +231,32 @@ class PurchaseSupersedeTest {
 
         assertThat(purchase.getStatus()).isEqualTo(PurchaseStatus.CANCELED);
         verify(stockBatchRepository).deleteAll(any());
+    }
+
+    @Test
+    @DisplayName("a rebuild is pre-filled with the gross cost, so the discount is not taken twice")
+    void detailExposesTheGrossCostBehindADiscount() {
+        // A real 104,446.95 bill: 108,798.90 of goods with 4,351.95 (exactly 4%) off. What is
+        // stored per line is the EFFECTIVE cost, already net of that 4%. Pre-filling a rebuild
+        // from it and sending the same discountAmount again took the 4% a second time and
+        // moved the corrected bill to 100,095.12 while the operator was only changing the
+        // supplier. The detail response now carries the gross the operator actually typed.
+        Purchase purchase = voidableBill();
+        purchase.setDiscountAmount(new BigDecimal("4351.95"));
+        purchase.getGrnList().get(0).setTotalAmount(new BigDecimal("104446.95"));
+
+        GrnItem line = mock(GrnItem.class);
+        Item item = new Item();
+        item.setId(9L);
+        when(line.getItem()).thenReturn(item);
+        when(line.getCostPrice()).thenReturn(new BigDecimal("75.60"));
+        when(grnItemRepository.findByGrnId(11L)).thenReturn(List.of(line));
+        when(purchaseReturnRepository.findByPurchaseIdOrderByCreatedAtDesc(42L)).thenReturn(List.of());
+
+        GrnItemResponse mapped = service.getPurchaseById(42L).getGrnList().get(0).getItems().get(0);
+
+        assertThat(mapped.getCostPrice()).isEqualByComparingTo("75.60");
+        assertThat(mapped.getGrossCostPrice()).isEqualByComparingTo("78.75");
     }
 
     private CancelPurchaseRequest cancelRequest() {

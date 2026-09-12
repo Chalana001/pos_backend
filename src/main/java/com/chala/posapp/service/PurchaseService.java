@@ -475,6 +475,15 @@ public class PurchaseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
         ensurePurchaseAccess(user, purchase);
 
+        // Undo the discount allocation so a rebuild can pre-fill what was actually typed.
+        //
+        // Every line was discounted by the same fraction of the bill: applyDiscountAllocation
+        // gives line i a share proportional to its gross, so net = gross x (1 - D/G) for all
+        // of them. Summing that, N = G - D, which makes the way back G/N = (N + D)/N, one
+        // factor for the whole purchase. Computed across every GRN because the discount was
+        // allocated across every GRN, not per branch.
+        BigDecimal grossUpFactor = grossUpFactorFor(purchase);
+
         List<GrnResponse> grnList = purchase.getGrnList().stream()
                 .map(grn -> {
                     List<GrnItem> dbItems = grnItemRepository.findByGrnId(grn.getId());
@@ -494,6 +503,8 @@ public class PurchaseService {
                                     .sellingPrice(item.getSellingPrice())
                                     .lineTotal(item.getAmount())
                                     .expiryDate(expiryByItemId.get(item.getItem().getId()))
+                                    .grossCostPrice(normalizeMoney(item.getCostPrice()).multiply(grossUpFactor)
+                                            .setScale(MONEY_SCALE, RoundingMode.HALF_UP))
                                     .build())
                             .collect(Collectors.toList());
 
@@ -578,6 +589,28 @@ public class PurchaseService {
             if (expireDate != null) expiry.put(itemId, expireDate.toLocalDate());
         });
         return expiry;
+    }
+
+    /**
+     * (net + discount) / net for this purchase, or ONE when there was no discount.
+     *
+     * Multiplying a stored effective cost by this gives back the gross the operator typed.
+     * The last line of a discounted bill absorbed a rounding remainder rather than an exact
+     * proportional share, so that one line can come back a cent out; the backend re-allocates
+     * on save, and a cent on one line is not what this is protecting against.
+     */
+    private BigDecimal grossUpFactorFor(Purchase purchase) {
+        BigDecimal discount = normalizeMoney(purchase.getDiscountAmount());
+        if (discount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ONE;
+        }
+        BigDecimal net = purchase.getGrnList().stream()
+                .map(grn -> normalizeMoney(grn.getTotalAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (net.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ONE;
+        }
+        return net.add(discount).divide(net, UNIT_COST_SCALE, RoundingMode.HALF_UP);
     }
 
     /** Who a stored user id belongs to, or null when the id is absent or the user is gone. */
