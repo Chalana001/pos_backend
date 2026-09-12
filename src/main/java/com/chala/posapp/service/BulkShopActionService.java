@@ -76,7 +76,7 @@ public class BulkShopActionService {
         auditService.record(currentActor(), "BULK_" + action, SuperAdminAuditService.TARGET_SYSTEM, null,
                 String.format("Bulk %s over %d shop(s): %d succeeded, %d failed%s",
                         action, targets.size(), succeeded, targets.size() - succeeded,
-                        request.reason() != null && !request.reason().isBlank() ? " — " + request.reason() : ""));
+                        request.reason() != null && !request.reason().isBlank() ? "-" + request.reason() : ""));
 
         return new BulkActionResponse(action, targets.size(), succeeded, targets.size() - succeeded, results);
     }

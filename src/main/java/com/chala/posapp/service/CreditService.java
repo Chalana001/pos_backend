@@ -53,7 +53,7 @@ public class CreditService {
         if (newDue < 0) newDue = 0;
 
         customer.setDueAmount(newDue);
-        customerRepository.save(customer); // BUG-10 FIX: was missing — without this, dueAmount update never persists
+        customerRepository.save(customer); // BUG-10 FIX: was missing. Without this, dueAmount update never persists
 
         reportCacheInvalidator.creditChanged();
 

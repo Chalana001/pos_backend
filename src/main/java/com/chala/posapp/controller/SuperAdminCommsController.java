@@ -90,7 +90,7 @@ public class SuperAdminCommsController {
                 enabled ? "MAINTENANCE_ENABLED" : "MAINTENANCE_DISABLED",
                 SuperAdminAuditService.TARGET_SHOP, tenantId,
                 subscription.getShopName() + (enabled
-                        ? " put into maintenance mode" + (message != null ? " — " + message : "")
+                        ? " put into maintenance mode" + (message != null ? "-" + message : "")
                         : " taken out of maintenance mode"));
 
         return ResponseEntity.ok(Map.of(

@@ -89,7 +89,7 @@ public class ModuleCatalogSeeder implements CommandLineRunner {
         for (AppModule row : stale) {
             row.setActive(false);
             appModuleRepository.save(row);
-            log.warn("Module '{}' is no longer in ModuleCatalog — marked inactive, override rows kept.",
+            log.warn("Module '{}' is no longer in ModuleCatalog. Marked inactive, override rows kept.",
                     row.getModuleKey());
         }
 

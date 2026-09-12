@@ -121,7 +121,7 @@ public class AuthService {
     private void onFailedLogin(String tenantId, String username) {
         boolean justLocked = loginAttemptService.recordFailure(tenantId, username);
         log.warn("Failed login. tenant={}, username={}{}",
-                tenantId, username, justLocked ? " — account now locked" : "");
+                tenantId, username, justLocked ? ". Account now locked" : "");
 
         if (justLocked) {
             auditService.record(username, "LOGIN_LOCKED",

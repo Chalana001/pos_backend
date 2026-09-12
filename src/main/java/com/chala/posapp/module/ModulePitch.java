@@ -101,7 +101,7 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
                             + "difference between the shelf and the system stops being a mystery.",
                     List.of(
                             "See what is running out before a customer finds out for you",
-                            "Trace where every unit went — sold, adjusted, transferred or wasted",
+                            "Trace where every unit went. Sold, adjusted, transferred or wasted",
                             "Count the shelf and correct the system in one screen",
                             "Stop money sitting dead in stock you forgot you ordered"))),
 
@@ -117,7 +117,7 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
 
             Map.entry("SUPPLIERS", new ModulePitch(
                     "One place for every supplier, what they owe and what you owe them",
-                    "Contact details, purchase history and outstanding balance per supplier — so you walk "
+                    "Contact details, purchase history and outstanding balance per supplier. So you walk "
                             + "into a negotiation knowing the numbers.",
                     List.of(
                             "See a supplier's whole history before you call them",
@@ -147,7 +147,7 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
 
             Map.entry("EXPENSES", new ModulePitch(
                     "Account for the money that leaves the till, not just what comes in",
-                    "Record every payment out — transport, repairs, tea, wages — against a category, so "
+                    "Record every payment out. Transport, repairs, tea, wages. Against a category, so "
                             + "your profit is what is actually left.",
                     List.of(
                             "See where the small daily spending really goes",
@@ -167,7 +167,7 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
 
             Map.entry("REPORTS", new ModulePitch(
                     "Stop guessing which products actually make you money",
-                    "Reports across sales, stock, cash, customers and suppliers — the numbers that tell you "
+                    "Reports across sales, stock, cash, customers and suppliers. The numbers that tell you "
                             + "what to reorder, what to drop, and where the money went.",
                     List.of(
                             "See true profit per item, not just what sold the most",

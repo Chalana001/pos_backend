@@ -78,7 +78,7 @@ public class PlatformSettingsService {
                     "Upper bound an operator can request, capped by the server at 120.",
                     Kind.NUMBER, "60", "Support"),
             new SettingDefinition("support.require_reason", "Require a reason",
-                    "Always on — a support session without a stated reason cannot be reviewed later.",
+                    "Always on. A support session without a stated reason cannot be reviewed later.",
                     Kind.BOOLEAN, "true", "Support")
     );
 

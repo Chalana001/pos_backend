@@ -133,7 +133,7 @@ public class ImpersonationService {
                 .build());
 
         auditService.record(actor, "SUPPORT_SESSION_OPENED", SuperAdminAuditService.TARGET_SHOP, tenantId,
-                String.format("Opened a %s support session on %s as %s for %d min — %s",
+                String.format("Opened a %s support session on %s as %s for %d min %s",
                         readOnly ? "read-only" : "READ-WRITE", subscription.getShopName(),
                         target.getUsername(), ttlMinutes, reason.trim()));
 

@@ -297,7 +297,7 @@ public class PurchaseReturnService {
         List<StockBatch> batches = stockBatchRepository
                 .findByBranchIdAndBatchCodeStartingWith(branchId, batchPrefix);
 
-        if (batches.isEmpty()) return; // batch was deleted (already fully consumed) — allow return, mark not deducted
+        if (batches.isEmpty()) return; // batch was deleted (already fully consumed). Allow return, mark not deducted
 
         int availableInBatches = batches.stream()
                 .mapToInt(b -> b.getQuantity() == null ? 0 : b.getQuantity())
@@ -306,7 +306,7 @@ public class PurchaseReturnService {
         if (availableInBatches < normalizedReturnQty) {
             throw new BadRequestException(
                     "Cannot return this quantity of '" + item.getName()
-                            + "' — only "
+                            + "'. Only "
                             + QuantityConversionUtil.toDisplayQuantity(item, availableInBatches).stripTrailingZeros().toPlainString()
                             + " remain in stock (rest have been sold). "
                             + "Return only the unsold quantity.");
@@ -325,7 +325,7 @@ public class PurchaseReturnService {
                 .findByBranchIdAndBatchCodeStartingWith(branchId, batchPrefix);
 
         if (batches.isEmpty()) {
-            return false; // batch already consumed — cannot deduct
+            return false; // batch already consumed. Cannot deduct
         }
 
         // Deduct from batches FIFO

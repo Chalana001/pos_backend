@@ -56,7 +56,7 @@ public class TenantFlywayRunner implements ApplicationRunner {
         }
 
         if (tenantDbs.isEmpty()) {
-            log.info("No registered tenant databases found — skipping tenant Flyway migration.");
+            log.info("No registered tenant databases found. Skipping tenant Flyway migration.");
             return;
         }
 

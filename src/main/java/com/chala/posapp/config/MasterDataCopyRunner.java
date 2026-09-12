@@ -40,7 +40,7 @@ public class MasterDataCopyRunner implements ApplicationRunner {
                     FROM %s.subscription_plans
                     """.formatted(master, legacy));
         } else {
-            log.info("Skipping subscription_plans copy — table not found in {}", legacyDb);
+            log.info("Skipping subscription_plans copy. Table not found in {}", legacyDb);
         }
 
         if (tableExists(legacyDb, "tenant_subscriptions")) {
@@ -53,7 +53,7 @@ public class MasterDataCopyRunner implements ApplicationRunner {
                     FROM %s.tenant_subscriptions
                     """.formatted(master, legacy));
         } else {
-            log.info("Skipping tenant_subscriptions copy — table not found in {}", legacyDb);
+            log.info("Skipping tenant_subscriptions copy. Table not found in {}", legacyDb);
         }
 
         if (tableExists(legacyDb, "billing_records")) {
@@ -64,7 +64,7 @@ public class MasterDataCopyRunner implements ApplicationRunner {
                     FROM %s.billing_records
                     """.formatted(master, legacy));
         } else {
-            log.info("Skipping billing_records copy — table not found in {}", legacyDb);
+            log.info("Skipping billing_records copy. Table not found in {}", legacyDb);
         }
 
         // Copy SUPER_ADMIN users from legacy DB to master — but only when the legacy
@@ -82,7 +82,7 @@ public class MasterDataCopyRunner implements ApplicationRunner {
                     WHERE tenant_id = 'MASTER'
                     """.formatted(master, legacy));
         } else {
-            log.info("Skipping MASTER users copy — legacy users table has no tenant_id column (already on multi-DB schema)");
+            log.info("Skipping MASTER users copy. Legacy users table has no tenant_id column (already on multi-DB schema)");
         }
 
         log.info("Master data copy complete. inserted plans={}, subscriptions={}, billingRecords={}, masterUsers={}",

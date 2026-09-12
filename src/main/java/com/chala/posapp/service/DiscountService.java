@@ -214,7 +214,7 @@ public class DiscountService {
                 .redeemedBy(currentActor())
                 .build());
 
-        log.info("Discount {} redeemed by {} — {} off {}", discount.getCode(), tenantId,
+        log.info("Discount {} redeemed by {}, {} off {}", discount.getCode(), tenantId,
                 preview.amountOff(), preview.grossAmount());
         return preview;
     }

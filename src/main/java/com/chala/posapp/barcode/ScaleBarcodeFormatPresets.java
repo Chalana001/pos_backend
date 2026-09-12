@@ -29,7 +29,7 @@ public final class ScaleBarcodeFormatPresets {
                     "WEIGHT_PREFIX_20",
                     "Weight-embedded (prefix 20)",
                     "A common weight-embedded EAN-13 shape: 2-digit prefix \"20\", 5-digit item code, "
-                            + "5-digit weight in grams, 1 check digit. Starting point only — verify against "
+                            + "5-digit weight in grams, 1 check digit. Starting point only. Verify against "
                             + "your own device's manual before use.",
                     "20",
                     2,
@@ -42,7 +42,7 @@ public final class ScaleBarcodeFormatPresets {
                     "PRICE_PREFIX_21",
                     "Price-embedded (prefix 21)",
                     "A common price-embedded EAN-13 shape: 2-digit prefix \"21\", 5-digit item code, "
-                            + "5-digit price in cents, 1 check digit. Starting point only — verify against "
+                            + "5-digit price in cents, 1 check digit. Starting point only. Verify against "
                             + "your own device's manual before use.",
                     "21",
                     2,
@@ -54,7 +54,7 @@ public final class ScaleBarcodeFormatPresets {
             new ScaleBarcodePresetResponse(
                     "CUSTOM",
                     "Custom",
-                    "No defaults — fill in every field yourself to match your device's own barcode layout.",
+                    "No defaults. Fill in every field yourself to match your device's own barcode layout.",
                     null,
                     2,
                     5,

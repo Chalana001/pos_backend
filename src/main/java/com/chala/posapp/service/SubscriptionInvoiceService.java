@@ -137,7 +137,7 @@ public class SubscriptionInvoiceService {
 
         auditService.record(currentActor(), "INVOICE_VOIDED", SuperAdminAuditService.TARGET_SHOP,
                 invoice.getTenantId(),
-                "Voided " + invoice.getInvoiceNo() + (reason != null ? " — " + reason : ""));
+                "Voided " + invoice.getInvoiceNo() + (reason != null ? "-" + reason : ""));
         return invoice;
     }
 
@@ -256,7 +256,7 @@ public class SubscriptionInvoiceService {
         if (invoice.getPeriodStart() != null && invoice.getPeriodEnd() != null) {
             text.append("<br/><span class='muted'>")
                 .append(invoice.getPeriodStart().format(DATE))
-                .append(" — ")
+                .append("-")
                 .append(invoice.getPeriodEnd().format(DATE))
                 .append("</span>");
         }
@@ -276,7 +276,7 @@ public class SubscriptionInvoiceService {
     }
 
     private String nullToDash(String value) {
-        return value == null || value.isBlank() ? "—" : value;
+        return value == null || value.isBlank() ? "-" : value;
     }
 
     /** The description line is built here, so anything from the database is escaped first. */

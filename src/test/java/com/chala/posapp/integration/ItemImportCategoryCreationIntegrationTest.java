@@ -97,7 +97,7 @@ class ItemImportCategoryCreationIntegrationTest extends ApiIntegrationTestSuppor
 
         JsonNode row = response.path("rows").get(0);
         assertThat(row.path("status").asText()).isEqualTo("READY");
-        assertThat(row.path("message").asText()).contains("will create category: Biscuits");
+        assertThat(row.path("message").asText()).contains("Will create category: Biscuits");
         // The whole point: looking at the file left nothing behind.
         assertThat(subCategoryRepository.findByNameIgnoreCase("Biscuits")).isEmpty();
     }

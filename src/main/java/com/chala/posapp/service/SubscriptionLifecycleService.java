@@ -161,7 +161,7 @@ public class SubscriptionLifecycleService {
         auditService.record(currentActor(), "RENEWAL_REMINDER_LOGGED",
                 SuperAdminAuditService.TARGET_SHOP, tenantId,
                 subscription.getShopName() + " contacted about renewal"
-                        + (note != null && !note.isBlank() ? " — " + note : ""));
+                        + (note != null && !note.isBlank() ? "-" + note : ""));
     }
 
     /** Sets or clears the grace window for one shop. */
@@ -207,7 +207,7 @@ public class SubscriptionLifecycleService {
                 auditService.record("system", "TRIAL_EXPIRED", SuperAdminAuditService.TARGET_SHOP,
                         subscription.getTenantId(),
                         subscription.getShopName() + "'s trial ended on "
-                                + subscription.getTrialEndsAt().toLocalDate() + " — deactivated");
+                                + subscription.getTrialEndsAt().toLocalDate() + ". Deactivated");
                 log.info("Trial expired for tenant {}", subscription.getTenantId());
             }
 

@@ -147,7 +147,7 @@ public class PurchaseExcelImportService {
         }
         if (nameMatches.size() > 1) {
             row.setStatus(PurchaseImportRowStatus.AMBIGUOUS);
-            row.setMessage("Name '" + name + "' matched " + nameMatches.size() + " items — enter a barcode to disambiguate");
+            row.setMessage("Name '" + name + "' matched " + nameMatches.size() + " items. Enter a barcode to disambiguate");
             return;
         }
         applyMatch(row, nameMatches.get(0));

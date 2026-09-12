@@ -98,7 +98,7 @@ public class ModuleRouteResolver {
                 return Optional.of(rule.moduleKey());
             }
         }
-        log.debug("No module owns {} {} — allowing. Add a route to ModuleCatalog to gate it.", method, normalizedPath);
+        log.debug("No module owns {} {}. Allowing. Add a route to ModuleCatalog to gate it.", method, normalizedPath);
         if (unmappedPaths.size() < UNMAPPED_SAMPLE_LIMIT) {
             unmappedPaths.add(method.toUpperCase(java.util.Locale.ROOT) + " " + normalizedPath);
         }

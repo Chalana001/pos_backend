@@ -822,7 +822,7 @@ public class ItemExcelImportService {
         int ingredientCount = row.getIngredients() == null ? 0 : row.getIngredients().size();
         String readyMessage = ingredientCount > 0 ? "Ready (" + ingredientCount + " ingredients)" : "Ready";
         if (row.getSubCategoryToCreate() != null) {
-            readyMessage = readyMessage + " — will create category: " + row.getSubCategoryToCreate();
+            readyMessage = readyMessage + ". Will create category: " + row.getSubCategoryToCreate();
         }
         row.setMessage(readyMessage);
         return new ValidationResult(row, request);
