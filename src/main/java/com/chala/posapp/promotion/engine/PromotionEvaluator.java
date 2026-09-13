@@ -379,6 +379,22 @@ public final class PromotionEvaluator {
                 BigDecimal freeUnits = groups.multiply(get);
                 return MoneyOps.round2(freeUnits.multiply(unitPrice));
             }
+            case PROFIT_SHARE: {
+                // Share of margin, not of price. The cost here is the one the caller knows -
+                // for a sale that is the FIFO cost of the batches going out, so two batches of
+                // one item give away different amounts and neither goes below its own cost.
+                BigDecimal cost = MoneyOps.nz(line.costPrice());
+                if (cost.signum() <= 0) {
+                    return BigDecimal.ZERO;
+                }
+                BigDecimal profit = MoneyOps.nonNegative(unitPrice.subtract(cost));
+                if (profit.signum() <= 0) {
+                    return BigDecimal.ZERO;
+                }
+                BigDecimal share = MoneyOps.nonNegative(promotion.discountValue()).min(MoneyOps.HUNDRED);
+                BigDecimal price = unitPrice.subtract(profit.multiply(share).divide(MoneyOps.HUNDRED, 6, RoundingMode.HALF_UP));
+                return baseLineTotal.subtract(MoneyOps.lineTotal(line.itemType(), price, line.normalizedQty()));
+            }
             case TIERED: {
                 BigDecimal units = MoneyOps.primaryUnits(line.itemType(), line.normalizedQty());
                 TierSnapshot tier = highestQtyTier(promotion, units);

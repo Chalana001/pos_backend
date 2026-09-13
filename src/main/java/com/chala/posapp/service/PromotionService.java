@@ -471,7 +471,12 @@ public class PromotionService {
             BigDecimal consumed = row == null || row[5] == null ? BigDecimal.ZERO : (BigDecimal) row[5];
             boolean exhausted = (maxTotal != null && used >= maxTotal)
                     || (budget != null && consumed.compareTo(budget) >= 0);
-            if (codeCount > 0) {
+            // A share of profit is priced from the cost, and a till offline holds only the
+            // item's reference cost - not the cost of the batch it is about to sell. Every
+            // other mechanic prices from the selling price, where the till is exactly right;
+            // this one would charge a number computed from a figure it only approximates, so
+            // it stays on the server like the code-gated ones.
+            if (codeCount > 0 || promotion.effectType() == PromotionEffectType.PROFIT_SHARE) {
                 onlineOnly.add(promotion.name());
             } else if (!exhausted) {
                 included.add(promotion);
@@ -995,7 +1000,8 @@ public class PromotionService {
             // The headline figures stay the item's - that is the price the shop thinks in, and
             // the column the table shows. The verdict below does not: it is taken from the
             // batches this promotion would actually sell.
-            double offerPrice = resolveCheckPrice(line, request, normalPrice);
+            double offerPrice = resolveCheckPrice(line, request, normalPrice,
+                    item.getCostPrice() == null ? 0 : item.getCostPrice().doubleValue());
             double discountAmount = roundMoney(Math.max(0, normalPrice - offerPrice));
             double discountPercent = normalPrice > 0 ? roundMoney((discountAmount / normalPrice) * 100.0) : 0;
 
@@ -1103,7 +1109,7 @@ public class PromotionService {
 
             double batchCost = batch.getCostPrice() == null ? itemCost : batch.getCostPrice().doubleValue();
             boolean hasCost = batch.getCostPrice() != null || itemHasCost;
-            double price = Math.min(resolveCheckPrice(line, request, batchPrice), batchPrice);
+            double price = Math.min(resolveCheckPrice(line, request, batchPrice, batchCost), batchPrice);
             double margin = price > 0 ? roundMoney(((price - batchCost) / price) * 100.0) : 0;
 
             if (worst == null || margin < worst.marginPercent()) {
@@ -1121,13 +1127,27 @@ public class PromotionService {
                                 String batchLabel, Double minPrice, Double maxPrice, int batchCount) {
     }
 
-    private double resolveCheckPrice(PromotionItemLine line, PromotionPriceCheckRequest request, double normalPrice) {
+    /**
+     * @param cost what this price is being judged against — only a profit share reads it, but it
+     *             has to be the cost of the same batch as {@code normalPrice} or the preview
+     *             would mix one batch's price with another's cost.
+     */
+    private double resolveCheckPrice(PromotionItemLine line, PromotionPriceCheckRequest request,
+                                     double normalPrice, double cost) {
         if (line.getOfferPrice() != null) {
             return Math.max(0, line.getOfferPrice().doubleValue());
         }
         if (line.getDiscountType() != null && line.getDiscountType() != DiscountType.NONE
                 && line.getDiscountValue() != null) {
             return calculateFinalUnitPrice(normalPrice, line.getDiscountType(), line.getDiscountValue().doubleValue());
+        }
+        if (request.getEffectType() == PromotionEffectType.PROFIT_SHARE) {
+            if (cost <= 0) {
+                return normalPrice;
+            }
+            double profit = Math.max(0, normalPrice - cost);
+            double share = Math.min(Math.max(0, request.getDiscountValue()), 100.0);
+            return roundMoney(normalPrice - (profit * share / 100.0));
         }
         return calculateFinalUnitPrice(normalPrice, request.getDiscountType(), request.getDiscountValue());
     }

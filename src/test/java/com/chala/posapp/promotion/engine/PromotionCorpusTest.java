@@ -167,7 +167,23 @@ class PromotionCorpusTest {
                 new LineCase("line/weight-item", weightLine(7, 1200, 800, 1500), 1L, 1800, List.of(new Promo().item(7).build())),
                 new LineCase("line/awkward-rounding", line(7, 2, 99.99, 1, 1), 1L, 99.99, List.of(new Promo().rate(DiscountType.PERCENT, 33.333).item(7).build())),
                 new LineCase("line/cart-level-effect-is-wrong-scope", std, 1L, 200,
-                        List.of(new Promo().effect(PromotionEffectType.BUNDLE).buy(2).value(150).item(7).build()))
+                        List.of(new Promo().effect(PromotionEffectType.BUNDLE).buy(2).value(150).item(7).build())),
+                // Share of profit. std is 100 a piece against a cost of 60, so the margin is 40
+                // and a tenth of it is 4 - the price lands at 96, twice for two pieces.
+                new LineCase("line/profit-share", std, 1L, 200,
+                        List.of(new Promo().effect(PromotionEffectType.PROFIT_SHARE).value(10).item(7).build())),
+                // The whole margin given away sells at cost exactly, and no further.
+                new LineCase("line/profit-share-all-of-it", std, 1L, 200,
+                        List.of(new Promo().effect(PromotionEffectType.PROFIT_SHARE).value(100).item(7).build())),
+                // A line already at or under cost has no profit to share, so nothing comes off.
+                new LineCase("line/profit-share-no-margin", line(7, 2, 100, 100, 2), 1L, 200,
+                        List.of(new Promo().effect(PromotionEffectType.PROFIT_SHARE).value(50).item(7).build())),
+                // Cost unknown: a share of an unknown profit would be a guess.
+                new LineCase("line/profit-share-no-cost", line(7, 2, 100, 0, 2), 1L, 200,
+                        List.of(new Promo().effect(PromotionEffectType.PROFIT_SHARE).value(10).item(7).build())),
+                // Awkward arithmetic, to pin that both engines round in the same order.
+                new LineCase("line/profit-share-rounding", line(7, 2, 99.99, 33.33, 1), 1L, 99.99,
+                        List.of(new Promo().effect(PromotionEffectType.PROFIT_SHARE).value(33.333).item(7).build()))
         );
     }
 

@@ -2533,6 +2533,366 @@
       } ]
     }
   }, {
+    "id" : "line/profit-share",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 6E+1,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 1E+1,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "PROFIT_SHARE",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "discountType" : "FIXED",
+        "discountValue" : 4.0,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 8.0,
+        "appliedDiscountAmount" : 8.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 192.0,
+        "promotionApplied" : true,
+        "appliedPromotionIds" : [ 1 ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "APPLIED",
+        "discount" : 8
+      } ]
+    }
+  }, {
+    "id" : "line/profit-share-all-of-it",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 6E+1,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 1E+2,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "PROFIT_SHARE",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "discountType" : "FIXED",
+        "discountValue" : 40.0,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 80.0,
+        "appliedDiscountAmount" : 80.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 120.0,
+        "promotionApplied" : true,
+        "appliedPromotionIds" : [ 1 ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "APPLIED",
+        "discount" : 8E+1
+      } ]
+    }
+  }, {
+    "id" : "line/profit-share-no-margin",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 1E+2,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 5E+1,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "PROFIT_SHARE",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : null,
+        "promotionName" : null,
+        "discountType" : "NONE",
+        "discountValue" : 0.0,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 0.0,
+        "appliedDiscountAmount" : 0.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 200.0,
+        "promotionApplied" : false,
+        "appliedPromotionIds" : [ ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "NO_DISCOUNT",
+        "discount" : 0
+      } ]
+    }
+  }, {
+    "id" : "line/profit-share-no-cost",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 0,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 1E+1,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "PROFIT_SHARE",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : null,
+        "promotionName" : null,
+        "discountType" : "NONE",
+        "discountValue" : 0.0,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 0.0,
+        "appliedDiscountAmount" : 0.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 200.0,
+        "promotionApplied" : false,
+        "appliedPromotionIds" : [ ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "NO_DISCOUNT",
+        "discount" : 0
+      } ]
+    }
+  }, {
+    "id" : "line/profit-share-rounding",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 99.99,
+        "costPrice" : 33.33,
+        "normalizedQty" : 1000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 99.99,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 33.333,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "PROFIT_SHARE",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "discountType" : "FIXED",
+        "discountValue" : 22.22,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 22.22,
+        "appliedDiscountAmount" : 22.22,
+        "baseLineTotal" : 99.99,
+        "finalLineTotal" : 77.77,
+        "promotionApplied" : true,
+        "appliedPromotionIds" : [ 1 ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "APPLIED",
+        "discount" : 22.22
+      } ]
+    }
+  }, {
     "id" : "order/percent",
     "kind" : "order",
     "input" : {

@@ -169,9 +169,11 @@ public class ItemController {
     @GetMapping("/searchForPos")
     public ResponseEntity<List<ItemResponse>> searchForPos(
             @RequestParam(name = "name") String name,
-            @RequestParam(name = "branchId", required = false) Long branchId
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "subCategoryId", required = false) Long subCategoryId
     ) {
-        return ResponseEntity.ok(itemService.searchForPos(name, branchId));
+        return ResponseEntity.ok(itemService.searchForPos(name, branchId, categoryId, subCategoryId));
     }
 
     @GetMapping("/recent")

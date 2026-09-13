@@ -461,6 +461,21 @@ public class ItemService {
     // Note: uses getOptionalCurrentUser() because item-search endpoints may be called without auth
 
     public List<ItemResponse> searchForPos(String name, Long branchId) {
+        return searchForPos(name, branchId, null, null);
+    }
+
+    /**
+     * The same branch-scoped search, narrowed to one category.
+     *
+     * <p>Adding a whole aisle to a promotion has to come through here rather than the item
+     * master: the master lists every item the shop has ever defined, and a two-branch shop
+     * would pour the other branch's catalogue into a promotion that cannot sell it. This
+     * already drops anything never stocked at the branch, which is the rule that matters.
+     *
+     * @param categoryId    main category, or null
+     * @param subCategoryId sub-category, or null — what a single-category shop calls a category
+     */
+    public List<ItemResponse> searchForPos(String name, Long branchId, Long categoryId, Long subCategoryId) {
         String searchTerm = name.trim();
         // PERF-08 FIX: use FULLTEXT index for searches >= 3 chars, fall back to LIKE for 1-2 char inputs
         List<Item> items = searchTerm.length() >= 3
@@ -468,6 +483,12 @@ public class ItemService {
                 : itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream()
+                .filter(item -> categoryId == null
+                        || (item.getSubCategory() != null && item.getSubCategory().getCategory() != null
+                            && java.util.Objects.equals(item.getSubCategory().getCategory().getId(), categoryId)))
+                .filter(item -> subCategoryId == null
+                        || (item.getSubCategory() != null
+                            && java.util.Objects.equals(item.getSubCategory().getId(), subCategoryId)))
                 .map(item -> {
                     if (!item.isActive() || !item.isPosVisible()) {
                         return null;

@@ -19,7 +19,19 @@ public enum PromotionEffectType {
     /** Any {@code buyQty} eligible units for {@code discountValue} in total. Cart-level. */
     BUNDLE,
     /** Every {@code buyQty} eligible units, the cheapest one is free. Cart-level. */
-    CHEAPEST_FREE;
+    CHEAPEST_FREE,
+    /**
+     * The customer gets {@code discountValue} percent of the line's <em>profit</em>, not of its
+     * price: an item making 100 gives 10 away at 10%, one making 200 gives 20.
+     *
+     * <p>The point is that it cannot sell below cost. A flat percentage off price is a different
+     * cut on every item depending on what it cost, and on a thin-margin line it is a loss; a
+     * share of margin is the same generosity everywhere and is bounded by the margin itself.
+     *
+     * <p>A line whose cost is unknown gives nothing away — a share of an unknown profit would
+     * be a guess, and guessing here spends real money.
+     */
+    PROFIT_SHARE;
 
     public boolean isCartLevel() {
         return this == BUNDLE || this == CHEAPEST_FREE;

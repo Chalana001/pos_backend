@@ -21,6 +21,9 @@ public class PromotionPriceCheckRequest {
     private Long branchId;
 
     /** Falls back to each item's own rate when a line carries no price of its own. */
+    /** Which mechanic the builder is previewing; only a profit share prices differently here. */
+    private com.chala.posapp.entity.PromotionEffectType effectType;
+
     private com.chala.posapp.entity.DiscountType discountType;
     private double discountValue;
 
