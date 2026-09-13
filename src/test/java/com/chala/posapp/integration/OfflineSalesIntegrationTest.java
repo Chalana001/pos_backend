@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
 
-    /** Category, sub-category, supplier, item and a stocked purchase — enough to sell one. */
+    /** Category, sub-category, supplier, item and a stocked purchase, enough to sell one. */
     private long seedSellableItem(TenantFixture fixture, String adminToken, String barcode, String name)
             throws Exception {
         String tenantId = fixture.tenantId();
@@ -615,8 +615,8 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
         long initialOrderCount = orderRepository.count();
         long initialAuditCount = stockOverrideAuditRepository.count();
 
-        // Ten sold against six on hand. This sale already happened offline — the goods are
-        // gone and the cash is in the drawer — so refusing it would only keep real revenue
+        // Ten sold against six on hand. This sale already happened offline, the goods are
+        // gone and the cash is in the drawer, so refusing it would only keep real revenue
         // off the books and strand a paid transaction in the queue.
         JsonNode imported = postJson(
                 "/orders/offline-import",
@@ -738,8 +738,8 @@ class OfflineSalesIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(0.0, saved.getPromotionDiscountTotal(), 0.001);
         assertEquals(90.0, saved.getSalePaidAmount(), 0.001);
 
-        // Proves the assertions above are not vacuous — the promotion really is live and
-        // really would have halved that sale — and that live checkout still applies it.
+        // Proves the assertions above are not vacuous, the promotion really is live and
+        // really would have halved that sale, and that live checkout still applies it.
         JsonNode liveOrder = postJson(
                 "/orders",
                 tenantId,

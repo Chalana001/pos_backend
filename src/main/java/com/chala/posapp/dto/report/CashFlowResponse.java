@@ -38,7 +38,7 @@ public class CashFlowResponse {
     }
 
     // "Unbanked" (accountName == null on the query row) means the drop was
-    // never assigned a bank account — cash pulled from the drawer that's
+    // never assigned a bank account, cash pulled from the drawer that's
     // still sitting in a safe, not a data-quality problem.
     @Getter
     @Builder

@@ -44,7 +44,7 @@ public final class SupportDtos {
     // ---------------------------------------------------------- impersonation
 
     public record OpenSessionRequest(
-            /** Read-only unless explicitly set false — writes must be asked for. */
+            /** Read-only unless explicitly set false, writes must be asked for. */
             Boolean readOnly,
             Integer minutes,
             @NotBlank(message = "A reason is required to open a support session")

@@ -7,7 +7,7 @@ import lombok.*;
 /**
  * Database mirror of one {@link com.chala.posapp.module.ModuleDefinition}.
  *
- * <p>Rows are written by {@code ModuleCatalogSeeder} on boot and are never edited by hand —
+ * <p>Rows are written by {@code ModuleCatalogSeeder} on boot and are never edited by hand,
  * the code catalog is authoritative. This table exists so the super admin panel can join
  * modules against {@code plan_modules} / {@code tenant_modules} in SQL, and so a module that
  * is removed from the catalog can be marked inactive rather than orphaning override rows.

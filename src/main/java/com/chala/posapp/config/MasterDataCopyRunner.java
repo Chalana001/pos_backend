@@ -67,7 +67,7 @@ public class MasterDataCopyRunner implements ApplicationRunner {
             log.info("Skipping billing_records copy. Table not found in {}", legacyDb);
         }
 
-        // Copy SUPER_ADMIN users from legacy DB to master — but only when the legacy
+        // Copy SUPER_ADMIN users from legacy DB to master, but only when the legacy
         // users table still has the old single-DB tenant_id column. In the new
         // per-catalog multi-DB schema, pos_db.users has no tenant_id column, so
         // there are no master-level users to copy (they already live in pos_master).

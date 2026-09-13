@@ -76,7 +76,7 @@ public class SecurityConfig {
                 "https://*.chalanawijesingha.xyz",
                 "https://chalanawijesingha.xyz",
                 "android-app://*"
-                // SECURITY FIX: removed "null" — it allows file:// and sandboxed iframes to call the API
+                // SECURITY FIX: removed "null". It allows file:// and sandboxed iframes to call the API
         ));
 
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
@@ -120,7 +120,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/saas/plans").permitAll()
                         .requestMatchers("/health").permitAll()
-                        // MISS-09: Swagger UI / OpenAPI spec — allow in non-prod only.
+                        // MISS-09: Swagger UI / OpenAPI spec, allow in non-prod only.
                         // In prod this is denyAll rather than authenticated(): the spec lists every
                         // route in the system, and no shop user has any reason to read it.
                         .requestMatchers(SWAGGER_PATHS).access((authentication, context) ->

@@ -54,7 +54,7 @@ class DuplicateRequestFilterTest {
         CountDownLatch bothStarted = new CountDownLatch(2);
 
         // The original holds the chain open long enough for the duplicate to
-        // arrive — exactly the window a check-then-insert cannot protect.
+        // arrive, exactly the window a check-then-insert cannot protect.
         FilterChain chain = countingChain(calls, () -> {
             try {
                 Thread.sleep(300);

@@ -19,9 +19,9 @@ import org.springframework.stereotype.Component;
  *   <li>{@code importOfflineSale} calls {@code createOrderInternal} directly, so a sale
  *       synced back from an offline till bypassed the annotation on {@code createOrder}
  *       entirely and invalidated nothing at all.</li>
- *   <li>Eight report caches — returns summary, top suppliers, cashier performance,
+ *   <li>Eight report caches, returns summary, top suppliers, cashier performance,
  *       credit aging, expenses, inventory valuation, promotion effectiveness and
- *       warranties — had no eviction anywhere and were served up to an hour stale.</li>
+ *       warranties, had no eviction anywhere and were served up to an hour stale.</li>
  * </ul>
  *
  * <p><b>How to use it.</b> Call the method that names what happened, not the caches you
@@ -30,12 +30,12 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>Why a separate bean.</b> {@code @CacheEvict} is applied by a proxy, so a service
  * calling its own annotated method would silently do nothing. Calling across beans makes
- * the proxy fire — the same reason {@code DashboardService} splits its cached reads out.
+ * the proxy fire, the same reason {@code DashboardService} splits its cached reads out.
  *
  * <p>Most entries use {@code allEntries} because a report cache key carries a date range
  * the writer does not know. Dashboard KPIs are the exception: they are keyed on the
  * branch alone, they are the most frequently read cache in the system, and the write
- * paths that fire most often do know their branch — so those evict precisely, including
+ * paths that fire most often do know their branch, so those evict precisely, including
  * key 0, which is the "All Branches" view and which nothing used to touch.
  */
 @Component
@@ -45,7 +45,7 @@ public class ReportCacheInvalidator {
     /**
      * A sale was created, cancelled, or had a payment recorded against it.
      *
-     * <p>Also covers offline sales replayed on sync — call this from
+     * <p>Also covers offline sales replayed on sync, call this from
      * {@code createOrderInternal}, not from the public entry points, or the offline path
      * is missed again.
      */

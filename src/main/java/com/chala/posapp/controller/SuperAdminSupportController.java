@@ -110,7 +110,7 @@ public class SuperAdminSupportController {
     // -------------------------------------------------------------------- bulk
 
     /**
-     * One action across many shops. Never aborts halfway — every shop is attempted and
+     * One action across many shops. Never aborts halfway, every shop is attempted and
      * reported independently.
      */
     @PostMapping("/shops/bulk")

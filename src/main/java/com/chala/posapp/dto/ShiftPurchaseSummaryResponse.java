@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
  * Compact view of a Purchase for the shift close/reconciliation screens.
  *
  * Deliberately lighter than {@link PurchaseResponse} (no GRN list, no return
- * summary) — this is for "which purchases ate into this shift's cash",
+ * summary). This is for "which purchases ate into this shift's cash",
  * not full purchase detail.
  */
 @Data
@@ -25,7 +25,7 @@ public class ShiftPurchaseSummaryResponse {
     private String invoiceNo;
     private String supplierName;
 
-    // What actually left the shift's cash drawer for this purchase — not
+    // What actually left the shift's cash drawer for this purchase, not
     // grandTotal, since a purchase can be partially paid from the drawer and
     // partially on credit/bank.
     private BigDecimal cashSourceAmount;

@@ -35,7 +35,7 @@ import static org.mockito.Mockito.when;
  * out early and nothing said why, and points earned on goods that came back stayed in the
  * customer's balance.
  *
- * <p>These pin the two things that decide whether the books stay right — a partial return gives
+ * <p>These pin the two things that decide whether the books stay right, a partial return gives
  * back exactly its share and no more, and repeated partials that together take the whole line
  * give back the whole discount rather than overshooting it.
  */
@@ -107,7 +107,7 @@ class PromotionReturnReversalTest {
         @Test
         @DisplayName("the budget comes back but the redemption count does not")
         void countIsNotReleased() {
-            // The customer kept two of three items — they did have the promotion, and a
+            // The customer kept two of three items. They did have the promotion, and a
             // per-customer cap must go on saying so.
             when(redemptionRepository.findLiveForOrderItem(10L))
                     .thenReturn(List.of(redemption(1, 100L, 10L, "90.00")));

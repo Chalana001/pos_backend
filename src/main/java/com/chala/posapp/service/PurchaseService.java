@@ -91,7 +91,7 @@ public class PurchaseService {
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
@@ -164,7 +164,7 @@ public class PurchaseService {
      * violation rather than a sentence anyone could act on.
      *
      * Only COMPLETED bills count. A cancelled bill keeps the supplier's real invoice number
-     * — it is what is printed on the paper in the shop's hand — so the number must be free
+     *, it is what is printed on the paper in the shop's hand, so the number must be free
      * for its replacement to use. V47 enforces exactly this rule in MySQL through a
      * generated column; this is the readable half of it, and the only half the test profile
      * has, since Hibernate builds that schema from the entity and never runs the migration.
@@ -192,7 +192,7 @@ public class PurchaseService {
     /**
      * @param supersedesId when this bill is replacing another, the one being replaced. It is
      *                     still COMPLETED while this runs, so the invoice-number check has
-     *                     to be told to look past it — a replacement keeps the supplier's
+     *                     to be told to look past it, a replacement keeps the supplier's
      *                     original invoice number, which is the entire point of a supersede.
      */
     @Transactional
@@ -272,7 +272,7 @@ public class PurchaseService {
 
                 // A fully-free line pays nothing, so its effective cost is 0. That 0 is the
                 // true cost of the batch, but it must not overwrite the item's reference
-                // cost — margin reports would show a fake 100% profit afterwards.
+                // cost, margin reports would show a fake 100% profit afterwards.
                 if (preparedLine.normalizedQty() > 0) {
                     item.setCostPrice(effectiveCostPrice);
                 }
@@ -569,7 +569,7 @@ public class PurchaseService {
      * Expiry dates for a GRN's lines, keyed by item.
      *
      * Batches are coded {@code GRN-<grnNo>-<itemId>-<index>}, so a line's batch can be found
-     * by item — but only unambiguously when that item appears once in the GRN. Where the
+     * by item, but only unambiguously when that item appears once in the GRN. Where the
      * same item is received on several lines of one GRN there is no way to tell from the
      * line alone which batch is which, so those are left out entirely rather than guessed:
      * a rebuild pre-filled with the wrong expiry is worse than one pre-filled with none.
@@ -630,7 +630,7 @@ public class PurchaseService {
      *
      * Read-only and side-effect free, so it can answer three different questions with one
      * definition of the rules: the guard inside {@link #cancelPurchase}, the pre-check in
-     * {@link #replacePurchase} — which has to fail before anything is created — and the
+     * {@link #replacePurchase}, which has to fail before anything is created, and the
      * {@code canReplace} flag the details screen uses to decide whether to offer the button
      * at all. Two copies of these checks would eventually disagree, and the one that
      * disagreed quietly would be the UI.
@@ -668,7 +668,7 @@ public class PurchaseService {
         // Voiding only gives back what is still OWED. SupplierService allocates a payment by
         // moving the amount from due to paid, and nothing here reverses those rows, so a
         // bill that has been part-paid would leave the supplier ledger overstated by exactly
-        // what was already settled — and leave the payment hanging off a cancelled bill.
+        // what was already settled, and leave the payment hanging off a cancelled bill.
         // Re-pointing payments at a replacement is a bigger question than this feature;
         // until then the honest answer is to refuse.
         if (supplierPaymentRepository.existsByPurchaseId(purchase.getId())) {
@@ -742,14 +742,14 @@ public class PurchaseService {
      * Correct a wrong bill: issue a replacement and void the original, atomically.
      *
      * Editing a posted purchase in place is not something an auditable system should offer,
-     * so this does what accounting has always done instead — void and reissue, with the two
+     * so this does what accounting has always done instead, void and reissue, with the two
      * bills linked in both directions. The original is never mutated beyond being marked
      * cancelled and pointed at its successor.
      *
      * <p><strong>Order is load-bearing.</strong> The guards run first, so the operator is
      * told the bill cannot be voided *before* re-typing forty lines rather than after. Then
      * the replacement is created and fully validated, and only then is the original voided.
-     * A failure anywhere in the new bill therefore aborts with nothing destroyed — whereas
+     * A failure anywhere in the new bill therefore aborts with nothing destroyed, whereas
      * cancelling first would delete the original's stock and leave the shop with neither
      * bill if the replacement turned out to be invalid.
      *
@@ -760,7 +760,7 @@ public class PurchaseService {
      * the browser leaves the shop with stock deleted and no replacement whenever the second
      * call is the one that fails. Under contention the ordering still holds: a second
      * manager replacing the same bill passes the pre-check, creates their replacement, then
-     * fails at the void step with "already canceled" — and the whole transaction, their new
+     * fails at the void step with "already canceled", and the whole transaction, their new
      * bill included, rolls back.
      */
     @Audited(entity = "PURCHASE", action = "REPLACE", idExpression = "#oldPurchaseId")
@@ -785,7 +785,7 @@ public class PurchaseService {
         //
         // A replacement keeps the supplier's own invoice number, and V47's unique index
         // covers COMPLETED rows only. MySQL checks that index per statement, not at commit,
-        // so the instant both rows are COMPLETED — which is what creating first means — the
+        // so the instant both rows are COMPLETED, which is what creating first means, the
         // insert is rejected with a duplicate key, inside the transaction, every time.
         //
         // Nothing is risked by voiding first. The guarantee that a bad replacement destroys
@@ -797,7 +797,7 @@ public class PurchaseService {
 
         // Creating validates everything: branch access for the new lines, the amounts, and
         // the invoice number. Passing the original's id keeps the service-level uniqueness
-        // check off its back — it is CANCELED by now, but the check is also what protects
+        // check off its back. It is CANCELED by now, but the check is also what protects
         // the test profile, where Hibernate builds the schema and V47's index does not exist.
         PurchaseResponse createdResponse = createPurchase(request, oldPurchaseId);
 

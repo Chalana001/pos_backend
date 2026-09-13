@@ -55,7 +55,7 @@ public class CashDropController {
         return ResponseEntity.ok(result);
     }
 
-    // A drop recorded outside any shift — e.g. an owner banking
+    // A drop recorded outside any shift, e.g. an owner banking
     // already-collected cash after every shift for the day is closed. Never
     // touches any shift's Expected Cash; pure record-keeping.
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

@@ -45,8 +45,8 @@ public class OrderReturnService {
     private final LoyaltyService                loyaltyService;
 
     // ---------------------------------------------------------------
-    // Helpers — mirrors OrderService pattern exactly
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // Helpers, mirrors OrderService pattern exactly
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
     // ---------------------------------------------------------------
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
@@ -124,13 +124,13 @@ public class OrderReturnService {
             validatedLines.add(new ValidatedReturnLine(originalItem, itemReq.getReturnQty(), ticketLine));
         }
 
-        // 3. Calculate the refund — what the customer actually handed over for these goods.
+        // 3. Calculate the refund, what the customer actually handed over for these goods.
         //
         // finalUnitPrice x qty is the line's ticket price, not what was charged for it. A
         // bill-level discount came off the whole sale, and points the customer spent paid for
         // part of it. Refunding the ticket price hands back money that never arrived: on a
         // 1,180 sale settled with 200 in cash and 970 in points, returning everything paid out
-        // 1,180 in cash — the shop lost 980 on a return of its own goods.
+        // 1,180 in cash, the shop lost 980 on a return of its own goods.
         //
         // So the ticket is split the way the sale was settled. The cash share is refunded; the
         // points share goes back as points, below.
@@ -207,7 +207,7 @@ public class OrderReturnService {
         // came back stayed in the customer's balance.
         //
         // A return that empties the order is the sale being undone, so it takes the same path a
-        // cancellation does — the redemption count is released too. Anything less is
+        // cancellation does, the redemption count is released too. Anything less is
         // proportional: the money comes off the budget, but the promotion was still used on the
         // order for whatever the customer kept.
         boolean fullyReturned = allOrderItems.stream().allMatch(item ->
@@ -235,7 +235,7 @@ public class OrderReturnService {
             promotionRedemptionService.reverseForReturn(
                     order.getId(), savedReturn.getId(), user.getId(), returnedShares);
 
-            // Earned points come back in proportion to the share of the sale returned — which
+            // Earned points come back in proportion to the share of the sale returned, which
             // is the share of its value, not of its cash, or a sale settled mostly in points
             // would claw back several times what it awarded.
             pointsMoved = loyaltyService.clawBackForReturn(order.getId(), user.getId(),
@@ -245,7 +245,7 @@ public class OrderReturnService {
                     BigDecimal.valueOf(pointsValueBack));
         }
 
-        // Kept on the return so its receipt can account for the points as well as the money —
+        // Kept on the return so its receipt can account for the points as well as the money,
         // the half of the transaction the customer cannot check for themselves.
         if (!pointsMoved.movedNothing() || pointsValueBack > 0) {
             savedReturn.setLoyaltyPointsTakenBack(pointsMoved.takenBack());
@@ -328,7 +328,7 @@ public class OrderReturnService {
     }
 
     // ---------------------------------------------------------------
-    // PRIVATE: Stock reversal — mirrors cancelOrder() in OrderService
+    // PRIVATE: Stock reversal, mirrors cancelOrder() in OrderService
     //   Case 1: usage rows exist  -> proportional restore across batches
     //   Case 2: offline-imported, no batchId -> skip
     //   Case 3: single batchId fallback -> restore directly

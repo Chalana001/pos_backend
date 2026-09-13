@@ -19,8 +19,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The mechanics added in Phase 2 — buy-X-get-Y, fixed price, tiers, bundles, cheapest-free,
- * schedules and stacking — on the pure engine. Every existing pricing test still passes
+ * The mechanics added in Phase 2, buy-X-get-Y, fixed price, tiers, bundles, cheapest-free,
+ * schedules and stacking, on the pure engine. Every existing pricing test still passes
  * unchanged; these pin what is new.
  */
 class PromotionMechanicsTest {

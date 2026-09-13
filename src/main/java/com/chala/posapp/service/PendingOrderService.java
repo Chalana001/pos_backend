@@ -49,7 +49,7 @@ public class PendingOrderService {
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final AppConfigurationService appConfigurationService;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 

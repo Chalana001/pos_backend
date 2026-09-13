@@ -33,7 +33,7 @@ public class PurchaseResponse {
     private String canceledByUsername;
     private List<GrnResponse> grnList;
 
-    // Return summary — populated on detail fetch
+    // Return summary, populated on detail fetch
     private boolean hasReturns;
     private int returnCount;
     private BigDecimal totalReturnedAmount;
@@ -48,7 +48,7 @@ public class PurchaseResponse {
     /**
      * Whether "Cancel & Rebuild" can run on this bill right now, and if not, why.
      *
-     * Answered by the server because the reasons are all server-side state — whether any of
+     * Answered by the server because the reasons are all server-side state, whether any of
      * the bill's stock has moved, whether its drawer shift is still open, whether payments
      * have been allocated to it. Without this the screen has to guess, and the operator
      * finds out the bill cannot be voided only after re-typing forty lines.

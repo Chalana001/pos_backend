@@ -65,7 +65,7 @@ public class OrderReturn extends TenantEntity {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    /** Points this return took back — what the returned goods had earned. */
+    /** Points this return took back, what the returned goods had earned. */
     @Column(name = "loyalty_points_taken_back", nullable = false)
     @org.hibernate.annotations.ColumnDefault("0")
     @Builder.Default
@@ -73,7 +73,7 @@ public class OrderReturn extends TenantEntity {
 
     /**
      * Points handed back to the customer. Only a full return does this: it undoes the sale, so
-     * points spent on it are returned. A partial return leaves them alone — the customer paid
+     * points spent on it are returned. A partial return leaves them alone, the customer paid
      * with them and is keeping some of the goods.
      */
     @Column(name = "loyalty_points_given_back", nullable = false)
@@ -88,7 +88,7 @@ public class OrderReturn extends TenantEntity {
     private int loyaltyPointsBalance = 0;
 
     /**
-     * How much of the returned goods' value had been paid in points — the figure that turns
+     * How much of the returned goods' value had been paid in points, the figure that turns
      * "goods returned 1,180" into "refund 200" on the slip. The points count above does not
      * do that job at any rate other than one rupee a point.
      */

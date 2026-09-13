@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Counts consecutive failed logins and locks an account for a cooling-off period.
  *
  * <p>{@code RateLimitFilter} already caps how fast one IP may hit the auth endpoints; this is
- * the other half — it caps how many times one <em>account</em> may be guessed at, no matter how
+ * the other half. It caps how many times one <em>account</em> may be guessed at, no matter how
  * many addresses the guesses come from.
  *
  * <h2>Two trade-offs worth knowing</h2>
@@ -82,7 +82,7 @@ public class LoginAttemptService {
     }
 
     /**
-     * @return true if <em>this</em> failure is the one that tripped the lock — the caller uses
+     * @return true if <em>this</em> failure is the one that tripped the lock, the caller uses
      *         that to write a single audit entry per lockout rather than one per attempt, so a
      *         brute-force run cannot turn the audit table into its own denial of service.
      */
@@ -123,7 +123,7 @@ public class LoginAttemptService {
             return lockedUntil != null && lockedUntil.isBefore(now);
         });
         if (attempts.size() >= MAX_TRACKED_ACCOUNTS) {
-            // Still full — the tracker is being sprayed with fresh usernames. Start over
+            // Still full, the tracker is being sprayed with fresh usernames. Start over
             // rather than grow: losing counters is a smaller problem than losing the heap.
             log.warn("Login attempt tracker is full ({} accounts); clearing it.", attempts.size());
             attempts.clear();

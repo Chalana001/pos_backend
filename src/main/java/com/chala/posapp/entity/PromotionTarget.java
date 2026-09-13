@@ -49,7 +49,7 @@ public class PromotionTarget extends TenantEntity {
      *
      * <p>The engine never sees this. {@code PromotionGate} resolves the sale's customer into
      * their segments and rewrites a matching target as that customer's id, so segment matching
-     * stays a database concern and the pricing engine keeps matching on explicit ids — which
+     * stays a database concern and the pricing engine keeps matching on explicit ids, which
      * is also what keeps the JS port and the fixture corpus valid without touching either.
      */
     @Column(name = "segment_id")
@@ -67,7 +67,7 @@ public class PromotionTarget extends TenantEntity {
 
     /**
      * A per-item discount rate, used when {@link #offerPrice} is null. Null here too means the
-     * item inherits the promotion's own {@code discountType}/{@code discountValue} — which is
+     * item inherits the promotion's own {@code discountType}/{@code discountValue}, which is
      * every row written before per-item pricing existed, and is why no backfill was needed.
      */
     @Enumerated(EnumType.STRING)

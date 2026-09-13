@@ -9,8 +9,8 @@ import java.time.LocalDateTime;
  * A code a customer presents at the till to unlock a promotion.
  *
  * <p>A promotion with any codes is code-gated: it applies only when one of them is presented.
- * Validity is several independent conditions rather than one status — a code can be inside its
- * dates but out of uses, or have uses left but be switched off — and {@link #rejectionReason}
+ * Validity is several independent conditions rather than one status, a code can be inside its
+ * dates but out of uses, or have uses left but be switched off, and {@link #rejectionReason}
  * says which, so the till can explain a refusal instead of saying "invalid". Same shape as the
  * SaaS {@code DiscountCode}, which got this right first.
  *

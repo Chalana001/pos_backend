@@ -40,7 +40,7 @@ public class DiningTableService {
     private final AppConfigurationService appConfigurationService;
     private final PlatformTransactionManager transactionManager;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 

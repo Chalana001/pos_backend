@@ -32,7 +32,7 @@ import java.util.function.Supplier;
  * Announcements shown inside shops' POS apps.
  *
  * <p>Two sides: the panel manages them, and each shop asks what applies to it. The shop-facing
- * read resolves targeting per tenant — including MODULE targeting, which needs the shop's
+ * read resolves targeting per tenant, including MODULE targeting, which needs the shop's
  * effective module set and therefore cannot be a SQL filter.
  */
 @Slf4j

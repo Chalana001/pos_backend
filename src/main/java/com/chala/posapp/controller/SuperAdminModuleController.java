@@ -36,7 +36,7 @@ public class SuperAdminModuleController {
     }
 
     /**
-     * Requests seen since boot that no module claims — a gap in the catalog, shown on the
+     * Requests seen since boot that no module claims, a gap in the catalog, shown on the
      * panel's system health page so new controllers do not stay silently ungated.
      */
     @GetMapping("/modules/unmapped-routes")

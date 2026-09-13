@@ -103,7 +103,7 @@ public class PromotionRedemptionService {
      * <p>The sale happened; the customer paid the discounted price and holds the receipt. So
      * this never refuses: rows are written from the till's attribution and the caps are
      * counted up with no ceiling. A promotion that was at its limit while the till was offline
-     * overshoots by that sale — recorded, visible, and the honest alternative to booking a
+     * overshoots by that sale, recorded, visible, and the honest alternative to booking a
      * discount the customer did not get or refusing a sale that has already happened.
      */
     @Transactional(propagation = Propagation.MANDATORY)
@@ -161,7 +161,7 @@ public class PromotionRedemptionService {
      * that together take the whole line give back exactly the whole discount, because each looks
      * at what earlier ones already released.
      *
-     * <p>The budget is released — that money genuinely came back — but the redemption count is
+     * <p>The budget is released, that money genuinely came back, but the redemption count is
      * not. A customer who returned one of three items still used the promotion on that order,
      * and a per-customer cap should go on saying so. A <em>full</em> return is a different
      * thing: the caller sends it to {@link #reverseForOrder}, which undoes the sale entirely.
@@ -221,7 +221,7 @@ public class PromotionRedemptionService {
     }
 
     /**
-     * Gives back every redemption on an order. The rows stay — reversed, not deleted — and the
+     * Gives back every redemption on an order. The rows stay, reversed, not deleted, and the
      * counters and any code they consumed are released so the cap frees up.
      */
     @Transactional

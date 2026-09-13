@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * Loyalty points. Root-mounted like the other shop-facing controllers, and its own module —
+ * Loyalty points. Root-mounted like the other shop-facing controllers, and its own module,
  * a shop can buy promotions without buying this.
  */
 @RestController

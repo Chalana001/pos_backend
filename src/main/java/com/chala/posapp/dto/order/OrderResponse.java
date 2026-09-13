@@ -42,7 +42,7 @@ public class OrderResponse {
     private int loyaltyPointsEarned;
     private int loyaltyPointsRedeemed;
     private double loyaltyDiscountAmount;
-    /** The balance as at this sale — not the customer's balance now. */
+    /** The balance as at this sale, not the customer's balance now. */
     private int loyaltyPointsBalance;
     private double grandTotal;
     private double paidAmount;
@@ -54,7 +54,7 @@ public class OrderResponse {
 
     private List<OrderItemResponse> items;
 
-    // Return summary — populated when fetching a single order (includeItems = true)
+    // Return summary, populated when fetching a single order (includeItems = true)
     // Lets the frontend show a "1 Return" badge and "Process Return" button state
     private boolean hasReturns;
     private double totalReturnedAmount;

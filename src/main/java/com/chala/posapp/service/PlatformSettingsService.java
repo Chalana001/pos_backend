@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * Platform-wide settings, as a small typed façade over a key/value table.
  *
- * <p>The catalog below is the only definition of what a valid key is — an unknown key is
+ * <p>The catalog below is the only definition of what a valid key is, an unknown key is
  * rejected rather than silently stored, so a typo in the panel cannot create a setting that
  * nothing ever reads.
  */
@@ -94,7 +94,7 @@ public class PlatformSettingsService {
      * Reads settings from the control plane regardless of the caller's tenant context.
      *
      * <p>A shop user asking for the support number arrives with their own tenant bound, and
-     * {@code platform_settings} exists only in the master catalog — querying it from a shop
+     * {@code platform_settings} exists only in the master catalog, querying it from a shop
      * database throws. Everything tenant-facing must come through here.
      */
     public String getFromMaster(String key) {

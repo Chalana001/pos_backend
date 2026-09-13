@@ -25,7 +25,7 @@ public interface CashShiftRepository extends JpaRepository<CashShift, Long>, Jpa
 
     Optional<CashShift> findByCashierUserIdAndStatus(Long cashierUserId, ShiftStatus status);
 
-    // RPT-03: Shift summary / Z-Report — fetch closed shifts in a date range
+    // RPT-03: Shift summary / Z-Report, fetch closed shifts in a date range
     @Query("""
         SELECT cs FROM CashShift cs
         WHERE (:branchId IS NULL OR :branchId = 0 OR cs.branchId = :branchId)

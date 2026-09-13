@@ -26,7 +26,7 @@ public class CashDropResponse {
     private Long bankAccountId;
     private String bankAccountName;
 
-    // True when this drop was recorded outside any shift (shiftId is null) —
+    // True when this drop was recorded outside any shift (shiftId is null),
     // pure record-keeping, doesn't reduce any shift's Expected Cash.
     private boolean outsideShift;
 

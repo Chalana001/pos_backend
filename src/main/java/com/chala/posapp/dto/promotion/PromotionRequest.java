@@ -26,7 +26,7 @@ public class PromotionRequest {
     @NotNull
     private DiscountType discountType;
 
-    /** Zero is legitimate for effects that are not a rate — buy-X-get-Y, tiers — so the floor is per effect, in the service. */
+    /** Zero is legitimate for effects that are not a rate, buy-X-get-Y, tiers, so the floor is per effect, in the service. */
     @PositiveOrZero
     private double discountValue;
 
@@ -40,7 +40,7 @@ public class PromotionRequest {
     @NotNull
     private LocalDateTime endAt;
 
-    /** Which branch the campaign runs at. Required — a campaign is priced against one branch's stock. */
+    /** Which branch the campaign runs at. Required, a campaign is priced against one branch's stock. */
     @NotNull
     private Long branchId;
 
@@ -114,12 +114,12 @@ public class PromotionRequest {
     private List<Long> subCategoryIds;
     private List<Long> customerIds;
 
-    /** Segment targets for a CUSTOMER promotion — a rule instead of a list of people. */
+    /** Segment targets for a CUSTOMER promotion, a rule instead of a list of people. */
     private List<Long> segmentIds;
 
     /**
      * The item targets to persist, preferring the richer list. Collapsing the two shapes here
-     * keeps every caller — validation, target building, margin checks — from having to know
+     * keeps every caller, validation, target building, margin checks, from having to know
      * which one the client sent.
      */
     public List<PromotionItemLine> resolvedItemLines() {

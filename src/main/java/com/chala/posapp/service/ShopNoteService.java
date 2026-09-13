@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * Support notes against a shop.
  *
- * <p>Notes are editable and deletable by design — they record a conversation, and a
+ * <p>Notes are editable and deletable by design. They record a conversation, and a
  * conversation gets corrected. The permanent record of what the platform actually did lives in
  * the audit trail, which nothing here can touch.
  */

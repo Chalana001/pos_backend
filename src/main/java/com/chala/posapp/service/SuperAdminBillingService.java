@@ -69,7 +69,7 @@ public class SuperAdminBillingService {
 
         List<RevenueOverviewResponse.MonthPoint> trend = buildTrend();
 
-        // Run-rate is computed from live subscriptions, not from the ledger — a shop that paid
+        // Run-rate is computed from live subscriptions, not from the ledger, a shop that paid
         // a year up front still contributes 1/12 of its plan every month.
         List<TenantSubscription> active = tenantSubscriptionRepository.findByIsActiveTrue().stream()
                 .filter(subscription -> !subscription.isBlocked())
@@ -140,7 +140,7 @@ public class SuperAdminBillingService {
     }
 
     /**
-     * Twelve months of history with the empty months filled in — a gap in the ledger should
+     * Twelve months of history with the empty months filled in, a gap in the ledger should
      * draw as a zero, not close the gap and imply the months were consecutive.
      */
     private List<RevenueOverviewResponse.MonthPoint> buildTrend() {

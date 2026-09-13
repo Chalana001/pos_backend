@@ -13,8 +13,8 @@ import java.math.BigDecimal;
 /**
  * One item in an ITEM-scope promotion, optionally carrying a price of its own.
  *
- * <p>This is what lets a single campaign hold a price list — twenty items at twenty different
- * prices under one name, one schedule and one switch — instead of twenty promotions kept in
+ * <p>This is what lets a single campaign hold a price list, twenty items at twenty different
+ * prices under one name, one schedule and one switch, instead of twenty promotions kept in
  * sync by hand.
  *
  * <p>All three override fields are optional. Leaving them empty means the item inherits the

@@ -30,7 +30,7 @@ import java.util.Set;
  *
  * <p>Deliberately non-destructive on re-run:
  * <ul>
- *   <li>Catalog rows are upserted — structure comes from code, always.</li>
+ *   <li>Catalog rows are upserted, structure comes from code, always.</li>
  *   <li>A module dropped from the code catalog is marked {@code active = false} rather than
  *       deleted, so existing {@code plan_modules} / {@code tenant_modules} rows survive a
  *       rename mistake and can be recovered.</li>

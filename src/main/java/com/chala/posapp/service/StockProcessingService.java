@@ -66,7 +66,7 @@ public class StockProcessingService {
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.enforceBranchAccess() centralised in SecurityUtils
 

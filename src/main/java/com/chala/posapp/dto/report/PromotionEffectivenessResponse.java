@@ -9,14 +9,14 @@ import lombok.NoArgsConstructor;
  * RPT-08: what a promotion actually did, over a date range.
  *
  * <p>Read from the redemption ledger, so it covers item, category, bill and customer
- * promotions alike — the original version keyed on {@code orders.bill_promotion_id} and could
+ * promotions alike, the original version keyed on {@code orders.bill_promotion_id} and could
  * only ever see bill-level ones, which meant a shop running item campaigns opened this report
  * and saw nothing.
  *
  * <p>{@code totalRevenue} is turnover on the baskets the promotion appeared on. It is not
  * uplift and never was: the customer might have bought the same basket anyway. What is new
  * here is the margin the discount actually cost, and a basket comparison against orders in the
- * same period that no promotion touched — an indication of lift, not a controlled experiment.
+ * same period that no promotion touched, an indication of lift, not a controlled experiment.
  */
 @Getter
 @Builder

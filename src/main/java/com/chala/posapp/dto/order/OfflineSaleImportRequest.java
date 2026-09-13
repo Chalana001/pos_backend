@@ -53,7 +53,7 @@ public class OfflineSaleImportRequest {
     /** The promotion bundle the till priced with; null when it carried none. */
     private String promotionBundleVersion;
 
-    /** Bill-level promotion the till applied, if any — trusted, recorded, not recomputed. */
+    /** Bill-level promotion the till applied, if any. Trusted, recorded, never recomputed. */
     private Long billPromotionId;
     private String billPromotionName;
     private Double billPromotionDiscountAmount;

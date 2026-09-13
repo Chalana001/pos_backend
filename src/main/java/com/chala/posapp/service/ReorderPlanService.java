@@ -11,7 +11,7 @@ public class ReorderPlanService {
   // A plan orders stock INTO a branch, so it must name one. Without this guard an
   // admin could post branchId=null: demandForecast() reads null as "all branches"
   // (qb() maps it to 0) while getTotalQuantityByItemAndBranch() is an exact match
-  // and returns nothing — so on-hand came out as 0 and every line was suggested
+  // and returns nothing, so on-hand came out as 0 and every line was suggested
   // gross instead of net of existing stock.
   if(branch==null||branch==0L)throw new BadRequestException("A branch is required for a reorder plan");
   var forecast=reports.demandForecast(branch,request.forecastDays(),request.targetCoverDays(),null,null,null,null,true);

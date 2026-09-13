@@ -18,8 +18,8 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
      * Is this supplier invoice number already in use by a LIVE bill other than this one?
      *
      * Scoped to COMPLETED on purpose. A cancelled bill keeps the supplier's real invoice
-     * number — it is the number on the paper, and rewriting it would corrupt the audit
-     * trail and supplier reconciliation — so the number has to be free to be used again by
+     * number. It is the number on the paper, and rewriting it would corrupt the audit
+     * trail and supplier reconciliation, so the number has to be free to be used again by
      * the replacement. V47 enforces the same rule in the database through a generated
      * column; this exists so the user gets a sentence instead of a constraint violation,
      * and because the test profile builds its schema from the entity and never runs V47.
@@ -35,7 +35,7 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     List<Purchase> findAllByOrderByIdDesc();
 
     // Purchases paid out of a specific shift's cash drawer (see
-    // PurchaseService.applyDrawerCashOutIfNeeded — cashShiftId is only ever
+    // PurchaseService.applyDrawerCashOutIfNeeded, cashShiftId is only ever
     // set when cashSource == CASH_DRAWER, so this is already correctly scoped
     // without needing to filter on cashSource here too).
     Page<Purchase> findByCashShiftIdOrderByCreatedAtDesc(Long cashShiftId, Pageable pageable);

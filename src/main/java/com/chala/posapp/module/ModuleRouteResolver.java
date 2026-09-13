@@ -66,7 +66,7 @@ public class ModuleRouteResolver {
     }
 
     /**
-     * True when the request skips the subscription check too — auth, health and the control
+     * True when the request skips the subscription check too, auth, health and the control
      * plane. Keep this list to routes that return no shop data: anything here stays reachable
      * for a blocked or expired shop.
      */
@@ -76,7 +76,7 @@ public class ModuleRouteResolver {
 
     /**
      * True when the request skips only the module check. The subscription check still applies,
-     * so an expired shop is still stopped — these are just the boot reads no module owns.
+     * so an expired shop is still stopped, these are just the boot reads no module owns.
      */
     public boolean isModuleExempt(String normalizedPath, String method) {
         return matchesAny(ModuleCatalog.MODULE_EXEMPT, normalizedPath, method);

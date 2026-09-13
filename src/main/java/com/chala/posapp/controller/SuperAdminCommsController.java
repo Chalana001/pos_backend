@@ -63,7 +63,7 @@ public class SuperAdminCommsController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Preview exactly what a given shop would see — the way to check targeting before publishing. */
+    /** Preview exactly what a given shop would see, the way to check targeting before publishing. */
     @GetMapping("/shops/{tenantId}/announcements")
     public ResponseEntity<List<AnnouncementService.ShopAnnouncement>> announcementsForShop(
             @PathVariable String tenantId) {

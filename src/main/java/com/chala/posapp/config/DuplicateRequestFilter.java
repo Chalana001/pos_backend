@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
  * Two clicks 100 ms apart send two identical POSTs. Every write path in this
  * codebase guards itself with a check-then-insert
  * ({@code findBy...().ifPresent(throw)} then {@code save()}), and both requests
- * run their SELECT before either runs its INSERT — so both pass the guard and
+ * run their SELECT before either runs its INSERT, so both pass the guard and
  * two rows are written. That produced duplicate open shifts, duplicate orders,
  * duplicate GRNs and so on. No amount of tightening the service-layer check
  * closes that window, because the window is between the check and the write.
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
  * from (tenant, user, method, URI, query string, request body) and lets only the
  * first request through. A second request carrying the same key while the first
  * is still running <em>waits</em> for it and is then served the first request's
- * recorded response — byte for byte, same status, same body. A second request
+ * recorded response, byte for byte, same status, same body. A second request
  * arriving after the first finished is served the recorded response directly,
  * for as long as the replay window lasts. Either way the caller sees exactly one
  * receipt, one shift, one order; the UI behaves as if the user clicked once.
@@ -59,7 +59,7 @@ import java.util.concurrent.TimeUnit;
  *
  * <p><b>Two windows.</b> A client that sends an explicit {@code Idempotency-Key}
  * header gets a long window ({@code explicit-key-window-seconds}) keyed on that
- * header — the caller is telling us "these two requests are the same action".
+ * header, the caller is telling us "these two requests are the same action".
  * Everything else falls back to a body fingerprint with a deliberately short
  * window ({@code window-seconds}), long enough to swallow a double- or
  * triple-click but short enough that two genuinely separate identical actions
@@ -214,7 +214,7 @@ public class DuplicateRequestFilter extends OncePerRequestFilter {
         }
 
         if (finished) {
-            // The original failed and released its key — this is a legitimate
+            // The original failed and released its key. This is a legitimate
             // retry of a failed operation, so let it through.
             chain.doFilter(request, response);
             return;
@@ -248,7 +248,7 @@ public class DuplicateRequestFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Scopes the key so two different cashiers — or two different tenants —
+     * Scopes the key so two different cashiers, or two different tenants,
      * performing the same action at the same moment never collide.
      */
     private String buildKey(HttpServletRequest request, byte[] body, String explicitKey) {

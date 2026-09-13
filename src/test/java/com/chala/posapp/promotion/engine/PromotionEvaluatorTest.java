@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The engine on its own — no entities, no service, no mocks. The pricing outcomes themselves are
+ * The engine on its own, no entities, no service, no mocks. The pricing outcomes themselves are
  * covered by {@code PromotionServiceTest}, which drives the same code through the entity mapping;
  * this pins the parts that are new with the extraction: the reason trace and the snapshot's own
  * date and branch checks.

@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 
 /**
  * One step of a TIERED promotion. Set {@code minQty} for a quantity break on a line, or
- * {@code minAmount} for a spend ladder on a bill — not both.
+ * {@code minAmount} for a spend ladder on a bill, not both.
  */
 @Data
 @Builder

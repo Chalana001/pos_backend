@@ -7,7 +7,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
- * An invoice for a subscription payment — the document a shop owner can be sent.
+ * An invoice for a subscription payment, the document a shop owner can be sent.
  *
  * <p>Separate from {@link BillingRecord}: the record is the platform's internal ledger line,
  * this is the customer-facing artefact. One record produces at most one invoice, but an

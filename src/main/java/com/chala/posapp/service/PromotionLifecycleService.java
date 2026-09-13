@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 /**
  * The stored half of a promotion's lifecycle: draft, pending approval, active, paused.
  *
- * <p>Whether an active promotion is live right now is not this class's business — the engine
+ * <p>Whether an active promotion is live right now is not this class's business, the engine
  * checks dates and the gate checks counters on every sale. This is only the part that needs a
  * person: writing it, sending it for a second pair of eyes, switching it on and off. Every
  * transition writes an audit row, and {@code active} is kept in step with {@code status} here
@@ -204,7 +204,7 @@ public class PromotionLifecycleService {
 
     /**
      * The terms that matter for approval, as one string. Editing a name or a date does not
-     * change it; editing the discount, the mechanic or the price list does — and knocks an
+     * change it; editing the discount, the mechanic or the price list does, and knocks an
      * approved promotion back to pending.
      */
     public String termsFingerprint(Promotion promotion) {
@@ -225,7 +225,7 @@ public class PromotionLifecycleService {
 
     // ── transitions ─────────────────────────────────────────────────────────────────────
 
-    /** A new promotion: a draft, or — if the client asked for it on — straight through submission. */
+    /** A new promotion: a draft, or, if the client asked for it on, straight through submission. */
     public void initialise(Promotion promotion, boolean wantsActive, User user, Function<Long, BigDecimal> sellingPrice) {
         promotion.setCreatedBy(user == null ? null : user.getId());
         promotion.setUpdatedBy(user == null ? null : user.getId());

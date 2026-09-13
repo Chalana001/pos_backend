@@ -27,7 +27,7 @@ import java.util.Set;
  *
  * <p>The engine is pure and knows nothing about codes or counts; this sits in front of it. It
  * takes the cached candidate set and removes what a code, a redemption cap, a budget or a
- * per-customer limit rules out, saying why for each — so "why did my promotion not apply?" has
+ * per-customer limit rules out, saying why for each, so "why did my promotion not apply?" has
  * an answer for these reasons too, not just the engine's.
  *
  * <p>Usage counters are read fresh here, not from the cached snapshot: they move on every sale,
@@ -46,7 +46,7 @@ public class PromotionGate {
     /**
      * @param eligible   what the engine may now consider
      * @param excluded   one decision per candidate this gate removed
-     * @param code       the presented code, resolved and valid for one of the eligible promotions — or null
+     * @param code       the presented code, resolved and valid for one of the eligible promotions, or null
      * @param codeStatus what to tell the till about the presented code; null when none was presented
      */
     public record Result(List<PromotionSnapshot> eligible, List<LineDecision> excluded,
@@ -127,7 +127,7 @@ public class PromotionGate {
 
     /**
      * Turns "anyone in this segment" into "this customer", for a promotion that targets a
-     * segment this customer is in. Anything else is returned untouched — including a segment
+     * segment this customer is in. Anything else is returned untouched, including a segment
      * target they are not in, which then simply fails to match, exactly as a target naming
      * someone else would.
      */

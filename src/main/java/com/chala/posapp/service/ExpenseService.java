@@ -34,7 +34,7 @@ public class ExpenseService {
     // Cache eviction is delegated to ReportCacheInvalidator (called at the end of this
     // method) so that "what an expense dirties" is stated in one place alongside every
     // other write. The annotation here also keyed on the request's branch, which the
-    // service then re-resolves — so a manager posting someone else's branch evicted the
+    // service then re-resolves, so a manager posting someone else's branch evicted the
     // wrong entry.
     // MISS-03: Audit expense creation
     @Audited(entity = "EXPENSE", action = "CREATE",
@@ -166,7 +166,7 @@ public class ExpenseService {
                 .build();
     }
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.ADMIN) {

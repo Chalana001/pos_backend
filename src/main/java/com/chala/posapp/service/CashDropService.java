@@ -33,7 +33,7 @@ public class CashDropService {
     private final UserRepository userRepository;
     private final BankAccountRepository bankAccountRepository;
     private final BranchRepository branchRepository;
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     public Page<CashDropResponse> getFilteredCashDrops(
             Long requestedBranchId,
@@ -82,7 +82,7 @@ public class CashDropService {
         return summary == null ? new CashDropSummaryResponse(0, 0, 0) : summary;
     }
 
-    // A drop recorded outside any shift — e.g. an owner banking
+    // A drop recorded outside any shift, e.g. an owner banking
     // already-collected cash after every shift for the day is closed.
     // Deliberately does NOT touch any CashShift row: it's pure
     // record-keeping, never subtracted from a shift's Expected Cash.

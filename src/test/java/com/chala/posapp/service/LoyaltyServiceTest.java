@@ -30,7 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The points maths. Every case here is one a shop would eventually notice on its own books —
+ * The points maths. Every case here is one a shop would eventually notice on its own books,
  * paying points on money that never arrived, letting a redemption exceed a balance, or a
  * cancelled sale leaving the customer better off than before it.
  */
@@ -256,7 +256,7 @@ class LoyaltyServiceTest {
 
             ArgumentCaptor<LoyaltyTransaction> saved = ArgumentCaptor.forClass(LoyaltyTransaction.class);
             verify(transactionRepository, org.mockito.Mockito.atLeast(4)).save(saved.capture());
-            // The originals are marked rather than deleted — a balance history that edits itself
+            // The originals are marked rather than deleted, a balance history that edits itself
             // is not a history.
             assertThat(saved.getAllValues()).filteredOn(row -> row.getId() != null)
                     .allSatisfy(row -> assertThat(row.getReversedAt()).isNotNull());

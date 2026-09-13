@@ -23,7 +23,7 @@ import java.util.Set;
  *
  * <p>Membership is recomputed rather than evaluated live. The rules are aggregates over every
  * completed order, which is not something to run inside a checkout, so the answer is stored and
- * refreshed — on demand from the panel, and after a recompute the promotion cache is dropped
+ * refreshed, on demand from the panel, and after a recompute the promotion cache is dropped
  * because a segment-targeted promotion now means a different set of people.
  */
 @Slf4j

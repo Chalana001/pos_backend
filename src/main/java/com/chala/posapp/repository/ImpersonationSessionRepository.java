@@ -16,7 +16,7 @@ public interface ImpersonationSessionRepository extends JpaRepository<Impersonat
 
     List<ImpersonationSession> findTop20ByTenantIdOrderByIssuedAtDesc(String tenantId);
 
-    /** Sessions still usable right now — the panel's "someone is inside a shop" indicator. */
+    /** Sessions still usable right now, the panel's "someone is inside a shop" indicator. */
     @Query("""
             select s from ImpersonationSession s
             where s.revokedAt is null and s.expiresAt > :now

@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 /**
- * A support note against a shop — what the owner asked for, what was promised, why an
+ * A support note against a shop, what the owner asked for, what was promised, why an
  * exception was granted.
  *
  * <p>Deliberately separate from {@link SuperAdminAuditLog}: the audit trail is what the
@@ -33,7 +33,7 @@ public class ShopNote {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String body;
 
-    /** GENERAL, BILLING, TECHNICAL, COMPLAINT or FOLLOW_UP — free text, filtered in the panel. */
+    /** GENERAL, BILLING, TECHNICAL, COMPLAINT or FOLLOW_UP, free text, filtered in the panel. */
     @Column(nullable = false, length = 30)
     @Builder.Default
     private String category = "GENERAL";

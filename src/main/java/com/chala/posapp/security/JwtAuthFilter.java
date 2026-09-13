@@ -107,7 +107,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * True when this token predates the user's {@code token_valid_from} watermark — i.e. it was
+     * True when this token predates the user's {@code token_valid_from} watermark, i.e. it was
      * minted before a password reset or a "sign out everywhere".
      *
      * <p>The watermark is truncated to whole seconds before comparing because a JWT's {@code
@@ -122,7 +122,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         Instant issuedAt = jwtService.extractIssuedAt(token);
         if (issuedAt == null) {
             // A token with no iat cannot be shown to be newer than the watermark, and the
-            // watermark exists precisely because something went wrong — fail closed.
+            // watermark exists precisely because something went wrong, fail closed.
             return true;
         }
         Instant watermark = account.getTokenValidFrom()

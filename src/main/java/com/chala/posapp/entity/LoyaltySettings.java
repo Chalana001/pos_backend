@@ -41,7 +41,7 @@ public class LoyaltySettings extends TenantEntity {
     @Builder.Default
     private BigDecimal currencyPerPoint = BigDecimal.ONE;
 
-    /** Below this, points cannot be spent — stops a scheme paying out in one-rupee slices. */
+    /** Below this, points cannot be spent, stops a scheme paying out in one-rupee slices. */
     @Column(name = "min_redemption_points", nullable = false)
     @Builder.Default
     private int minRedemptionPoints = 0;

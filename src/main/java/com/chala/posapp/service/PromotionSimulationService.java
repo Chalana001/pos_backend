@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 /**
  * What an unsaved promotion would have done, and what it will collide with.
  *
- * <p>The simulator is the pure engine run over the sales the shop actually made — the same
+ * <p>The simulator is the pure engine run over the sales the shop actually made, the same
  * code that will price tomorrow's carts, so the projection and the reality cannot drift. It
  * runs the promotion on its own: the question is what this one costs, not how it competes.
  *
@@ -73,8 +73,8 @@ public class PromotionSimulationService {
         LocalDateTime from = to.minusDays(days);
         long branch = request.getBranchId() == null || request.getBranchId() <= 0 ? 0L : request.getBranchId();
 
-        // The replay ignores the promotion's own date window — last month's sales must not be
-        // gated by a start date next week — but keeps its weekday/time schedules.
+        // The replay ignores the promotion's own date window, last month's sales must not be
+        // gated by a start date next week, but keeps its weekday/time schedules.
         PromotionSnapshot snapshot = PromotionRequestMapper.snapshot(terms, -1L, from.minusYears(1), to.plusYears(1));
         List<PromotionSnapshot> alone = List.of(snapshot);
 

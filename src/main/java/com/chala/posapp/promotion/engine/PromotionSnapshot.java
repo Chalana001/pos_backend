@@ -15,7 +15,7 @@ import java.util.Objects;
  * A promotion as the pricing engine sees it: plain values, no entity, no session.
  *
  * <p>This is the shape that gets cached between requests, and the shape an offline till would
- * be sent. Neither can hold a JPA entity — a cached entity is detached and any association not
+ * be sent. Neither can hold a JPA entity, a cached entity is detached and any association not
  * already loaded throws on first touch, and a till has no JPA at all.
  */
 public record PromotionSnapshot(

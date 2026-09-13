@@ -9,10 +9,10 @@ import java.util.regex.Pattern;
  * MISS-08: Implements the logic for @PasswordComplexity.
  *
  * Pattern explanation:
- *  (?=.*[A-Z])   — at least one uppercase letter
- *  (?=.*\d)      — at least one digit
- *  (?=.*[!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]) — at least one special char
- *  .{8,100}      — total length 8–100
+ *  (?=.*[A-Z]), at least one uppercase letter
+ *  (?=.*\d), at least one digit
+ *  (?=.*[!@#$%^&*()_+\-=\[\]{};':"\|,.<>/?]), at least one special char
+ *  .{8,100}, total length 8–100
  */
 public class PasswordComplexityValidator
         implements ConstraintValidator<PasswordComplexity, String> {
@@ -24,7 +24,7 @@ public class PasswordComplexityValidator
     @Override
     public boolean isValid(String value, ConstraintValidatorContext ctx) {
         if (value == null || value.isBlank()) {
-            // Nullability is handled by @NotBlank — don't duplicate
+            // Nullability is handled by @NotBlank, don't duplicate
             return true;
         }
         return PATTERN.matcher(value).matches();

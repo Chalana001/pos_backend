@@ -34,7 +34,7 @@ public final class ModuleCatalog {
      * <p>Deliberately the same short list the old filter skipped: a blocked or expired shop must
      * still be able to reach the login endpoint and see <em>why</em> it is blocked, and
      * {@code /api/saas} is the control plane deciding that. Nothing that returns shop data
-     * belongs here — putting a data route in this list would let a non-paying shop keep reading.
+     * belongs here, putting a data route in this list would let a non-paying shop keep reading.
      */
     public static final List<ModuleRoute> SUBSCRIPTION_EXEMPT = List.of(
             any("/auth/**"),
@@ -44,13 +44,13 @@ public final class ModuleCatalog {
     );
 
     /**
-     * Paths exempt from the <strong>module</strong> check only — the subscription check still
+     * Paths exempt from the <strong>module</strong> check only, the subscription check still
      * applies, so an expired shop is still stopped at the paywall.
      *
      * <p>These are the reads every client makes before it can render anything: the branch list,
      * the shop configuration and the category tree. Gating them would mean switching off a
      * module could leave the app unable to boot at all rather than merely missing a screen.
-     * Writes to the same paths are gated normally — {@code SETTINGS_BRANCHES} owns
+     * Writes to the same paths are gated normally, {@code SETTINGS_BRANCHES} owns
      * {@code POST/PUT/PATCH/DELETE /branches}.
      */
     public static final List<ModuleRoute> MODULE_EXEMPT = List.of(
@@ -141,7 +141,7 @@ public final class ModuleCatalog {
 
             // ---------------------------------------------------------------- Inventory
             locked("ITEMS", "Items & catalogue",
-                    "The product catalogue. Core — a POS cannot run without it.",
+                    "The product catalogue. Core, a POS cannot run without it.",
                     INVENTORY, "Package",
                     List.of(any("/items"), any("/items/**"), any("/categories"), any("/categories/**")),
                     List.of("/items")),
@@ -162,8 +162,8 @@ public final class ModuleCatalog {
                     List.of(any("/items/*/recipe"), any("/items/*/recipe/**"),
                             any("/items/import-recipe-ingredients")),
                     List.of("/items/import-recipe-ingredients")),
-            // Weight and service items have no API surface of their own — they are item types
-            // inside /items — so these carry no routes and are enforced in the POS UI only.
+            // Weight and service items have no API surface of their own. They are item types
+            // inside /items, so these carry no routes and are enforced in the POS UI only.
             // They are still catalog modules because they are things a package does or does not
             // include, and the panel has to be able to sell them.
             child("ITEMS_WEIGHT", "ITEMS", "Weight / scale items",
@@ -364,7 +364,7 @@ public final class ModuleCatalog {
 
             // ---------------------------------------------------------------- Administration
             locked("SETTINGS", "Shop settings",
-                    "Shop-wide configuration. Core — the app reads it on every login.",
+                    "Shop-wide configuration. Core, the app reads it on every login.",
                     ADMIN, "Settings",
                     List.of(any("/app-configuration"), any("/app-configuration/**")),
                     List.of("/app-configuration")),
@@ -384,7 +384,7 @@ public final class ModuleCatalog {
                     List.of(any("/users"), any("/users/**")),
                     List.of("/users")),
 
-            // A behaviour flag, not a screen — which is why both lists are empty.
+            // A behaviour flag, not a screen, which is why both lists are empty.
             //
             // uiPaths MUST stay empty. moduleForPath keeps the LONGEST pattern match, so
             // claiming "/purchases/new" here would beat PURCHASES' own "/purchases" and
@@ -394,7 +394,7 @@ public final class ModuleCatalog {
             //
             // routes is empty because nothing server-side is involved yet: drafts live in
             // the browser's IndexedDB. The cross-device mirror will arrive as a child of
-            // this key, DRAFT_RECOVERY_SYNC, in the same release as the endpoint it needs —
+            // this key, DRAFT_RECOVERY_SYNC, in the same release as the endpoint it needs,
             // declaring it earlier would put a switch in the panel, on for every shop, that
             // controls nothing.
             top("DRAFT_RECOVERY", "Draft recovery",

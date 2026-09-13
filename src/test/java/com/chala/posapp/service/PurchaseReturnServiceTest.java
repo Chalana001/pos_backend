@@ -46,8 +46,8 @@ import static org.mockito.Mockito.when;
 
 /**
  * Purchase returns mix two quantity scales: the request (and the persisted
- * purchase_return_items.return_qty) are in DISPLAY units — the unit the GRN line
- * was entered in — while grn_items.qty and stock batches hold NORMALIZED base
+ * purchase_return_items.return_qty) are in DISPLAY units, the unit the GRN line
+ * was entered in, while grn_items.qty and stock batches hold NORMALIZED base
  * units (10 pcs = 10000). These tests pin down the conversion at the boundary:
  * caps compare display against display, stock is deducted in base units, and
  * refunds are per primary unit regardless of the entry unit.
@@ -276,7 +276,7 @@ class PurchaseReturnServiceTest {
         PurchaseReturnResponse response = service.processReturn(42L, requestFor(23L, 12));
 
         assertThat(batch.getQuantity()).isZero();
-        // 12 x 83.33 — a rounding whisker under the Rs.1000 paid, never more
+        // 12 x 83.33, a rounding whisker under the Rs.1000 paid, never more
         assertThat(response.getTotalReturnAmount()).isEqualByComparingTo("999.96");
 
         Mockito.verify(purchaseReturnItemRepository)

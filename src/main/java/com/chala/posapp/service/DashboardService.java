@@ -59,7 +59,7 @@ public class DashboardService {
 
     /**
      * Resolve first, then cache. The cache key must be the branch we actually queried,
-     * not the branch the caller asked for — a manager's request for someone else's
+     * not the branch the caller asked for, a manager's request for someone else's
      * branch is clamped to their own, and keying on the raw request stored that
      * clamped payload under the branch they asked for.
      */
@@ -98,7 +98,7 @@ public class DashboardService {
                 .build();
     }
 
-    // Eviction lives on the write paths themselves — see OrderService and ExpenseService.
+    // Eviction lives on the write paths themselves. See OrderService and ExpenseService.
     // A method here was never called by anything, and its keys did not match the
     // @Cacheable keys above, so it would have been a no-op even if it had been.
 

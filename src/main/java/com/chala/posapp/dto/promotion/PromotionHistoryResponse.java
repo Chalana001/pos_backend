@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * A campaign that has finished, with what it actually did.
  *
  * <p>Counts both halves of a promotion. RPT-08 keys only on {@code orders.bill_promotion_id},
- * so item and category campaigns — whose discounts live on {@code order_items} — report as
+ * so item and category campaigns, whose discounts live on {@code order_items}, report as
  * nothing at all there. A shop running item promotions sees an empty report and concludes
  * none of them fired.
  */
@@ -28,7 +28,7 @@ public class PromotionHistoryResponse {
     private Long branchId;
     private boolean active;
     private boolean deleted;
-    /** LIVE, SCHEDULED, PAUSED, ENDED or ARCHIVED — computed from dates and flags, not stored. */
+    /** LIVE, SCHEDULED, PAUSED, ENDED or ARCHIVED, computed from dates and flags, not stored. */
     private String status;
     private int targetCount;
     private long timesApplied;

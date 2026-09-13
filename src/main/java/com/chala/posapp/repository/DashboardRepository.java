@@ -81,10 +81,10 @@ public interface DashboardRepository extends JpaRepository<Order, Long> {
 
     // DUP-01 FIX: Removed 9 individual KPI query methods (todaySales, cashSales, creditSales,
     // todayDiscount, todayOrders, todayExpenses, todayCashDrops, lowStockCount, totalDue).
-    // All had ZERO callers — todayKpisAllInOne() above replaced all 9 in one DB round-trip.
+    // All had ZERO callers, todayKpisAllInOne() above replaced all 9 in one DB round-trip.
 
     // DUP-03/04 FIX: dailySalesRaw() and monthlySalesRaw() removed from here.
     // Canonical versions live in ReportRepository. DashboardService now injects ReportRepository
-    // directly to call them — one source of truth for both chart types.
+    // directly to call them, one source of truth for both chart types.
 
 }

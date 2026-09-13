@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// Runs on real MySQL (not H2) — this test exercises the FULLTEXT-backed
+// Runs on real MySQL (not H2). This test exercises the FULLTEXT-backed
 // item search (MATCH...AGAINST), which H2 cannot execute.
 @ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)

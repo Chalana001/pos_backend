@@ -209,7 +209,7 @@ public final class QuantityConversionUtil {
     }
 
     /**
-     * A normalized quantity back in the item's primary unit — pieces, kilograms, litres — as an
+     * A normalized quantity back in the item's primary unit, pieces, kilograms, litres, as an
      * exact decimal. Buy-X-get-Y, bundles and quantity tiers are all expressed in primary units.
      */
     public static BigDecimal toPrimaryUnits(ItemType itemType, int normalizedQty) {

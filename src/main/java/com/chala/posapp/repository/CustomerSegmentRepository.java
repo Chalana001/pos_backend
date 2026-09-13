@@ -17,7 +17,7 @@ public interface CustomerSegmentRepository extends JpaRepository<CustomerSegment
     /**
      * The customers a segment's rules currently pick out.
      *
-     * <p>Thresholds arrive as sentinels rather than nulls — {@code -1} means "not a condition".
+     * <p>Thresholds arrive as sentinels rather than nulls, {@code -1} means "not a condition".
      * A native query comparing a bound null needs the parameter typed on every dialect, and a
      * sentinel keeps the SQL readable and the behaviour the same everywhere.
      *

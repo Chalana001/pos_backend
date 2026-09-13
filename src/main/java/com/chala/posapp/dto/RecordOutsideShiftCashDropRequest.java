@@ -6,7 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
- * A cash drop recorded outside any shift — e.g. an owner banking
+ * A cash drop recorded outside any shift, e.g. an owner banking
  * already-collected cash after every shift for the day is closed.
  *
  * Unlike a normal cash drop, this has no shift to derive branchId from, so

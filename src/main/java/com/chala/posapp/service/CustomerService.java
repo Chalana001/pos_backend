@@ -38,7 +38,7 @@ public class CustomerService {
     private final CreditPaymentRepository creditPaymentRepository;
     private final SecurityUtils securityUtils;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     @Transactional
     public CustomerResponse create(CustomerCreateRequest request) {

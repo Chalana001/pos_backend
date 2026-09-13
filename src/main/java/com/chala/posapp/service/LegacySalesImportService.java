@@ -341,7 +341,7 @@ public class LegacySalesImportService {
         return cashier;
     }
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     private Map<String, String> readMappingFile(MultipartFile mappingFile) {
         if (mappingFile == null || mappingFile.isEmpty()) {

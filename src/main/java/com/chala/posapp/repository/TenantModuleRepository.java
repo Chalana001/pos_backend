@@ -25,7 +25,7 @@ public interface TenantModuleRepository extends JpaRepository<TenantModule, Long
     @Query("delete from TenantModule tm where tm.tenantId = :tenantId and tm.moduleKey = :moduleKey")
     void deleteByTenantIdAndModuleKey(@Param("tenantId") String tenantId, @Param("moduleKey") String moduleKey);
 
-    /** How many shops deviate from their plan, per module — drives the "custom" column in the panel. */
+    /** How many shops deviate from their plan, per module, drives the "custom" column in the panel. */
     @Query("select tm.moduleKey, count(tm) from TenantModule tm group by tm.moduleKey")
     List<Object[]> countOverridesByModule();
 

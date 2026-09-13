@@ -31,15 +31,15 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Three layers, most specific first:
  * <ol>
- *   <li>{@code tenant_modules} — an explicit override for this one shop</li>
- *   <li>{@code plan_modules} — the plan's template</li>
- *   <li>the code catalog — enabled, so a module added after a plan's rows were written does
+ *   <li>{@code tenant_modules}, an explicit override for this one shop</li>
+ *   <li>{@code plan_modules}, the plan's template</li>
+ *   <li>the code catalog, enabled, so a module added after a plan's rows were written does
  *       not silently vanish for every existing shop</li>
  * </ol>
  *
  * <p>A child module is only usable when its parent is too: switching off {@code STOCK} takes
  * transfers, adjustments and processing with it whatever their own rows say. {@code locked}
- * modules ({@code ITEMS}, {@code SETTINGS}) are always on — the app cannot boot without them.
+ * modules ({@code ITEMS}, {@code SETTINGS}) are always on, the app cannot boot without them.
  *
  * <p>Resolution hits the control-plane database, so it is cached per tenant for
  * {@link #CACHE_TTL_MILLIS}. Every write path in {@link SuperAdminModuleService} calls
@@ -95,7 +95,7 @@ public class ModuleAccessService {
         cache.remove(tenantId);
     }
 
-    /** Used when a plan's template changes — every shop on that plan is affected. */
+    /** Used when a plan's template changes, every shop on that plan is affected. */
     public void invalidateAll() {
         cache.clear();
     }

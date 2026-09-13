@@ -7,7 +7,7 @@ import java.util.Map;
  * Platform-wide operational snapshot.
  *
  * @param schemaVersions      distinct tenant schema versions in use, and how many shops sit on
- *                            each — more than one entry means a partial rollout
+ *                            each, more than one entry means a partial rollout
  * @param unmappedApiRoutes   requests seen since boot that no module claims; each one is a route
  *                            that cannot currently be sold or switched off
  * @param inactiveModuleKeys  modules that still have plan or tenant rows but are gone from the

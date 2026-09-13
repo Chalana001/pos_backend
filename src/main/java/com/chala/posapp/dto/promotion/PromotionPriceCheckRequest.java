@@ -7,7 +7,7 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * "What would these prices do?" — asked while the operator is still typing, so the margin
+ * "What would these prices do?", asked while the operator is still typing, so the margin
  * badges in the price table are the same numbers the save path will enforce.
  */
 @Data
@@ -17,7 +17,7 @@ public class PromotionPriceCheckRequest {
     @NotNull
     private List<PromotionItemLine> items;
 
-    /** The promotion's branch, or null for every branch — decides whose batches are checked. */
+    /** The promotion's branch, or null for every branch, decides whose batches are checked. */
     private Long branchId;
 
     /** Falls back to each item's own rate when a line carries no price of its own. */

@@ -37,8 +37,8 @@ import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 
 /**
- * The pricing half of {@link PromotionService} — the code that decides how much money leaves
- * the business — had no direct test until now.
+ * The pricing half of {@link PromotionService}, the code that decides how much money leaves
+ * the business, had no direct test until now.
  *
  * <p>Both calculators are pure: they take the active promotions as an argument and touch no
  * repository, so these run without a Spring context.
@@ -77,7 +77,7 @@ class PromotionServiceTest {
     @DisplayName("a campaign must name a branch")
     class BranchRequired {
 
-        /** Valid up to the branch check and no further — validateTargets runs after it. */
+        /** Valid up to the branch check and no further; validateTargets runs after it. */
         private PromotionRequest tenPercent() {
             PromotionRequest request = new PromotionRequest();
             request.setName("Ten off");
@@ -354,7 +354,7 @@ class PromotionServiceTest {
         }
 
         @Test
-        @DisplayName("on an exact tie the promotion listed first — the higher priority — keeps it")
+        @DisplayName("on an exact tie the promotion listed first, the higher priority, keeps it")
         void priorityBreaksTies() {
             // The repository returns promotions ordered by priority DESC, and the comparison is
             // a strict >, so priority decides ties and nothing else.
@@ -658,7 +658,7 @@ class PromotionServiceTest {
         @Test
         @DisplayName("a promotion that would sell below cost does not apply")
         void belowCostIsSkipped() {
-            // The item costs 60. A 50% cut off 100 lands at 50 — the shape of 39.90 typed
+            // The item costs 60. A 50% cut off 100 lands at 50, the shape of 39.90 typed
             // for 399.00.
             Promotion promo = itemPromotion(1, "Half price", DiscountType.PERCENT, 50, 7L);
 
@@ -683,7 +683,7 @@ class PromotionServiceTest {
         @Test
         @DisplayName("a promotion below the margin floor does not apply")
         void marginFloorIsEnforced() {
-            // 20% off 100 leaves 80 against a cost of 60 — a 25% margin, under the 30% floor.
+            // 20% off 100 leaves 80 against a cost of 60, a 25% margin, under the 30% floor.
             Promotion promo = itemPromotion(1, "20% off", DiscountType.PERCENT, 20, 7L);
             promo.setMarginFloorPercent(BigDecimal.valueOf(30));
 
@@ -695,7 +695,7 @@ class PromotionServiceTest {
         @Test
         @DisplayName("a promotion comfortably above the floor applies")
         void marginFloorAllowsHealthyDiscount() {
-            // 10% off 100 leaves 90 against a cost of 60 — a 33% margin, over the 30% floor.
+            // 10% off 100 leaves 90 against a cost of 60, a 33% margin, over the 30% floor.
             Promotion promo = itemPromotion(1, "10% off", DiscountType.PERCENT, 10, 7L);
             promo.setMarginFloorPercent(BigDecimal.valueOf(30));
 

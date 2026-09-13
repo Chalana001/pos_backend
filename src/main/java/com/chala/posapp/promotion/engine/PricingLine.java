@@ -12,8 +12,8 @@ import java.math.BigDecimal;
  * One cart line, with everything the engine needs to price it already resolved.
  *
  * <p>The category chain is walked once here, at construction, rather than inside the match
- * loop. Both associations on {@code Item} are lazy, so the old shape — dereferencing them per
- * promotion per line — touched the proxies on the checkout hot path; this touches them once and
+ * loop. Both associations on {@code Item} are lazy, so the old shape, dereferencing them per
+ * promotion per line, touched the proxies on the checkout hot path; this touches them once and
  * hands the engine plain ids.
  */
 public record PricingLine(
@@ -28,7 +28,7 @@ public record PricingLine(
         BigDecimal manualDiscountValue
 ) {
 
-    /** The same line at a different unit price — how a line priced after its own discounts is handed to the bill pass. */
+    /** The same line at a different unit price, how a line priced after its own discounts is handed to the bill pass. */
     public PricingLine withUnitPrice(BigDecimal newUnitPrice) {
         return new PricingLine(itemId, itemType, subCategoryId, categoryId, newUnitPrice, costPrice,
                 normalizedQty, DiscountType.NONE, BigDecimal.ZERO);

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  *
  * <p>The ledger exists because {@code order_items.promotion_id} is a single column: a line two
  * promotions stacked on could only be attributed to one of them. It also exists because a
- * refund should give a discount back rather than delete the fact it was given —
+ * refund should give a discount back rather than delete the fact it was given,
  * {@code reversedAt} marks that, and every count and budget excludes reversed rows.
  */
 @Entity
@@ -80,7 +80,7 @@ public class PromotionRedemption extends TenantEntity {
     /**
      * Set on a row that gives part of another row back. Such a row carries a negative
      * {@link #discountAmount}, so every sum over the ledger nets the refund out on its own,
-     * while the order still counts once as one the promotion was used on — which it was, for
+     * while the order still counts once as one the promotion was used on, which it was, for
      * the goods the customer kept.
      *
      * <p>A <em>full</em> return does not use this shape: it undoes the sale, so it takes the

@@ -12,7 +12,7 @@ import java.util.List;
  * IMPORTANT: these are EDITABLE STARTING TEMPLATES, not verified vendor
  * specifications. Real weighing-scale / label-printer devices vary by brand,
  * model and region, so a shop admin must confirm the digit layout against
- * their own device's manual before relying on one of these as-is — picking a
+ * their own device's manual before relying on one of these as-is, picking a
  * preset only pre-fills the settings form, it does not certify the shape is
  * correct for any particular piece of hardware. Presets are therefore named
  * after the barcode *shape* they describe (e.g. "prefix 20, weight in

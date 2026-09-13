@@ -26,9 +26,9 @@ import java.util.List;
  *  2. For each tenant, evict the previous day's cached entries so stale data
  *     doesn't survive into the new day.
  *  3. Pre-warm dashboard KPIs and "today" charts by calling the service methods
- *     — Spring Cache intercepts the call and populates the Caffeine cache.
+ *, Spring Cache intercepts the call and populates the Caffeine cache.
  *
- * Failures in one tenant must not abort other tenants — each is wrapped in
+ * Failures in one tenant must not abort other tenants, each is wrapped in
  * try/catch.
  */
 @Component
@@ -43,7 +43,7 @@ public class ReportWarmupScheduler {
 
     /**
      * Evict yesterday's caches and pre-warm today's dashboard for every branch.
-     * Cron: 00:05 daily — adjust via app property if needed.
+     * Cron: 00:05 daily, adjust via app property if needed.
      */
     @Scheduled(cron = "0 5 0 * * *", zone = "Asia/Colombo")
     public void evictAndWarmDashboard() {
@@ -95,7 +95,7 @@ public class ReportWarmupScheduler {
 
     /**
      * Pre-warm the dashboard KPI cache for every active branch in this tenant.
-     * We call dashboardService methods directly — Spring AOP intercepts and
+     * We call dashboardService methods directly, Spring AOP intercepts and
      * populates the Caffeine cache so the first real user gets a cache hit.
      */
     private void warmDashboardForTenant() {
@@ -116,7 +116,7 @@ public class ReportWarmupScheduler {
             try {
                 // The *ForBranch variants take an already-resolved branch and do not read
                 // the SecurityContext. The public todayKpis()/dailySales() entry points do,
-                // via securityUtils.getCurrentUser() — and on a scheduled thread there is
+                // via securityUtils.getCurrentUser(), and on a scheduled thread there is
                 // no authentication, so every branch used to fail here and get logged as
                 // "Skipped". The warm-up has never actually warmed anything.
                 dashboardService.todayKpisForBranch(branchId);

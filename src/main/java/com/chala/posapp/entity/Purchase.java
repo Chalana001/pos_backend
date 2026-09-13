@@ -12,7 +12,7 @@ import java.util.List;
 @Entity
 // No uniqueConstraints here any more. (supplier_id, invoice_no) used to be unique across
 // every row, which made a supersede impossible: the cancelled original keeps the supplier's
-// real invoice number — it is the number printed on the paper — so the replacement
+// real invoice number, it is the number printed on the paper, so the replacement
 // collided with it. V47 replaces that with a unique index over COMPLETED rows only, via a
 // generated column MySQL can index and leave NULL for cancelled bills.
 //
@@ -80,7 +80,7 @@ public class Purchase extends TenantEntity {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
-    /** Who voided it. Null for bills cancelled before V48 — nothing honest to backfill. */
+    /** Who voided it. Null for bills cancelled before V48. Nothing honest to backfill. */
     @Column(name = "canceled_by_user_id")
     private Long canceledByUserId;
 

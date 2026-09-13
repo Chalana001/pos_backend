@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * The answer to "how do I know this won't cost me two million" — the same evaluator that will
+ * The answer to "how do I know this won't cost me two million", the same evaluator that will
  * price sales, run over the sales the shop actually made.
  */
 @Data
@@ -19,7 +19,7 @@ public class PromotionSimulationResponse {
     private BigDecimal affectedRatePercent;
     private BigDecimal projectedDiscount;
     private BigDecimal averageDiscountPerAffectedOrder;
-    /** The single most expensive order — the worst case one sale can cost. */
+    /** The single most expensive order, the worst case one sale can cost. */
     private BigDecimal maxOrderDiscount;
     private BigDecimal projectedDailyDiscount;
     /** Days the budget would have lasted at that rate; null when no budget is set. */

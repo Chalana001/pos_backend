@@ -3,7 +3,7 @@ package com.chala.posapp.dto.saas.module;
 import java.util.List;
 
 /**
- * The catalog itself, independent of any shop — used by the panel's Modules page to show what
+ * The catalog itself, independent of any shop, used by the panel's Modules page to show what
  * can be sold, and how many shops currently have each module switched on.
  */
 public record ModuleCatalogResponse(
@@ -18,7 +18,7 @@ public record ModuleCatalogResponse(
     }
 
     /**
-     * @param overrideCount how many shops deviate from their plan on this module — a high number
+     * @param overrideCount how many shops deviate from their plan on this module, a high number
      *                      usually means the plan templates are wrong, not the shops
      */
     public record Entry(

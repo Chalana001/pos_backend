@@ -533,7 +533,7 @@ public class SuperAdminSaasService {
 
     /**
      * Writes one ledger line. {@code amount} stays the NET charge, as it always has been, with
-     * gross and discount recorded alongside — so every existing report keeps summing the right
+     * gross and discount recorded alongside, so every existing report keeps summing the right
      * number while a discounted payment is still explainable.
      */
     private BillingRecord recordBilling(String tenantId, String shopName, BillingActionType actionType,
@@ -555,7 +555,7 @@ public class SuperAdminSaasService {
     /**
      * Applies a discount code to a gross figure, consuming it.
      *
-     * @return {gross, discount, net} — all three, because the ledger records each separately
+     * @return {gross, discount, net}, all three, because the ledger records each separately
      */
     private double[] applyDiscount(String code, double gross, Long planId, String tenantId) {
         if (code == null || code.isBlank()) {

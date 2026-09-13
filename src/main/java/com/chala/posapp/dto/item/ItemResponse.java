@@ -50,12 +50,12 @@ public class ItemResponse {
     private List<StockProcessingOutputLinkResponse> processingOutputs;
     private List<StockBatchResponse> batches;
 
-    /** Earliest-expiry sellable batch (FEFO) — populated only by barcode-print endpoints. */
+    /** Earliest-expiry sellable batch (FEFO), populated only by barcode-print endpoints. */
     private LocalDateTime labelExpiry;
 
     // Populated only when GET /items/barcode/{barcode} matched via a decoded
     // scale barcode (weight/price-embedded), not a plain exact barcode match.
-    // Null for every other lookup — existing callers see no behavior change.
+    // Null for every other lookup, existing callers see no behavior change.
     private BigDecimal scaleResolvedQuantity;
     private MeasurementUnit scaleResolvedUnit;
     private BigDecimal scaleResolvedAmount;

@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p>Two different numbers here mean different things and the UI must label them as such:
  * {@code thisMonth} is <em>cash actually recorded</em> in {@code billing_records} this calendar
- * month, while {@code estimatedMrr} is <em>run-rate</em> — the sum of every active shop's plan
+ * month, while {@code estimatedMrr} is <em>run-rate</em>, the sum of every active shop's plan
  * renewal price normalised to a month. They will rarely match, because an annual payment lands
  * in one month but earns over twelve.
  */

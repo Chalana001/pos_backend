@@ -230,7 +230,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                      @Param("toDate") LocalDateTime toDate);
 
     // Same cash_drops rows as cashFlowTotalsRaw's last column, just grouped by
-    // destination — LEFT JOIN so drops with no bank account (bank_account_id
+    // destination, LEFT JOIN so drops with no bank account (bank_account_id
     // IS NULL, i.e. not banked yet) still show up, as a row with a NULL name
     // that the service layer labels "Unbanked".
     @Query(value = """
@@ -308,7 +308,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
 
     /**
-     * BUG-06 FIX: Unified product performance query — replaces the two previously
+     * BUG-06 FIX: Unified product performance query, replaces the two previously
      * duplicated queries (topSellingRaw + productPerformanceRaw) that shared an
      * identical inner subquery. Both callers now go through this single method.
      *
@@ -431,7 +431,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
      * BUG-05 FIX: Single-row aggregate query for profit summary.
      * Returns: [0]=totalRevenue, [1]=totalCost, [2]=grossProfit
      * Previously getProfitSummary() was loading up to 1,000,000 rows into a
-     * Java List and summing them in a for-loop — this replaces that with one DB call.
+     * Java List and summing them in a for-loop. This replaces that with one DB call.
      */
     @Query(value = """
         SELECT
@@ -481,7 +481,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 """, nativeQuery = true)
     List<Object[]> recentOrdersRaw(@Param("branchId") Long branchId);
 
-    // PERF-06 FIX: Added fromDate/toDate filter — previously scanned ALL historical orders
+    // PERF-06 FIX: Added fromDate/toDate filter, previously scanned ALL historical orders
     // on every call (grows exponentially with data). Also upgraded casts to toLong/toDouble in caller.
     @Query(value = """
     SELECT
@@ -561,7 +561,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             @Param("toDate") LocalDateTime toDate
     );
 
-    // PERF-07 FIX: Added branchId + date range filters — previously a full unfiltered table scan
+    // PERF-07 FIX: Added branchId + date range filters, previously a full unfiltered table scan
     // on every call with no branch isolation. Switched to grn table (has branch_id + received_at)
     // matching the supplier performance query pattern already used in supplierPerformanceRaw.
     @Query(value = """
@@ -865,7 +865,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                                @Param("toDate") LocalDateTime toDate,
                                                @Param("limitValue") int limitValue);
 
-    // Return reason breakdown — sale returns
+    // Return reason breakdown, sale returns
     @Query(value = """
         SELECT
             reason,
@@ -883,7 +883,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
                                                 @Param("fromDate") LocalDateTime fromDate,
                                                 @Param("toDate") LocalDateTime toDate);
 
-    // Return reason breakdown — purchase returns
+    // Return reason breakdown, purchase returns
     @Query(value = """
         SELECT
             reason,
@@ -1078,7 +1078,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
-          /* A superseded bill keeps its GRN rows — only its stock batches are deleted — so
+          /* A superseded bill keeps its GRN rows, only its stock batches are deleted, so
              without this every cancel-and-rebuild counts both the old and the new GRN and
              overstates purchase and paid totals by a whole bill. */
           AND (p.id IS NULL OR p.status = 'COMPLETED')
@@ -1133,7 +1133,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
         WHERE (:branchId = 0 OR g.branch_id = :branchId)
           AND g.received_at BETWEEN :fromDate AND :toDate
           AND (:supplierId = 0 OR s.id = :supplierId)
-          /* A superseded bill keeps its GRN rows — only its stock batches are deleted — so
+          /* A superseded bill keeps its GRN rows, only its stock batches are deleted, so
              without this every cancel-and-rebuild counts both the old and the new GRN and
              overstates purchase and paid totals by a whole bill. */
           AND NOT EXISTS (SELECT 1 FROM purchase pc
@@ -1448,15 +1448,15 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     // promotions: a shop running item campaigns opens this report and sees nothing, and
     // concludes none of them fired. promotion_redemptions carries both levels, one row per
     // promotion per line or bill, which also means a line two promotions stacked on is
-    // attributed to each of them instead of only to the larger. Reversed rows — a cancelled
-    // sale gave the discount back — are excluded everywhere below.
+    // attributed to each of them instead of only to the larger. Reversed rows, a cancelled
+    // sale gave the discount back, are excluded everywhere below.
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
      * Orders touched, revenue on those orders, and discount given, per promotion.
      *
      * <p>Aggregated per order first so an order the promotion discounted on three lines counts
-     * once and contributes its basket total once — summing {@code grand_total} across the raw
+     * once and contributes its basket total once, summing {@code grand_total} across the raw
      * rows would multiply the same basket by the number of lines.
      *
      * <p>Columns: promotionId, orders, revenue, discountGiven.
@@ -1485,7 +1485,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     /**
      * Gross revenue and cost across the whole baskets a promotion appeared on, so margin can be
-     * stated for bill-level promotions too — they have no lines of their own.
+     * stated for bill-level promotions too. They have no lines of their own.
      *
      * <p>Columns: promotionId, basketRevenue, basketCost.
      */
@@ -1512,7 +1512,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
 
     /**
      * Units actually moved on discounted lines, and how many distinct items a promotion touched.
-     * Line-level only — a bill promotion discounts a total, not a quantity.
+     * Line-level only, a bill promotion discounts a total, not a quantity.
      *
      * <p>Columns: promotionId, unitsMoved (normalized base units), distinctItems.
      */
@@ -1539,8 +1539,8 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
      * The baseline every promotion is measured against: completed orders in the same period
      * that no promotion touched.
      *
-     * <p>This is what turns "associated revenue" — a number that says nothing, because the
-     * customer might have bought the same basket anyway — into basket lift. It is still not a
+     * <p>This is what turns "associated revenue", a number that says nothing, because the
+     * customer might have bought the same basket anyway, into basket lift. It is still not a
      * controlled experiment: the same shop, the same period, promoted and unpromoted baskets
      * differ for reasons other than the promotion. It is an indication, and the report says so.
      *
@@ -1563,7 +1563,7 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
             @Param("toDate") LocalDateTime toDate);
 
     /**
-     * Codes minted and codes used, per promotion — the redemption rate of a coded campaign,
+     * Codes minted and codes used, per promotion, the redemption rate of a coded campaign,
      * which is the only honest measure of whether the vouchers were worth printing.
      *
      * <p>Not date-filtered: a code issued last month and redeemed this one belongs to the

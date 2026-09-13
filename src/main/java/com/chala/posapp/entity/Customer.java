@@ -29,7 +29,7 @@ public class Customer extends TenantEntity {
     private Long id;
 
     /**
-     * Optimistic locking — prevents two concurrent credit payments from both
+     * Optimistic locking, prevents two concurrent credit payments from both
      * reading the same dueAmount and causing it to go negative (lost-update bug).
      */
     @Version
@@ -54,7 +54,7 @@ public class Customer extends TenantEntity {
 
     private LocalDateTime createdAt;
 
-    /** MISS-06: Soft-delete timestamp — null means not deleted. */
+    /** MISS-06: Soft-delete timestamp, null means not deleted. */
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

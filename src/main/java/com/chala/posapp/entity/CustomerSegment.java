@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
  * over completed orders. A null threshold is not a condition.
  *
  * <p>Membership is materialised into {@code customer_segment_members} and recomputed on
- * demand — a promotion must not run an aggregate over every order in the checkout path.
+ * demand, a promotion must not run an aggregate over every order in the checkout path.
  */
 @Entity
 @Table(
@@ -53,7 +53,7 @@ public class CustomerSegment extends TenantEntity {
     @Column(name = "purchased_within_days")
     private Integer purchasedWithinDays;
 
-    /** Has not bought for N days — the lapsed-customer case. */
+    /** Has not bought for N days, the lapsed-customer case. */
     @Column(name = "inactive_for_days")
     private Integer inactiveForDays;
 
@@ -74,7 +74,7 @@ public class CustomerSegment extends TenantEntity {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    /** True when no threshold is set — such a segment would match the entire customer list. */
+    /** True when no threshold is set, such a segment would match the entire customer list. */
     public boolean hasNoRules() {
         return minTotalSpend == null && minOrderCount == null && minAvgOrderValue == null
                 && purchasedWithinDays == null && inactiveForDays == null;

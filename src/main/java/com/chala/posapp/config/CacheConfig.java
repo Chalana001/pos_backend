@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  *  └────────────────────────────────┴──────────┴──────────────────────────────────────────┘
  *
  * All caches are per-tenant because the cache key includes the tenant ID (via
- * {@code TenantContext.getTenant()}) — see {@code CacheKeyUtils}.
+ * {@code TenantContext.getTenant()}). See {@code CacheKeyUtils}.
  *
  * Maximum 500 entries per cache; least-recently-used entries are evicted after
  * that to bound heap usage.
@@ -67,7 +67,7 @@ public class CacheConfig {
     public static final String CACHE_RPT_PROFIT_SUMMARY   = "report-profit-summary";
     public static final String CACHE_RPT_RETURNS_SUMMARY  = "report-returns-summary";
 
-    // Part 5 — new report caches (1-hr TTL, same as other report caches)
+    // Part 5, new report caches (1-hr TTL, same as other report caches)
     public static final String CACHE_RPT_CASHIER_PERF     = "report-cashier-perf";
     public static final String CACHE_RPT_INVENTORY_VAL    = "report-inventory-val";
     public static final String CACHE_RPT_EXPENSES         = "report-expenses";
@@ -87,7 +87,7 @@ public class CacheConfig {
         CaffeineCacheManager manager = new CaffeineCacheManager();
 
         /*
-         * Dynamic cache creation is ON (default) — any cache name not pre-declared
+         * Dynamic cache creation is ON (default), any cache name not pre-declared
          * below still gets created with the default spec. We set a sensible default
          * that matches the dashboard TTL so nothing stays stale forever.
          */
@@ -146,7 +146,7 @@ public class CacheConfig {
                 CACHE_RPT_RETURNS_SUMMARY,
                 buildCache(REPORT_TTL_MINUTES));
 
-        // Part 5 — new report caches
+        // Part 5, new report caches
         manager.registerCustomCache(CACHE_RPT_CASHIER_PERF,  buildCache(REPORT_TTL_MINUTES));
         manager.registerCustomCache(CACHE_RPT_INVENTORY_VAL, buildCache(REPORT_TTL_MINUTES));
         manager.registerCustomCache(CACHE_RPT_EXPENSES,      buildCache(REPORT_TTL_MINUTES));

@@ -27,7 +27,7 @@ public class CreditService {
     private final SecurityUtils securityUtils;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     @Transactional
     public CreditPaymentResponse settleCredit(CreditPaymentRequest request) {

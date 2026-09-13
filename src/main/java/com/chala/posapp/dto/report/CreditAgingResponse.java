@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
-// RPT-07: Customer credit aging — outstanding credit split into buckets
+// RPT-07: Customer credit aging, outstanding credit split into buckets
 @Getter
 @Builder
 @NoArgsConstructor

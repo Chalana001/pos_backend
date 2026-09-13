@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.LocalTime;
 
 /**
- * A recurring window inside a promotion's date range — the shape of happy hour, weekday lunch,
+ * A recurring window inside a promotion's date range, the shape of happy hour, weekday lunch,
  * or weekend-only.
  *
  * <p>A promotion with no schedules runs whenever its dates say so. With one or more, it runs

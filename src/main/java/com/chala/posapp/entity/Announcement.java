@@ -8,8 +8,8 @@ import java.time.LocalDateTime;
 /**
  * A message shown inside the POS app of the shops it targets.
  *
- * <p>Targeting is a pair — {@link #audience} says what kind of filter, {@link #audienceValue}
- * says which one — rather than four nullable columns, because exactly one filter applies at a
+ * <p>Targeting is a pair, {@link #audience} says what kind of filter, {@link #audienceValue}
+ * says which one, rather than four nullable columns, because exactly one filter applies at a
  * time and nullable columns would let two be set at once.
  */
 @Entity
@@ -23,7 +23,7 @@ public class Announcement {
 
     public enum Severity { INFO, WARNING, CRITICAL }
 
-    /** ALL | PLAN | TENANT | MODULE — MODULE targets shops that have a given module on. */
+    /** ALL | PLAN | TENANT | MODULE, MODULE targets shops that have a given module on. */
     public enum Audience { ALL, PLAN, TENANT, MODULE }
 
     @Id

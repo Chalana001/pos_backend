@@ -48,7 +48,7 @@ public class SecurityUtils {
     }
 
     /**
-     * Convenience overload — resolves the current user internally.
+     * Convenience overload, resolves the current user internally.
      */
     public boolean currentUserIsAdminLike() {
         return isAdminLike(getCurrentUser());
@@ -67,7 +67,7 @@ public class SecurityUtils {
     }
 
     // ---------------------------------------------------------------
-    // DUP-05 FIX: Branch access helpers — previously copy-pasted across 9+ services
+    // DUP-05 FIX: Branch access helpers, previously copy-pasted across 9+ services
     // ---------------------------------------------------------------
 
     /**

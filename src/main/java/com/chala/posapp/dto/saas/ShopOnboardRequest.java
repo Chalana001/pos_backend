@@ -58,7 +58,7 @@ public class ShopOnboardRequest {
 
     /**
      * RETAIL, RESTAURANT or HYBRID. Decides which module overrides are applied on top of the
-     * plan template at onboarding — a retail shop does not want the table map, a restaurant
+     * plan template at onboarding, a retail shop does not want the table map, a restaurant
      * does. Defaults to RETAIL when the panel does not send one.
      */
     private String businessType;

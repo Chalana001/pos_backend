@@ -34,7 +34,7 @@ public class PurchaseReturn extends TenantEntity {
     @Column(name = "purchase_id", nullable = false)
     private Long purchaseId;
 
-    // Denormalised — supplier invoice no for display
+    // Denormalised, supplier invoice no for display
     @Column(name = "purchase_invoice_no", nullable = false, length = 100)
     private String purchaseInvoiceNo;
 

@@ -36,7 +36,7 @@ public class GrnItemResponse {
     /**
      * Expiry as recorded on this line's stock batch, when it can be identified unambiguously.
      *
-     * Expiry is not stored on the GRN line — it lives on the StockBatch the line created —
+     * Expiry is not stored on the GRN line, it lives on the StockBatch the line created,
      * so it has to be read back from there. Only populated for a detail fetch, and only
      * where the line maps to exactly one batch: "Cancel &amp; Rebuild" pre-fills the new
      * bill from this, and a rebuild that silently dropped expiry dates would put stock on

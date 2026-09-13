@@ -26,12 +26,12 @@ import java.util.concurrent.ConcurrentHashMap;
  *  - /auth/**, /api/auth/** → 20 requests / minute  (brute-force guard)
  *
  * AuthController is mapped at BOTH roots, so both spellings must be limited and must
- * share one bucket — otherwise an attacker just switches to the unlimited spelling.
+ * share one bucket; otherwise an attacker just switches to the unlimited spelling.
  *
  * All other paths are not limited by this filter.
  *
  * Buckets are stored in-memory; they are evicted by the JVM GC when the
- * ConcurrentHashMap grows too large — good enough for a single-node POS backend.
+ * ConcurrentHashMap grows too large, good enough for a single-node POS backend.
  * If you scale to multiple nodes you should replace the map with a Redis-backed
  * Bucket4j ProxyManager.
  */
@@ -116,7 +116,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
      *
      * <p>{@code server.forward-headers-strategy=native} makes Tomcat's RemoteIpValve resolve
      * the header instead, and it only honours it when the request actually arrived from a
-     * trusted internal proxy — so getRemoteAddr() is the real client for proxied traffic and
+     * trusted internal proxy, so getRemoteAddr() is the real client for proxied traffic and
      * the socket peer for everything else. Both are things the caller cannot choose.
      */
     private String resolveIp(HttpServletRequest request) {

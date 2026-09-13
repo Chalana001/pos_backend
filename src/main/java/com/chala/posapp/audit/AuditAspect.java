@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
  * We use {@code @AfterReturning} (not @Around) so that:
  *  1. Only successful operations are audited (no partial-failure noise).
  *  2. The audit write happens inside the SAME transaction via Spring's
- *     AuditLogRepository — if the outer TX rolls back, the audit is also rolled
+ *     AuditLogRepository, if the outer TX rolls back, the audit is also rolled
  *     back (consistent).
  *
  * ID and summary values are extracted using SpEL against the method parameters,

@@ -345,5 +345,5 @@ public class SupplierService {
         throw new BadRequestException("Drawer branch is required when supplier drawer payment is linked to a multi-branch purchase");
     }
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 }

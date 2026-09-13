@@ -33,7 +33,7 @@ public class PromotionTier extends TenantEntity {
     @JoinColumn(name = "promotion_id", nullable = false)
     private Promotion promotion;
 
-    /** In the item's primary unit — pieces, kilograms, litres. */
+    /** In the item's primary unit, pieces, kilograms, litres. */
     @Column(name = "min_qty", precision = 12, scale = 3)
     private BigDecimal minQty;
 

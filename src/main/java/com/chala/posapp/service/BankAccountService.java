@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Manageable "Bank Accounts" reference list — deliberately the same shape as
+ * Manageable "Bank Accounts" reference list, deliberately the same shape as
  * ExpenseTypeService (name + active flag, deactivate-if-in-use instead of a
  * hard delete once it's actually been used on a cash drop).
  */
@@ -82,7 +82,7 @@ public class BankAccountService {
         BankAccount account = getEntity(id);
         long usageCount = cashDropRepository.countByBankAccountId(id);
         if (usageCount > 0) {
-            // Cash drops already reference this account — deactivating (not
+            // Cash drops already reference this account, deactivating (not
             // deleting) keeps that history intact and just hides it from the
             // "pick a bank account" dropdown going forward.
             account.setActive(false);

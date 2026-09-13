@@ -17,7 +17,7 @@ public class CashDrop extends TenantEntity {
 
     // Nullable: a drop recorded outside a shift (e.g. an owner banking
     // already-collected cash after every shift for the day is closed) has no
-    // shift to attach to. Such drops are pure record-keeping — they never
+    // shift to attach to. Such drops are pure record-keeping. They never
     // reduce any CashShift's totalCashDrops, unlike an in-shift drop.
     private Long shiftId;
 
@@ -33,7 +33,7 @@ public class CashDrop extends TenantEntity {
     @Column(nullable = false, length = 255)
     private String reason;
 
-    // Which bank account this cash actually went to — optional, since some
+    // Which bank account this cash actually went to, optional, since some
     // drops go to a safe/petty cash box rather than straight to a bank.
     private Long bankAccountId;
 

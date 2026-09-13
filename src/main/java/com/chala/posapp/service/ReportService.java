@@ -71,7 +71,7 @@ public class ReportService {
     private final ReportRepository reportRepository;
     private final CustomerRepository customerRepository;
     private final StockBatchRepository stockBatchRepository;
-    // BUG-07 FIX: securityUtils.getCurrentUser() removed — use SecurityUtils.getCurrentUser() instead
+    // BUG-07 FIX: securityUtils.getCurrentUser() removed. Use SecurityUtils.getCurrentUser() instead
     private final SecurityUtils securityUtils;
     private final NewReportService newReportService;
 
@@ -81,7 +81,7 @@ public class ReportService {
         }
         if (user.getRole() == Role.MANAGER || user.getRole() == Role.CASHIER) {
             // requireAssignedBranch, not getBranchId(). users.branch_id is nullable, and a
-            // null returned here falls through toQueryBranchId() to 0 — which every report
+            // null returned here falls through toQueryBranchId() to 0, which every report
             // query reads as "all branches". An unassigned manager saw the whole company.
             return securityUtils.requireAssignedBranch(user);
         }
@@ -669,7 +669,7 @@ public class ReportService {
             // all daily rows into memory and grouping in Java per YearMonth
             return reportRepository.monthlySalesRaw(effectiveBranchId, range.from(), range.to()).stream()
                     .map(r -> {
-                        // monthlySalesRaw returns 'YYYY-MM' — parse to first day of month
+                        // monthlySalesRaw returns 'YYYY-MM', parse to first day of month
                         LocalDate monthStart = YearMonth.parse(r[0].toString()).atDay(1);
                         return new SalesTrendPoint(monthStart, toDouble(r[1]), 0);
                     })
@@ -730,7 +730,7 @@ public class ReportService {
         Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
         // findLowStockItems reads NULL as "all branches"; 0 would be an exact match on a
         // branch that does not exist and would come back empty. /stock/low already does
-        // this conversion — this path did not, so the same concept behaved differently
+        // this conversion. This path did not, so the same concept behaved differently
         // depending on which endpoint you asked.
         return stockBatchRepository.findLowStockItems(toBranchFilter(branchId));
     }
@@ -746,7 +746,7 @@ public class ReportService {
                 .toList();
     }
 
-    // PERF-06/07 FIX: Added from/to date range params — previously scanned ALL historical data.
+    // PERF-06/07 FIX: Added from/to date range params, previously scanned ALL historical data.
     // Defaults to last 30 days when no range specified (sensible default for a dashboard widget).
     // MISS-01: Cache top-customers for 1 hour
     @Cacheable(value = CacheConfig.CACHE_RPT_TOP_CUSTOMERS,
@@ -890,7 +890,7 @@ public class ReportService {
         return value == null ? "" : value;
     }
 
-    // DUP-06 FIX: Centralised Object[] row extraction helpers — eliminate the
+    // DUP-06 FIX: Centralised Object[] row extraction helpers, eliminate the
     // ((Number) r[N]).doubleValue() / .longValue() cast pattern repeated 40+ times.
     private static double toDouble(Object val) {
         return val instanceof Number n ? n.doubleValue() : 0.0;

@@ -15,7 +15,7 @@ import java.util.List;
  * The set of promotions that could price a sale, cached per tenant.
  *
  * <p>Checkout and every cart preview used to hit the database for this list, with its targets,
- * on every call — a cart of twenty lines being edited fired twenty of them. The set only changes
+ * on every call, a cart of twenty lines being edited fired twenty of them. The set only changes
  * when someone edits a promotion, and every write path in {@code PromotionService} evicts.
  *
  * <p>Date window and branch are <em>not</em> part of what is cached. A list of "what is live

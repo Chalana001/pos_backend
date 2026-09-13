@@ -36,7 +36,7 @@ public class CreateOrderRequest {
 
     /**
      * Loyalty points the customer wants to spend on this sale. Applied after promotions, against
-     * what they leave behind — points are a balance the customer owns, closer to part-payment
+     * what they leave behind, points are a balance the customer owns, closer to part-payment
      * than to a discount rule.
      */
     private int loyaltyPointsToRedeem;

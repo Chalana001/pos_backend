@@ -10,7 +10,7 @@ import java.util.List;
  * Batch module change for one shop. The panel sends every toggle the admin flipped in one call
  * so the whole edit lands as a single audit entry rather than one per switch.
  *
- * <p>{@code enabled == null} means "remove the override and follow the plan again" — that is the
+ * <p>{@code enabled == null} means "remove the override and follow the plan again". That is the
  * reset-to-plan action, and it is why this is a tri-state rather than a boolean.
  */
 public record ModuleToggleRequest(

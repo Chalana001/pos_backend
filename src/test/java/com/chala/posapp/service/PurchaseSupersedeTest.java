@@ -49,13 +49,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The guards that decide whether a purchase can be voided — and therefore whether it can be
+ * The guards that decide whether a purchase can be voided, and therefore whether it can be
  * corrected by "Cancel &amp; Rebuild", which voids the original as part of the same
  * transaction.
  *
  * <p>These are all refusals, which is the point: voiding a bill gives back only what is
- * still OWED on it, so anything that has already moved — stock off the shelf, cash out of a
- * closed drawer, a payment already made to the supplier — cannot be undone by flipping a
+ * still OWED on it, so anything that has already moved, stock off the shelf, cash out of a
+ * closed drawer, a payment already made to the supplier, cannot be undone by flipping a
  * status. Every one of these was a way to silently corrupt stock or the supplier ledger.
  */
 class PurchaseSupersedeTest {
@@ -116,7 +116,7 @@ class PurchaseSupersedeTest {
         branch.setName("Main");
     }
 
-    /** A bill with one GRN whose stock is entirely untouched — the voidable base case. */
+    /** A bill with one GRN whose stock is entirely untouched, the voidable base case. */
     private Purchase voidableBill() {
         GRN grn = GRN.builder().id(11L).grnNo("G-1").branch(branch).build();
         Purchase purchase = Purchase.builder()
@@ -144,14 +144,14 @@ class PurchaseSupersedeTest {
     }
 
     @Test
-    @DisplayName("a part-paid bill cannot be voided — cancelling reverses due, never payments")
+    @DisplayName("a part-paid bill cannot be voided: cancelling reverses due, never payments")
     void refusesWhenSupplierPaymentsExist() {
         voidableBill();
         when(supplierPaymentRepository.existsByPurchaseId(42L)).thenReturn(true);
 
         // Why this matters, with numbers. A 10,000 bill part-paid 4,000 leaves due 6,000 and
         // supplier due 6,000. Voiding subtracts only the remaining 6,000, so a rebuild that
-        // re-adds a 10,000 bill leaves the supplier owed 10,000 when the truth is 6,000 —
+        // re-adds a 10,000 bill leaves the supplier owed 10,000 when the truth is 6,000,
         // overstated by exactly what was already paid, with the payment row still hanging off
         // a cancelled bill. Refusing is the honest answer until payments can be carried over.
         assertThatThrownBy(() -> service.cancelPurchase(42L, cancelRequest()))
@@ -216,7 +216,7 @@ class PurchaseSupersedeTest {
         Purchase purchase = voidableBill();
 
         // The replacement keeps the supplier's own invoice number, and V47's unique index
-        // covers COMPLETED rows only — checked per statement, not at commit. Creating first
+        // covers COMPLETED rows only, checked per statement, not at commit. Creating first
         // therefore means two COMPLETED rows share a number for an instant, and MySQL rejects
         // the insert with a duplicate key every single time. This ordering is load-bearing and
         // was a real 400 in the browser before it was fixed; it is not a style preference.
@@ -224,7 +224,7 @@ class PurchaseSupersedeTest {
         // Nothing is risked by voiding first: the method is one transaction, so a failure in
         // the create rolls the void back with it.
         //
-        // The create is left to blow up on the empty request — by then the void has either
+        // The create is left to blow up on the empty request, by then the void has either
         // happened or it has not, which is the whole question.
         assertThatThrownBy(() -> service.replacePurchase(42L, new CreatePurchaseRequest()))
                 .isInstanceOf(Exception.class);

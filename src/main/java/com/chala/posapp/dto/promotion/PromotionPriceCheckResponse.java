@@ -18,7 +18,7 @@ public class PromotionPriceCheckResponse {
 
     /**
      * One priced row. {@code status} is what the table renders: OK, LOW_MARGIN, BELOW_COST, or
-     * ABOVE_NORMAL_PRICE — named rather than a bare boolean so the UI does not re-derive the
+     * ABOVE_NORMAL_PRICE, named rather than a bare boolean so the UI does not re-derive the
      * rule and drift from the engine.
      */
     @Data
@@ -35,7 +35,7 @@ public class PromotionPriceCheckResponse {
          *
          * <p>An item sold from two batches has two prices, and the promotion means something
          * different against each. Null when the item has no stocked batches, and equal to each
-         * other when every batch agrees — the table only says anything when they differ.
+         * other when every batch agrees, the table only says anything when they differ.
          */
         private BigDecimal minBatchPrice;
         private BigDecimal maxBatchPrice;

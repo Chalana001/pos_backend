@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  * MISS-03: Immutable audit log entry written via Spring AOP on every sensitive
  * write operation (order creation, user creation, password reset, expense, GRN, etc.).
  *
- * TABLE: audit_logs — created in V12 migration.
+ * TABLE: audit_logs, created in V12 migration.
  */
 @Entity
 @Table(name = "audit_logs", indexes = {
@@ -55,7 +55,7 @@ public class AuditLog extends TenantEntity {
     @Column(name = "branch_id")
     private Long branchId;
 
-    /** Brief human-readable summary — always safe to log (no PII). */
+    /** Brief human-readable summary, always safe to log (no PII). */
     @Column(name = "summary", length = 500)
     private String summary;
 

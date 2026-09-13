@@ -15,7 +15,7 @@ import java.util.Optional;
  * Every finder here filters {@code deletedAt IS NULL}. A retired promotion keeps its row so
  * that reporting can still resolve the terms behind a discount it gave (see
  * {@link Promotion#getDeletedAt()}), but it must never price another sale or appear in the
- * admin list — so there is deliberately no unfiltered lookup on this interface.
+ * admin list, so there is deliberately no unfiltered lookup on this interface.
  */
 public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
@@ -36,7 +36,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
      *
      * <p>This is what gets cached. Date and branch are filtered in memory on each call, because
      * a cached "active at time T" list is wrong the moment a start date passes, whereas the set
-     * of switched-on, non-deleted promotions only changes when someone edits one — and every
+     * of switched-on, non-deleted promotions only changes when someone edits one, and every
      * edit evicts. Ordered by priority so ties resolve the same way they always have.
      */
     @EntityGraph(attributePaths = "targets")
@@ -82,7 +82,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     /**
      * Counts a redemption that already happened. An offline till cannot see the caps, and the
      * customer has already paid and left, so the sale is recorded as it was made and the
-     * counters catch up — even past the limit. The limit still stops new online sales.
+     * counters catch up, even past the limit. The limit still stops new online sales.
      */
     @Modifying
     @Query(value = """
@@ -94,7 +94,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     int consumeUnchecked(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
 
     /**
-     * Gives budget back without giving a redemption back — what a partial return does.
+     * Gives budget back without giving a redemption back, what a partial return does.
      *
      * <p>The money came back, so the budget should reflect that. The promotion was still used on
      * that order, so the count should not move: a customer who returned one of three items has
@@ -121,7 +121,7 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     /**
      * Every promotion including retired ones, for the history page.
      *
-     * <p>The one place {@code deletedAt} is deliberately not filtered — a campaign that was
+     * <p>The one place {@code deletedAt} is deliberately not filtered, a campaign that was
      * deleted is exactly what history exists to still show.
      */
     @EntityGraph(attributePaths = "targets")
@@ -131,8 +131,8 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
      * What each promotion actually gave away, counting item-level and bill-level discounts
      * together.
      *
-     * <p>The two halves live in different tables — {@code order_items.promotion_id} for a line
-     * discount, {@code orders.bill_promotion_id} for a whole-order one — and RPT-08 reads only
+     * <p>The two halves live in different tables, {@code order_items.promotion_id} for a line
+     * discount, {@code orders.bill_promotion_id} for a whole-order one, and RPT-08 reads only
      * the second, which is why item campaigns report as nothing there. Revenue is attributed
      * once per order in each half, so summing the halves cannot double-count an order that had
      * both.

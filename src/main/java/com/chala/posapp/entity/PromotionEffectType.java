@@ -28,7 +28,7 @@ public enum PromotionEffectType {
      * cut on every item depending on what it cost, and on a thin-margin line it is a loss; a
      * share of margin is the same generosity everywhere and is bounded by the margin itself.
      *
-     * <p>A line whose cost is unknown gives nothing away — a share of an unknown profit would
+     * <p>A line whose cost is unknown gives nothing away, a share of an unknown profit would
      * be a guess, and guessing here spends real money.
      */
     PROFIT_SHARE;

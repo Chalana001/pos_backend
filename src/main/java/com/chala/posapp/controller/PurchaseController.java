@@ -69,7 +69,7 @@ public class PurchaseController {
      * Cancel this bill and issue a corrected one in a single transaction.
      *
      * Does the work of both {@code POST /purchases} and {@code POST /purchases/{id}/cancel},
-     * so it carries the same authority as those two — and must stay one call. Splitting it
+     * so it carries the same authority as those two, and must stay one call. Splitting it
      * across two requests from the browser leaves the shop with the original's stock
      * deleted and no replacement whenever the second request is the one that fails.
      *

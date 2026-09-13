@@ -9,13 +9,13 @@ import java.util.Set;
 /**
  * A request pattern owned by a module.
  *
- * <p>Patterns are Ant-style and matched against the <em>normalized</em> path — the leading
+ * <p>Patterns are Ant-style and matched against the <em>normalized</em> path, the leading
  * {@code /api} of the newer controllers is stripped first, so {@code /api/reports/v2/cash-flow}
  * is matched as {@code /reports/v2/cash-flow}. That keeps one rule working for both of the
  * path conventions that coexist in this codebase.
  *
  * <p>An empty {@code methods} set means the rule covers every HTTP method. Naming a subset is
- * how a module gates writes while leaving reads open — {@code SETTINGS_BRANCHES} owns
+ * how a module gates writes while leaving reads open, {@code SETTINGS_BRANCHES} owns
  * {@code POST/PUT/PATCH/DELETE /branches/**} but not {@code GET}, because every client needs
  * to read the branch list to boot.
  */
@@ -37,7 +37,7 @@ public record ModuleRoute(String pattern, Set<String> methods) {
         return new ModuleRoute(pattern, Collections.unmodifiableSet(upper));
     }
 
-    /** Every write verb — the usual "reads stay open, writes are gated" shape. */
+    /** Every write verb, the usual "reads stay open, writes are gated" shape. */
     public static ModuleRoute writes(String pattern) {
         return of(pattern, "POST", "PUT", "PATCH", "DELETE");
     }

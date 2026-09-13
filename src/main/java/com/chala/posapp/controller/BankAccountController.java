@@ -19,7 +19,7 @@ public class BankAccountController {
 
     private final BankAccountService bankAccountService;
 
-    // Every role can read — cashiers need this list to pick a bank account
+    // Every role can read, cashiers need this list to pick a bank account
     // when recording their own in-shift cash drop.
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/active")
@@ -27,14 +27,14 @@ public class BankAccountController {
         return ResponseEntity.ok(bankAccountService.listActive());
     }
 
-    // Management list (includes inactive ones) — Admin/Manager only.
+    // Management list (includes inactive ones), Admin/Manager only.
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
     public ResponseEntity<List<BankAccountResponse>> listAll() {
         return ResponseEntity.ok(bankAccountService.listAll());
     }
 
-    // Single account's own profile page — same access level as the
+    // Single account's own profile page, same access level as the
     // management list it's reached from.
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/{id}")

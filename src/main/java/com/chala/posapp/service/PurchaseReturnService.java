@@ -37,7 +37,7 @@ public class PurchaseReturnService {
     private final ReportCacheInvalidator        reportCacheInvalidator;
 
     // ---------------------------------------------------------------
-    // Helpers — BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // Helpers, BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(), use SecurityUtils instead
     // ---------------------------------------------------------------
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
@@ -97,17 +97,17 @@ public class PurchaseReturnService {
             }
 
             // Units: the request and the stored purchase_return_items.return_qty are in
-            // DISPLAY units — the unit the GRN line was entered in (grn_items.qty_unit).
+            // DISPLAY units, the unit the GRN line was entered in (grn_items.qty_unit).
             // grn_items.qty and stock batches are in normalized base units (thousandths:
             // 10 pcs = 10000). Compare display against display here, and normalize only
-            // for the stock math below — mixing the two scales is what previously let
+            // for the stock math below, mixing the two scales is what previously let
             // returns deduct 1/1000th of the stock and pass a ~1000x-too-loose cap.
             Item item = grnItem.getItem();
             int alreadyReturned = purchaseReturnItemRepository
                     .sumReturnedQtyByGrnItemId(grnItem.getId());
             // Free (FOC) units were received into stock too, so they are returnable.
             // Refunds use the line's diluted cost price, so returning everything
-            // (paid + free) refunds exactly the net amount paid — never more.
+            // (paid + free) refunds exactly the net amount paid, never more.
             BigDecimal displayFreeQty = grnItem.getDisplayFreeQty() == null
                     ? BigDecimal.ZERO : grnItem.getDisplayFreeQty();
             BigDecimal maxReturnable = grnItem.getDisplayQty()
@@ -283,8 +283,8 @@ public class PurchaseReturnService {
     //   and deduct returnQty from it
     // ---------------------------------------------------------------
 
-    // Both quantities below are in NORMALIZED base units — same scale as
-    // StockBatch.quantity — never the display units the caller typed.
+    // Both quantities below are in NORMALIZED base units, same scale as
+    // StockBatch.quantity, never the display units the caller typed.
     private void checkStockAvailableForReturn(GrnItem grnItem, int normalizedReturnQty,
                                                Long branchId, String grnNo) {
         Item item = grnItem.getItem();

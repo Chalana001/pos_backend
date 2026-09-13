@@ -149,7 +149,7 @@ public class PromotionService {
      *
      * <p>Past orders carry {@code promotion_id} and {@code bill_promotion_id} as plain
      * columns with no foreign key behind them, so removing the row left every sale it
-     * discounted pointing at nothing — the discounts stayed on the books while the terms
+     * discounted pointing at nothing, the discounts stayed on the books while the terms
      * that produced them were gone, and RPT-08 reported a null discount type for them for
      * good. Marking {@code deletedAt} keeps the row joinable for reporting; deactivating
      * alongside it means nothing downstream has to remember to check both columns.
@@ -216,7 +216,7 @@ public class PromotionService {
     }
 
     /**
-     * @param unitCost what this line actually costs — the cost of the batches it consumes.
+     * @param unitCost what this line actually costs, the cost of the batches it consumes.
      *                 Null falls back to the item's reference cost; see {@link PricingLine}.
      */
     public LineEvaluation evaluateLine(
@@ -439,7 +439,7 @@ public class PromotionService {
      * The running promotions for a branch as the till's engine will see them, versioned.
      *
      * <p>Sends every switched-on, non-deleted promotion covering the branch, including ones
-     * scheduled for later — the till checks dates itself, so a bundle fetched at 09:00 still
+     * scheduled for later, the till checks dates itself, so a bundle fetched at 09:00 still
      * prices the lunch special at 12:00. Withheld: code-gated promotions (a code cannot be
      * validated or consumed without the server) and promotions already at their cap.
      *
@@ -510,7 +510,7 @@ public class PromotionService {
         }
     }
 
-    /** "Would this code work right now?" — for the till, without consuming anything. */
+    /** "Would this code work right now?", for the till, without consuming anything. */
     public CodeCheckResponse checkCode(CodeCheckRequest request) {
         User user = securityUtils.getCurrentUser();
         Long branchId = resolveBranchId(user, request.getBranchId());
@@ -1128,7 +1128,7 @@ public class PromotionService {
     }
 
     /**
-     * @param cost what this price is being judged against — only a profit share reads it, but it
+     * @param cost what this price is being judged against, only a profit share reads it, but it
      *             has to be the cost of the same batch as {@code normalPrice} or the preview
      *             would mix one batch's price with another's cost.
      */
@@ -1239,7 +1239,7 @@ public class PromotionService {
      *
      * <p>Two refusals matter here and both are about a typo rather than a policy. An offer
      * price above the item's own selling price is a price rise, which is never the intent. An
-     * offer price below cost is how 39.90 typed for 399.00 shows up — legitimate as a loss
+     * offer price below cost is how 39.90 typed for 399.00 shows up, legitimate as a loss
      * leader, which is what {@code allowBelowCost} is for, and a mistake otherwise. Both name
      * the item and the numbers, because "invalid request" on a forty-line price list is
      * useless.
@@ -1345,7 +1345,7 @@ public class PromotionService {
     }
 
     /**
-     * The branch a campaign runs at — required, and required on the way in rather than only in
+     * The branch a campaign runs at, required, and required on the way in rather than only in
      * the builder.
      *
      * <p>This used to read null as "every branch". That reading stopped being defensible once a
@@ -1355,7 +1355,7 @@ public class PromotionService {
      */
     private Long normalizeBranchId(Long branchId) {
         if (branchId == null || branchId <= 0) {
-            throw new BadRequestException("A promotion runs at one branch — choose the branch it applies to");
+            throw new BadRequestException("A promotion runs at one branch. Choose the branch it applies to");
         }
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found");
@@ -1363,7 +1363,7 @@ public class PromotionService {
         return branchId;
     }
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     private Long resolveBranchId(User user, Long requestedBranchId) {
         if (user.getRole() == Role.CASHIER || user.getRole() == Role.MANAGER) {

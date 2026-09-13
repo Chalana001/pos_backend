@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.within;
  *
  * <p>An item bought twice at different costs and priced differently is two products wearing one
  * name. The margin guard used to read the reference cost kept on the item, which belongs to
- * neither batch: it passed a promotion that loses money on one of them, and FIFO — not the shop —
+ * neither batch: it passed a promotion that loses money on one of them, and FIFO, not the shop,
  * decides which one the customer gets.
  */
 class PromotionBatchMarginIntegrationTest extends ApiIntegrationTestSupport {
@@ -108,7 +108,7 @@ class PromotionBatchMarginIntegrationTest extends ApiIntegrationTestSupport {
         assertThat(line.path("batchCount").asInt()).isEqualTo(2);
         assertThat(line.path("minBatchPrice").asDouble()).isCloseTo(500, within(0.001));
         assertThat(line.path("maxBatchPrice").asDouble()).isCloseTo(600, within(0.001));
-        // The headline stays the item's price — that is the number the shop thinks in.
+        // The headline stays the item's price. That is the number the shop thinks in.
         assertThat(line.path("normalPrice").asDouble()).isCloseTo(600, within(0.001));
     }
 

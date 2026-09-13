@@ -30,7 +30,7 @@ import java.util.List;
  * </ul>
  *
  * <p>Reminders are recorded on the subscription ({@code last_reminder_type}) rather than sent
- * from here — this platform has no outbound channel wired for shop owners, so marking a
+ * from here. This platform has no outbound channel wired for shop owners, so marking a
  * reminder as done is the operator's action after they actually call. Recording it is what
  * stops two people chasing the same shop.
  */

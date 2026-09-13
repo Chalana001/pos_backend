@@ -52,7 +52,7 @@ public class NewReportService {
     private Long resolveBranchId(User user, Long requested) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) return requested;
         // requireAssignedBranch, not getBranchId(). users.branch_id is nullable, and a null
-        // returned here becomes qb(null) == 0 — which every report query reads as "all
+        // returned here becomes qb(null) == 0, which every report query reads as "all
         // branches". An unassigned manager or cashier saw the whole company.
         return securityUtils.requireAssignedBranch(user);
     }
@@ -204,7 +204,7 @@ public class NewReportService {
         DateRangeUtils.DateTimeRange range = DateRangeUtils.fullDayRange(resolvedFrom, resolvedTo);
         Long effectiveCashierId = (user.getRole() == Role.CASHIER) ? user.getId() : cashierUserId;
 
-        // findShiftsForReport spells "all branches" as NULL, not 0 — see bf().
+        // findShiftsForReport spells "all branches" as NULL, not 0. See bf().
         Page<CashShift> shiftPage = cashShiftRepository.findShiftsForReport(
                 bf(branchId), effectiveCashierId, range.from(), range.to(),
                 PageRequest.of(page, size, Sort.by("openedAt").descending()));
@@ -794,7 +794,7 @@ public class NewReportService {
             }
         }
 
-        // findForReport spells "all branches" as NULL, not 0 — see bf().
+        // findForReport spells "all branches" as NULL, not 0. See bf().
         Page<StockTransfer> transferPage = stockTransferRepository.findForReport(
                 bf(branchId), bf(fromBranchId), bf(toBranchId), statusEnum,
                 range.from(), range.to(),

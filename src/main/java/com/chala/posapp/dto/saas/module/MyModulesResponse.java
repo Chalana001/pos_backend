@@ -7,7 +7,7 @@ import java.util.Map;
  * What the POS app asks for at login to know which menu items and routes to render.
  *
  * <p>This is the replacement for the frontend's hardcoded {@code PLAN_FEATURES} matrix. The old
- * matrix failed <em>open</em> — {@code hasPlanFeature} returned {@code true} for any plan name it
+ * matrix failed <em>open</em>, {@code hasPlanFeature} returned {@code true} for any plan name it
  * did not recognise, so a null or misspelled plan unlocked the whole app. This response is
  * authoritative and enumerated: a key absent from {@code enabled} is off.
  *
@@ -27,7 +27,7 @@ public record MyModulesResponse(
     /**
      * One module as the POS app needs to describe it to a shop owner.
      *
-     * @param enabled whether this shop has it — included so the app can render a
+     * @param enabled whether this shop has it, included so the app can render a
      *                "what you have / what you don't" view without cross-referencing
      */
     public record CatalogEntry(

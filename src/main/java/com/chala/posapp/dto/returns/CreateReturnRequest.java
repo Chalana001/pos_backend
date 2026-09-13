@@ -10,7 +10,7 @@ import java.util.List;
 @Data
 public class CreateReturnRequest {
 
-    // Why the customer is returning — mandatory for audit trail
+    // Why the customer is returning, mandatory for audit trail
     @NotBlank(message = "reason is required")
     private String reason;
 

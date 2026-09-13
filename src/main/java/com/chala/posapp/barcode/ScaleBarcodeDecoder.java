@@ -6,7 +6,7 @@ import java.util.Optional;
 
 /**
  * Generic decoder for weight-/price-embedded "scale barcodes", driven entirely
- * by a branch's {@link BarcodeLabelSettings} — no hardcoded vendor format.
+ * by a branch's {@link BarcodeLabelSettings}, no hardcoded vendor format.
  *
  * A scale barcode is treated as: [prefix][item code][value][check digit?],
  * all digits, with each segment's length coming from the settings.

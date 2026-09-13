@@ -56,12 +56,12 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByStockProcessingEnabledTrueAndActiveTrueOrderByNameAsc();
 
-    // PERF-01 FIX: itemsWithBranchStockRaw() and itemsWithTotalStockRaw() removed —
+    // PERF-01 FIX: itemsWithBranchStockRaw() and itemsWithTotalStockRaw() removed,
     // both returned List<Object[]> with no LIMIT/OFFSET (10,000 items = 10,000 rows
     // loaded on every stock page). Zero callers confirmed: stock listing is served
     // by StockBatchRepository.getStockSummary() which already has proper pagination.
 
-    // BUG-09 FIX: Removed redundant searchItems() — it had no callers and duplicated
+    // BUG-09 FIX: Removed redundant searchItems(). It had no callers and duplicated
     // the simpler version of searchItemsWithFilters() below (which is the canonical method).
 
     @Query("""

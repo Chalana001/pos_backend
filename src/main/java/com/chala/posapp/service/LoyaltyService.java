@@ -191,8 +191,8 @@ public class LoyaltyService {
      *
      * <p>Refuses rather than silently trimming when the customer does not have the points: a
      * cashier who typed 500 and gets 300 taken off has a conversation to have. Everything else
-     * — the scheme's minimum, its ceiling on how much of a bill points may cover, and the bill
-     * itself — clamps quietly, because those are the shop's own limits and not a mistake.
+     *, the scheme's minimum, its ceiling on how much of a bill points may cover, and the bill
+     * itself, clamps quietly, because those are the shop's own limits and not a mistake.
      */
     @Transactional(readOnly = true)
     public Redemption quoteRedemption(Long customerId, int requestedPoints, double billTotal) {
@@ -230,7 +230,7 @@ public class LoyaltyService {
      * Books what a completed sale did to a customer's points: spends what was redeemed, earns on
      * what they actually paid.
      *
-     * <p>{@code MANDATORY} — this must run inside the order transaction, so a sale that fails
+     * <p>{@code MANDATORY}. This must run inside the order transaction, so a sale that fails
      * later never leaves points spent or awarded.
      *
      * <p>Earning is on the amount paid after every discount, points included. Earning on the
@@ -279,7 +279,7 @@ public class LoyaltyService {
     /**
      * Undoes a cancelled sale: points earned on it are taken back, points spent on it are
      * returned. The original rows stay and are marked reversed, with a REVERSAL row recording
-     * the movement — a balance history that edits itself is not a history.
+     * the movement, a balance history that edits itself is not a history.
      *
      * <p>A balance can go negative here, and is left to: the customer earned points and spent
      * them before the sale was cancelled. Clamping at zero would silently hand them the
@@ -329,10 +329,10 @@ public class LoyaltyService {
      *
      * <p>Two movements, in opposite directions. Points <em>earned</em> on the sale are clawed
      * back in proportion to the value returned. Points the customer <em>spent</em> come back to
-     * them, because the refund is only the cash share of the returned goods — the rest of their
+     * them, because the refund is only the cash share of the returned goods, the rest of their
      * price was paid in points, and a shop that refunds neither has kept it.
      *
-     * <p>A full return is not this path — the caller sends it to {@link #reverseForOrder},
+     * <p>A full return is not this path, the caller sends it to {@link #reverseForOrder},
      * which undoes the sale entirely.
      *
      * <p>The balance may go negative, and is left to: the customer may already have spent what
@@ -417,7 +417,7 @@ public class LoyaltyService {
         return new ReversalOutcome(takenBack, givenBack, balanceAfter);
     }
 
-    /** A manual correction — a goodwill award, or taking back points given in error. */
+    /** A manual correction, a goodwill award, or taking back points given in error. */
     @Transactional
     public LoyaltyAccountDto adjust(Long customerId, int points, String note, User user) {
         if (points == 0) {

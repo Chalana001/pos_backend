@@ -44,7 +44,7 @@ public class UserManagementService {
     private final PlatformTransactionManager transactionManager;
     private final SecurityUtils securityUtils;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
     @Audited(entity = "USER", action = "CREATE",
              summaryExpression = "'username=' + #request.username + ' role=' + #request.role")
@@ -153,7 +153,7 @@ public class UserManagementService {
                 .build();
     }
 
-    // MISS-07: Removed debug System.out.println — use structured logging if needed
+    // MISS-07: Removed debug System.out.println. Use structured logging if needed
     public @Nullable List<UserResponse> getCashiersInBranch(Long branchId) {
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found in the system");

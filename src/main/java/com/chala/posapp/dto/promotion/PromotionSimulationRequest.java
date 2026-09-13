@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
- * "What would this promotion have done?" — replayed against the last {@code days} of completed
+ * "What would this promotion have done?", replayed against the last {@code days} of completed
  * sales, on its own, before anyone activates it.
  */
 @Data

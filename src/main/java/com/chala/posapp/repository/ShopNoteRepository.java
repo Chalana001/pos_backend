@@ -10,7 +10,7 @@ import java.util.List;
 
 public interface ShopNoteRepository extends JpaRepository<ShopNote, Long> {
 
-    /** Pinned first, then newest — the order an operator wants to read them in. */
+    /** Pinned first, then newest, the order an operator wants to read them in. */
     List<ShopNote> findByTenantIdOrderByPinnedDescCreatedAtDesc(String tenantId);
 
     long countByTenantId(String tenantId);

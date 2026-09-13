@@ -45,7 +45,7 @@ public class ShiftService {
     private final PurchaseRepository purchaseRepository;
     private final BankAccountRepository bankAccountRepository;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
@@ -204,7 +204,7 @@ public class ShiftService {
         return map(shift);
     }
 
-    // Validates the bank account (if provided) exists and is still active —
+    // Validates the bank account (if provided) exists and is still active,
     // returns null unchanged for "not banked yet, went to a safe".
     private Long resolveActiveBankAccountId(Long bankAccountId) {
         if (bankAccountId == null) {
@@ -455,7 +455,7 @@ public class ShiftService {
 
     // Purchases paid out of THIS shift's cash drawer. These already reduce
     // Expected Cash (folded into totalExpenses by
-    // PurchaseService.applyDrawerCashOutIfNeeded) — this endpoint exists so the
+    // PurchaseService.applyDrawerCashOutIfNeeded). This endpoint exists so the
     // close-shift screen can show *which* purchases explain that number,
     // instead of leaving them invisible inside a single lump "Expenses" total.
     public Page<ShiftPurchaseSummaryResponse> getShiftPurchases(Long shiftId, int page, int size) {

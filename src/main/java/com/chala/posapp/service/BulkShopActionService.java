@@ -85,7 +85,7 @@ public class BulkShopActionService {
      * Per-shop isolation comes from the delegates, not from an annotation here: every service
      * called below is @Transactional on its own bean, and {@link #apply} deliberately is not,
      * so each shop's work commits or rolls back on its own. Annotating this method would be
-     * worse than useless — a self-invoked @Transactional is not proxied at all, so it would
+     * worse than useless, a self-invoked @Transactional is not proxied at all, so it would
      * read as isolation that isn't there.
      */
     private String applyOne(String action, String tenantId, BulkActionRequest request) {

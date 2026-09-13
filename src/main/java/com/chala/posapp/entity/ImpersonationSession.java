@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  *
  * <p>The issued token carries this row's {@link #tokenId} as its {@code jti}. Every request
  * made with that token is checked against this row, so revoking it ends the session
- * immediately rather than waiting for the token to expire — which is the difference between
+ * immediately rather than waiting for the token to expire, which is the difference between
  * a support tool and a permanent back door.
  */
 @Entity

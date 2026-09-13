@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 /**
  * A discount that can be applied when a shop is onboarded, renewed or moved between plans.
  *
- * <p>Validity is deliberately several independent conditions rather than one status column —
+ * <p>Validity is deliberately several independent conditions rather than one status column,
  * a code can be inside its date window but out of uses, or have uses left but be switched
  * off. {@link #rejectionReason()} says which, so the panel can explain a refusal instead of
  * just saying "invalid".
@@ -122,7 +122,7 @@ public class DiscountCode {
         return plans.isEmpty() || (planId != null && plans.contains(planId));
     }
 
-    /** Never returns more than the gross — a discount cannot make a bill negative. */
+    /** Never returns more than the gross, a discount cannot make a bill negative. */
     public double amountOff(double gross) {
         double off = discountType == DiscountType.PERCENT ? gross * (value / 100.0) : value;
         return Math.min(Math.max(off, 0), gross);

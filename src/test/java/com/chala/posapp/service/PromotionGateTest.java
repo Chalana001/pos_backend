@@ -38,7 +38,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * The gate in front of the engine — codes, caps, budgets, per-customer limits — and the ledger
+ * The gate in front of the engine, codes, caps, budgets, per-customer limits, and the ledger
  * writer behind it. Both are where a promotion becomes safe to leave running unattended.
  */
 class PromotionGateTest {

@@ -286,7 +286,7 @@ public class ItemService {
         } else {
             // No plain item carries this barcode as-is. Before giving up, see if
             // it decodes as a scale barcode under this branch's configured
-            // format (weight/price-embedded, per BarcodeLabelSettings) — if so,
+            // format (weight/price-embedded, per BarcodeLabelSettings), if so,
             // the item's own short `barcode` field doubles as the embedded
             // item/PLU code, so we look that up instead of adding a new field.
             decoded = decodeScaleBarcode(trimmedBarcode, branchId);
@@ -339,7 +339,7 @@ public class ItemService {
      * Resolves the sale quantity/amount implied by a decoded scale barcode against
      * the matched item's own pricing, reusing QuantityConversionUtil so this never
      * diverges from the rest of the pricing engine. Only meaningful for WEIGHT
-     * items with a positive selling price — returns null otherwise (the item is
+     * items with a positive selling price, returns null otherwise (the item is
      * still returned, just without the extra scale-resolved fields populated).
      */
     private ScaleBarcodeResolution resolveScaleBarcodeResolution(Item item, DecodedScaleBarcode decoded) {
@@ -362,7 +362,7 @@ public class ItemService {
             } else {
                 // PRICE_CENTS: the amount is embedded directly in the barcode; the
                 // weight is derived from it at this item's configured (per-kg)
-                // selling price — the inverse of calculateActualAmount's own math,
+                // selling price, the inverse of calculateActualAmount's own math,
                 // so the two value types stay consistent with each other.
                 amount = BigDecimal.valueOf(decoded.rawValue(), 2);
                 BigDecimal gramsExact = amount
@@ -457,7 +457,7 @@ public class ItemService {
         return requestedBranchId;
     }
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getOptionalCurrentUser() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getOptionalCurrentUser(). Use SecurityUtils instead
     // Note: uses getOptionalCurrentUser() because item-search endpoints may be called without auth
 
     public List<ItemResponse> searchForPos(String name, Long branchId) {
@@ -473,7 +473,7 @@ public class ItemService {
      * already drops anything never stocked at the branch, which is the rule that matters.
      *
      * @param categoryId    main category, or null
-     * @param subCategoryId sub-category, or null — what a single-category shop calls a category
+     * @param subCategoryId sub-category, or null, what a single-category shop calls a category
      */
     public List<ItemResponse> searchForPos(String name, Long branchId, Long categoryId, Long subCategoryId) {
         String searchTerm = name.trim();
@@ -965,7 +965,7 @@ public class ItemService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return "";
         }
-        // tenant_subscriptions lives in pos_master — switch context before the transaction opens.
+        // tenant_subscriptions lives in pos_master, switch context before the transaction opens.
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         tx.setReadOnly(true);

@@ -49,7 +49,7 @@ public class Supplier extends TenantEntity {
 
     private Boolean active = true;
 
-    /** MISS-06: Soft-delete timestamp — null means not deleted. */
+    /** MISS-06: Soft-delete timestamp, null means not deleted. */
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 

@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  * A customer's points.
  *
  * <p>{@code pointsBalance} is a running total kept alongside the ledger rather than derived on
- * every read — a balance is looked at far more often than it changes. Every transaction records
+ * every read, a balance is looked at far more often than it changes. Every transaction records
  * the balance it produced, so a disputed figure can be walked back through
  * {@code loyalty_transactions} rather than taken on trust.
  */

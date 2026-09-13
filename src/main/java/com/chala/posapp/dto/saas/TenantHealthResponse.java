@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
  *
  * <p>Every count is read straight from the tenant catalog rather than through JPA, so a shop
  * whose schema is behind or broken reports numbers instead of throwing. {@code reachable} is
- * false when the query failed — {@code error} then carries why.
+ * false when the query failed, {@code error} then carries why.
  */
 public record TenantHealthResponse(
         String tenantId,

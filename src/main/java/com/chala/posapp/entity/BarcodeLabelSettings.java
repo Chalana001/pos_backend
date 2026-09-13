@@ -134,7 +134,7 @@ public class BarcodeLabelSettings extends TenantEntity {
 
     // Key of the ScaleBarcodeFormatPresets template the admin started from, or
     // null/"CUSTOM" if every field below was filled in by hand. Informational
-    // only — decoding always uses the fields below, never this key.
+    // only; decoding always uses the fields below, never this key.
     @Column(name = "scale_barcode_preset_key", length = 50)
     private String scaleBarcodePresetKey;
 

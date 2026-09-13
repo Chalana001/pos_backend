@@ -19,7 +19,7 @@ public class ReturnsSummaryResponse {
 
     // Combined
     //
-    // WARNING: totalReturnAmount adds two opposite cash flows together —
+    // WARNING: totalReturnAmount adds two opposite cash flows together,
     // saleReturnTotal is money refunded OUT to customers, purchaseReturnTotal is
     // value recovered IN from suppliers. The sum is not a meaningful figure and
     // must not be presented as "total returns" to a shop owner. It is kept only
@@ -30,7 +30,7 @@ public class ReturnsSummaryResponse {
     private BigDecimal grossSales;
 
     // Standard accounting definition: gross sales less customer refunds.
-    // Purchase returns are deliberately NOT subtracted here — they reduce
+    // Purchase returns are deliberately NOT subtracted here. They reduce
     // inventory cost (COGS), not revenue.
     private BigDecimal netRevenue;            // grossSales - saleReturnTotal
 

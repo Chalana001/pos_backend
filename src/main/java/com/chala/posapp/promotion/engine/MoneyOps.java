@@ -12,7 +12,7 @@ import java.math.RoundingMode;
  * The arithmetic the pricing engine is allowed to do, in one place.
  *
  * <p>Everything here is {@link BigDecimal}. The engine used to compute in {@code double} and
- * round with BigDecimal afterwards, which patches the display but not the sum — the error has
+ * round with BigDecimal afterwards, which patches the display but not the sum, the error has
  * already happened by then. Money enters as BigDecimal, stays BigDecimal, and is rounded to
  * two places exactly once, at the boundary where it becomes a line total or a discount.
  */
@@ -85,7 +85,7 @@ public final class MoneyOps {
         return nz(unitPrice).multiply(ratio, INTERMEDIATE);
     }
 
-    /** A line's quantity in primary units — what buy-X-get-Y, bundles and tiers count in. */
+    /** A line's quantity in primary units, what buy-X-get-Y, bundles and tiers count in. */
     public static BigDecimal primaryUnits(ItemType itemType, int normalizedQty) {
         return QuantityConversionUtil.toPrimaryUnits(itemType, normalizedQty);
     }

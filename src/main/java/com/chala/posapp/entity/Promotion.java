@@ -59,7 +59,7 @@ public class Promotion extends TenantEntity {
     @Column(name = "end_at", nullable = false)
     private LocalDateTime endAt;
 
-    /** The branch this campaign runs at. Required since V50 — there is no "every branch". */
+    /** The branch this campaign runs at. Required since V50. There is no "every branch". */
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
@@ -75,8 +75,8 @@ public class Promotion extends TenantEntity {
      * Minimum gross margin, as a percentage of the discounted price, that a line must keep for
      * this promotion to apply. Null means no floor.
      *
-     * <p>Per-item pricing makes selling below cost easy — the price is typed straight in with
-     * nothing to compare it against — so this is the guard that catches 39.90 entered for
+     * <p>Per-item pricing makes selling below cost easy, the price is typed straight in with
+     * nothing to compare it against, so this is the guard that catches 39.90 entered for
      * 399.00 before it reaches a till.
      */
     @Column(name = "margin_floor_percent", precision = 5, scale = 2)

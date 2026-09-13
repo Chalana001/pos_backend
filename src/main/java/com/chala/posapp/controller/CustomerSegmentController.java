@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * Customer segments — the rules a promotion targets instead of a list of names.
+ * Customer segments, the rules a promotion targets instead of a list of names.
  *
  * <p>Root-mounted like the other shop-facing controllers, and claimed by the {@code PROMOTIONS}
  * module: a segment exists to be targeted by one, so it is switched on and off with them.
@@ -48,7 +48,7 @@ public class CustomerSegmentController {
         return ResponseEntity.noContent().build();
     }
 
-    /** Rebuilds membership from current order history. Not run at the till — see the service. */
+    /** Rebuilds membership from current order history. Not run at the till. See the service. */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping("/{id}/recompute")
     public ResponseEntity<CustomerSegmentDto> recompute(@PathVariable Long id) {

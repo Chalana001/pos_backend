@@ -44,9 +44,9 @@ public class PromotionResponse {
     /** How many codes gate this promotion; zero means it applies automatically. */
     private int codeCount;
     private boolean exhausted;
-    /** DRAFT, PENDING_APPROVAL, ACTIVE or PAUSED — the stored half of the lifecycle. */
+    /** DRAFT, PENDING_APPROVAL, ACTIVE or PAUSED, the stored half of the lifecycle. */
     private PromotionStatus status;
-    /** Live, scheduled, ended, exhausted and so on — derived, what the list shows. */
+    /** Live, scheduled, ended, exhausted and so on, derived, what the list shows. */
     private String lifecycle;
     private Long createdBy;
     private Long updatedBy;

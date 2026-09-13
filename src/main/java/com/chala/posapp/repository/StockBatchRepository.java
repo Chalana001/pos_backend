@@ -42,7 +42,7 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     List<StockBatch> findAvailableBatches(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
     /**
-     * FIFO batch lookup by selling price — also locked to prevent concurrent deduction races.
+     * FIFO batch lookup by selling price, also locked to prevent concurrent deduction races.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
@@ -210,5 +210,5 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 }
 
 // BUG-FIX: Removed duplicate StockBatchRepository interface definition that was below.
-// Identical to the above — dead code outside the closing brace caused a
+// Identical to the above, dead code outside the closing brace caused a
 // "duplicate class" compile error (same pattern as DashboardRepository BUG-01).

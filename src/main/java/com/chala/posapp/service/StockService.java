@@ -44,7 +44,7 @@ public class StockService {
     private final SecurityUtils securityUtils;
     private final GrnItemRepository grnItemRepository;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.enforceBranchAccess() centralised in SecurityUtils
 

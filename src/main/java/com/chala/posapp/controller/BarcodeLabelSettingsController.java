@@ -26,7 +26,7 @@ public class BarcodeLabelSettingsController {
         return ResponseEntity.ok(barcodeLabelSettingsService.getSettings(branchId));
     }
 
-    // Static starting-point templates for the scale-barcode format fields — see
+    // Static starting-point templates for the scale-barcode format fields. See
     // ScaleBarcodeFormatPresets. branchId is unused (same list for every branch)
     // but kept in the path so this route stays under the module-covered prefix
     // "/branches/*/barcode-label-settings/**" in ModuleCatalog.

@@ -153,7 +153,7 @@ public class Order extends TenantEntity {
     private java.math.BigDecimal loyaltyDiscountAmount = java.math.BigDecimal.ZERO;
 
     /**
-     * The balance those movements left, as at this sale — not the customer's balance now.
+     * The balance those movements left, as at this sale, not the customer's balance now.
      * A receipt reprinted next month has to show what the original slip showed.
      */
     @Column(name = "loyalty_points_balance", nullable = false)

@@ -127,7 +127,7 @@ public class PurchaseExcelImportService {
                 }
                 return;
             }
-            // barcode given but not found — fall through to name lookup only if name provided
+            // barcode given but not found, fall through to name lookup only if name provided
             if (name == null) {
                 row.setStatus(PurchaseImportRowStatus.NOT_FOUND);
                 row.setMessage("No item with barcode " + barcode);

@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  * A per-shop override of the plan default for one module.
  *
  * <p>The presence of a row is the override. Deleting it returns the shop to whatever its plan
- * says, which is what the panel's "reset to plan" action does — it does not write an
+ * says, which is what the panel's "reset to plan" action does. It does not write an
  * {@code enabled = plan default} row, because then a later plan change would not reach the shop.
  */
 @Entity
@@ -35,7 +35,7 @@ public class TenantModule {
     @Column(nullable = false)
     private boolean enabled;
 
-    /** Why this shop deviates — shown in the panel next to the toggle. */
+    /** Why this shop deviates, shown in the panel next to the toggle. */
     @Column(length = 255)
     private String note;
 

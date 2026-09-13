@@ -66,7 +66,7 @@ public class SuperAdminLifecycleController {
     }
 
     /**
-     * What a code would do to a given amount, without consuming it — so the onboarding and
+     * What a code would do to a given amount, without consuming it, so the onboarding and
      * renewal forms can show the discounted figure live.
      */
     @GetMapping("/discounts/preview")

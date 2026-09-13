@@ -31,7 +31,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
- * Issues and polices support sessions — an operator opening a shop's own POS without the
+ * Issues and polices support sessions, an operator opening a shop's own POS without the
  * owner's password.
  *
  * <p>Three things keep this a support tool rather than a back door:
@@ -57,7 +57,7 @@ public class ImpersonationService {
 
     /**
      * How long a validated jti stays trusted without re-reading the row. Short, because the
-     * whole point of revocation is that it takes effect promptly — 10 seconds bounds the
+     * whole point of revocation is that it takes effect promptly, 10 seconds bounds the
      * window while still collapsing a burst of requests into one query.
      */
     private static final long VALIDATION_CACHE_MILLIS = 10_000L;
@@ -163,7 +163,7 @@ public class ImpersonationService {
                         + " (" + session.getRequestCount() + " request(s) made)");
     }
 
-    /** Ends every live session on a shop — the "get everyone out" button. */
+    /** Ends every live session on a shop, the "get everyone out" button. */
     @Transactional
     public int revokeAllFor(String tenantId) {
         String actor = currentActor();
@@ -235,7 +235,7 @@ public class ImpersonationService {
     /**
      * Read straight from the security context rather than through AuthService.
      *
-     * AuthService needs the PasswordEncoder bean, which SecurityConfig declares — and
+     * AuthService needs the PasswordEncoder bean, which SecurityConfig declares, and
      * SecurityConfig injects ImpersonationFilter, which needs this service. Going through
      * AuthService for nothing more than a username closes that loop and the context refuses
      * to start. The authenticated principal's name is the same answer, one hop earlier.

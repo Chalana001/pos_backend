@@ -34,8 +34,8 @@ public class SubscriptionService {
     /**
      * The packages a shop can buy, each carrying the modules it actually includes.
      *
-     * <p>The module list is read from {@code plan_modules} — the same rows the API gate
-     * enforces — so the pricing page cannot advertise something the server would refuse.
+     * <p>The module list is read from {@code plan_modules}, the same rows the API gate
+     * enforces, so the pricing page cannot advertise something the server would refuse.
      */
     public List<PublicPlanResponse> getAllPlans() {
         return TenantContext.callWith("MASTER", () -> newMasterTx().execute(status ->

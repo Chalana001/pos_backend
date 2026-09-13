@@ -6,7 +6,7 @@ import java.util.List;
  * A plan as the POS app's packages page shows it to a shop owner.
  *
  * <p>Carries the module keys the plan includes, which is what lets the page build a real
- * comparison instead of a hand-written feature list — and means the page can never claim
+ * comparison instead of a hand-written feature list, and means the page can never claim
  * something the server does not actually grant.
  *
  * <p>Field names deliberately match the entity this replaced on {@code /api/saas/plans}, so

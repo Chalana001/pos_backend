@@ -11,7 +11,7 @@ import java.time.temporal.ChronoUnit;
  * timestamps are {@code DATETIME(3)} on MySQL, and both MySQL and H2 <em>round</em>
  * a value that is more precise than the column instead of truncating it. A job
  * stamped {@code 12:00:00.011199600} therefore lands in the table as
- * {@code 12:00:00.011} on MySQL and {@code 12:00:00.011200} on H2 — up to half a
+ * {@code 12:00:00.011} on MySQL and {@code 12:00:00.011200} on H2, up to half a
  * millisecond <em>after</em> the instant the worker actually stamped it. A poll
  * taken in that same window then evaluates {@code next_attempt_at <= now} as false
  * and silently skips a job that was due, because the stored value is in the future.

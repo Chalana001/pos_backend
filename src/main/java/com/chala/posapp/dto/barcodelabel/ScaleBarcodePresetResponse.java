@@ -4,7 +4,7 @@ import com.chala.posapp.entity.ScaleBarcodeValueType;
 
 /**
  * One starting-point template for the scale-barcode format settings screen.
- * See {@link com.chala.posapp.barcode.ScaleBarcodeFormatPresets} — these are
+ * See {@link com.chala.posapp.barcode.ScaleBarcodeFormatPresets}, these are
  * editable starting templates, not verified vendor specifications.
  */
 public record ScaleBarcodePresetResponse(

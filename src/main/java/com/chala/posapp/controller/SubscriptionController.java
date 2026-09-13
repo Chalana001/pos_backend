@@ -36,7 +36,7 @@ public class SubscriptionController {
     /**
      * How this shop reaches the platform operator, plus the platform's own name.
      *
-     * <p>Served under {@code /api/saas}, which is subscription-exempt — a shop whose
+     * <p>Served under {@code /api/saas}, which is subscription-exempt, a shop whose
      * subscription has lapsed is precisely the one that needs to see how to get in touch.
      */
     @GetMapping("/support-info")
@@ -58,7 +58,7 @@ public class SubscriptionController {
      *
      * <p>Replaces the frontend's hardcoded {@code PLAN_FEATURES} matrix, which failed open for
      * any unrecognised plan name. Scoped to the caller's own tenant by {@code TenantContext},
-     * so any authenticated shop user may call it — there is nothing here they cannot already
+     * so any authenticated shop user may call it. There is nothing here they cannot already
      * infer from which menu items work.
      */
     @GetMapping("/my-modules")

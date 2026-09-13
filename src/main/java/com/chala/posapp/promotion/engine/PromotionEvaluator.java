@@ -14,15 +14,15 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Decides what promotions do to a cart. Pure: no Spring, no repositories, no clock — every input
+ * Decides what promotions do to a cart. Pure: no Spring, no repositories, no clock, every input
  * arrives as an argument, so the same call gives the same answer anywhere it runs.
  *
  * <p>Two passes. {@link #evaluateLine} prices one line: the line-level candidates compete, the
  * winner and any STACKABLE ones apply, then the cashier's manual discount goes on top.
  * {@link #evaluateOrder} then prices the bill with the lines already priced: bill/customer
  * promotions and the cart-level effects (bundles, cheapest-free) compete, the result is taken
- * over the manual bill discount if larger. Deliberately different semantics per level — stacked
- * on the line, best-of on the bill — and pinned by tests so it stays a decision, not an accident.
+ * over the manual bill discount if larger. Deliberately different semantics per level, stacked
+ * on the line, best-of on the bill, and pinned by tests so it stays a decision, not an accident.
  *
  * <p>Stacking adds; it does not compound. Two stacked promotions worth 10 and 5 take 15 off,
  * which is what the receipt will say. Each is capped on its own first.
@@ -141,7 +141,7 @@ public final class PromotionEvaluator {
         // The caller rebuilds the final unit price from the returned type/value pair, so the pair
         // has to reproduce the price actually charged. A rate survives only when nothing altered
         // it: a second promotion stacked on, a manual discount on top, the cap biting, an offer
-        // price or any effect other than a plain rate — all mean the line no longer sells at that
+        // price or any effect other than a plain rate, all mean the line no longer sells at that
         // rate, and the pair collapses to the flat per-unit reduction. Returning PERCENT there
         // would re-expand to the uncapped discount downstream.
         boolean single = selection.chosen().size() == 1;
@@ -528,7 +528,7 @@ public final class PromotionEvaluator {
 
     /**
      * Every eligible whole unit in the cart as its own price, dearest first. Weight and volume
-     * lines contribute their whole primary units only — half a kilo is not a bundle item.
+     * lines contribute their whole primary units only, half a kilo is not a bundle item.
      * Capped so a pathological cart cannot expand into millions of entries.
      */
     private static List<BigDecimal> eligibleUnitPrices(PromotionSnapshot promotion, List<PricingLine> lines) {
@@ -554,7 +554,7 @@ public final class PromotionEvaluator {
 
     /**
      * Null when the promotion may price this line; otherwise the reason it may not. An item
-     * with no cost is left alone — there is nothing to measure against, and refusing on missing
+     * with no cost is left alone. There is nothing to measure against, and refusing on missing
      * data would disable promotions on half-set-up catalogues.
      */
     private static Outcome marginVerdict(PromotionSnapshot promotion, BigDecimal costPrice, BigDecimal discountedUnitPrice) {
@@ -575,7 +575,7 @@ public final class PromotionEvaluator {
     }
 
     /**
-     * Clamps a discount to the promotion's cap. Zero means no cap — the column is NOT NULL with a
+     * Clamps a discount to the promotion's cap. Zero means no cap, the column is NOT NULL with a
      * default of 0, so it cannot say "uncapped" any other way, and uncapped is the only reading
      * under which promotions written before the cap existed keep working.
      */

@@ -96,7 +96,7 @@ public interface StockTransferRepository extends JpaRepository<StockTransfer, Lo
             Pageable pageable
     );
 
-    // RPT-10: Stock transfer report — all transfers for a date range
+    // RPT-10: Stock transfer report, all transfers for a date range
     @Query("""
         SELECT st FROM StockTransfer st
         WHERE (:branchId IS NULL OR :branchId = 0 OR st.fromBranchId = :branchId OR st.toBranchId = :branchId)

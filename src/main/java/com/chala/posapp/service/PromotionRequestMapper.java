@@ -27,7 +27,7 @@ final class PromotionRequestMapper {
     }
 
     /**
-     * @param startAt / endAt override the request's dates — a replay over last month must not be
+     * @param startAt / endAt override the request's dates, a replay over last month must not be
      *                 gated by a window that starts next week
      */
     static PromotionSnapshot snapshot(PromotionRequest request, Long id, LocalDateTime startAt, LocalDateTime endAt) {

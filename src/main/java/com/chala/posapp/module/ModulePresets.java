@@ -11,12 +11,12 @@ import java.util.Set;
  *
  * <p>The three plan presets reproduce, exactly, what {@code SubscriptionFilter}'s hardcoded
  * {@code FREE_BLOCKED_PREFIXES} / {@code STANDARD_BLOCKED_PREFIXES} sets and the frontend
- * {@code PLAN_FEATURES} matrix did before the registry existed — so seeding them changes no
+ * {@code PLAN_FEATURES} matrix did before the registry existed, so seeding them changes no
  * shop's behaviour. From here on they are editable from the panel and this class is only the
  * initial value.
  *
  * <p>Anything not listed as disabled is enabled. That direction matters: a module added to the
- * catalog later defaults to on for every plan, which is the safe failure — a shop seeing a new
+ * catalog later defaults to on for every plan, which is the safe failure, a shop seeing a new
  * feature is a support conversation, a shop losing one mid-day is an outage.
  */
 public final class ModulePresets {

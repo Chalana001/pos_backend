@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>This is the precise half of revocation: it ends <em>one</em> session. The blunt half is
  * {@code users.token_valid_from}, which ends every session a user has at once and survives a
- * restart — that is what a password reset uses.
+ * restart. That is what a password reset uses.
  *
  * <p>Entries are held in memory, so a restart forgets them. A forgotten entry means a token
  * someone logged out of becomes usable again for the remainder of its 24 hours, which is why

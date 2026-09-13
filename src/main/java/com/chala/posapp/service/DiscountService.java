@@ -26,7 +26,7 @@ import java.util.Optional;
  * <p>{@link #preview} answers "what would this code do" without consuming it, so the panel can
  * show the discounted figure while the operator is still filling in the form. {@link #redeem}
  * is the only thing that increments usage, and it is called from inside the same transaction
- * as the billing record it discounts — so a failed renewal never burns a single-use code.
+ * as the billing record it discounts, so a failed renewal never burns a single-use code.
  */
 @Slf4j
 @Service
@@ -82,7 +82,7 @@ public class DiscountService {
         }
         DiscountCode entity = new DiscountCode();
         apply(entity, request, code);
-        // usedCount and createdBy are never taken from the request — a client must not be
+        // usedCount and createdBy are never taken from the request, a client must not be
         // able to pre-age a code or attribute it to somebody else.
         entity.setUsedCount(0);
         entity.setCreatedBy(currentActor());

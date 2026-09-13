@@ -431,9 +431,9 @@ class NewReportControllerIntegrationTest extends ApiIntegrationTestSupport {
                 .description("Cash flow test expense").createdAt(today.atTime(11, 0)).build());
 
         // Cash drops: one banked (tied to a BankAccount), one not (bankAccountId
-        // null — cash pulled from the drawer, not deposited yet). Neither prior
+        // null, cash pulled from the drawer, not deposited yet). Neither prior
         // fixture data nor this test exercised this path before V27/V28's
-        // CashDropsByAccount breakdown was added — this is the gap that let a
+        // CashDropsByAccount breakdown was added. This is the gap that let a
         // 500 in cashDropsByBankAccountRaw ship unnoticed.
         BankAccount account = bankAccountRepository.save(BankAccount.builder()
                 .name("Cash Flow Test Bank").active(true).build());

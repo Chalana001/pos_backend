@@ -92,7 +92,7 @@ public class TenantSubscription {
     @Column(name = "maintenance_message", length = 500)
     private String maintenanceMessage;
 
-    /** The moment access actually stops — the paid-until date plus any grace. */
+    /** The moment access actually stops, the paid-until date plus any grace. */
     public LocalDateTime getAccessEndsAt() {
         return graceDays > 0 ? validUntil.plusDays(graceDays) : validUntil;
     }

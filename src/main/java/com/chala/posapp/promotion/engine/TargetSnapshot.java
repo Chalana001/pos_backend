@@ -9,7 +9,7 @@ import java.math.BigDecimal;
  * One row of a promotion's target list, detached from the database.
  *
  * <p>Exactly one of the four ids is set, matching the scope of the owning promotion. The
- * price fields are the per-item override introduced by V34 and are usually null — a null
+ * price fields are the per-item override introduced by V34 and are usually null, a null
  * row inherits the promotion's own discount.
  */
 public record TargetSnapshot(
@@ -22,12 +22,12 @@ public record TargetSnapshot(
         BigDecimal discountValue,
         /**
          * Set instead of {@link #customerId} when the target names a rule rather than a person.
-         * The evaluator ignores it — see {@link #asCustomer}.
+         * The evaluator ignores it. See {@link #asCustomer}.
          */
         Long segmentId
 ) {
 
-    /** Everything but a segment — which is every target except the one kind the gate rewrites. */
+    /** Everything but a segment, which is every target except the one kind the gate rewrites. */
     public TargetSnapshot(Long itemId, Long categoryId, Long subCategoryId, Long customerId,
                           BigDecimal offerPrice, DiscountType discountType, BigDecimal discountValue) {
         this(itemId, categoryId, subCategoryId, customerId, offerPrice, discountType, discountValue, null);

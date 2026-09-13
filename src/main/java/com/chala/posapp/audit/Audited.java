@@ -18,10 +18,10 @@ import java.lang.annotation.*;
 @Documented
 public @interface Audited {
 
-    /** Logical entity type — e.g. "ORDER", "USER", "EXPENSE", "GRN". */
+    /** Logical entity type, e.g. "ORDER", "USER", "EXPENSE", "GRN". */
     String entity();
 
-    /** Action performed — e.g. "CREATE", "UPDATE", "CANCEL", "DELETE", "RESET_PASSWORD". */
+    /** Action performed, e.g. "CREATE", "UPDATE", "CANCEL", "DELETE", "RESET_PASSWORD". */
     String action();
 
     /**

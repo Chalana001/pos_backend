@@ -22,7 +22,7 @@ public class OrderReturnItem extends TenantEntity {
     @Column(name = "order_return_id", nullable = false)
     private Long orderReturnId;
 
-    // FK to original order_items.id — used for "already returned qty" checks
+    // FK to original order_items.id, used for "already returned qty" checks
     @Column(name = "order_item_id", nullable = false)
     private Long orderItemId;
 

@@ -7,7 +7,7 @@ import java.util.Map;
  * The sales copy a shop sees when it opens something its package does not include.
  *
  * <p>Separate from {@link ModuleDefinition#description()}, which is written for the operator
- * running the control panel — one flat line saying what the module is. This is written for a
+ * running the control panel, one flat line saying what the module is. This is written for a
  * shop owner deciding whether to pay for it, so it leads with the problem the module solves
  * and names outcomes in their own terms: stock, cash, staff, customers.
  *
@@ -15,7 +15,7 @@ import java.util.Map;
  * frontend release, and so the control panel can show operators exactly what their customers
  * are being told.
  *
- * @param headline the hook — one line, the reason to care, never a restatement of the name
+ * @param headline the hook, one line, the reason to care, never a restatement of the name
  * @param pitch    two sentences on what changes for the shop once it is on
  * @param outcomes concrete wins; deliberately specific, because "improves efficiency" sells
  *                 nothing to somebody counting a till at 10pm
@@ -186,7 +186,7 @@ public record ModulePitch(String headline, String pitch, List<String> outcomes) 
                             "Change how the shop runs without calling for support")))
     );
 
-    /** Copy for a module, or {@code null} when it has none — the caller falls back to the description. */
+    /** Copy for a module, or {@code null} when it has none, the caller falls back to the description. */
     public static ModulePitch forModule(String moduleKey) {
         if (moduleKey == null) {
             return null;

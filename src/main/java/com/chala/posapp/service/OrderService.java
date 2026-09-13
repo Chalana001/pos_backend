@@ -84,7 +84,7 @@ public class OrderService {
     private final OrderReturnRepository orderReturnRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     // DUP-05 FIX: securityUtils.requireAssignedBranch() centralised in SecurityUtils
 
@@ -100,7 +100,7 @@ public class OrderService {
     }
 
     // Cache eviction is NOT annotated here. It used to be, and importOfflineSale() calls
-    // createOrderInternal() directly — so every sale synced back from an offline till
+    // createOrderInternal() directly, so every sale synced back from an offline till
     // walked straight past it and invalidated nothing. reportCacheInvalidator is called
     // from createOrderInternal instead, which both paths go through.
     // MISS-03: Audit every sale creation
@@ -176,7 +176,7 @@ public class OrderService {
      *
      * This used to be @Transactional and call this.importOfflineSale() directly. Spring's
      * transaction advice lives on the proxy, so a self-invocation never opened the inner
-     * transaction the annotation promised and every row shared one — the per-row
+     * transaction the annotation promised and every row shared one, the per-row
      * success/failure this returns described an isolation the code did not have, and a
      * failed row's partial work stayed in the same persistence context until commit.
      *
@@ -237,7 +237,7 @@ public class OrderService {
 
         if (offlineOrderMetadata != null) {
             // The cash from this sale has to land in a real drawer. Silently dropping it
-            // when nothing is open — which is what ifPresent did — is how offline revenue
+            // when nothing is open, which is what ifPresent did, is how offline revenue
             // went missing. The queue page gates on this too, against the same rule.
             final Long shiftCashierUserId = cashierUserId;
             cashShiftRepository
@@ -265,13 +265,13 @@ public class OrderService {
         double promotionDiscountTotal = 0;
         // The moment the sale actually happened: the queued timestamp for an offline
         // import, now for a live checkout. Promotions were already evaluated against
-        // this, and created_at now uses it too — otherwise a sale made during an outage
+        // this, and created_at now uses it too; otherwise a sale made during an outage
         // is booked on the day it was pushed rather than the day it was made.
         // imported_at remains the record of when it reached the server.
         LocalDateTime soldAt = offlineOrderMetadata != null && offlineOrderMetadata.offlineSoldAt != null
                 ? offlineOrderMetadata.offlineSoldAt
                 : LocalDateTime.now();
-        // Promotions are never re-priced on an imported offline sale — but they are no longer
+        // Promotions are never re-priced on an imported offline sale, but they are no longer
         // absent from one either.
         //
         // The rule that has always governed this path still holds: whatever the till printed is
@@ -283,7 +283,7 @@ public class OrderService {
         // What changed is what the till knows. It now carries a versioned bundle of the running
         // promotions and prices with a port of this same engine, so it can print a discounted
         // price instead of list. The objection to that used to be that a second implementation
-        // of scopes, targets, caps, priority and best-of selection would drift from this one —
+        // of scopes, targets, caps, priority and best-of selection would drift from this one,
         // which is why the two are pinned to a shared fixture corpus that fails the build on any
         // divergence (backend PromotionCorpusTest, frontend promotionEngine.corpus.test.mjs).
         //
@@ -314,7 +314,7 @@ public class OrderService {
         // Index-aligned with preparedItems: the engine's verdicts per line, written to the
         // redemption ledger once the order items have ids.
         List<List<LineDecision>> lineDecisions = new ArrayList<>();
-        // Which of those lines carry a promotion — used by the offline path, where the verdicts
+        // Which of those lines carry a promotion, used by the offline path, where the verdicts
         // are the till's rather than this engine's.
         List<Integer> offlineLineIndexes = new ArrayList<>();
         boolean linesHaveExclusive = false;
@@ -324,8 +324,8 @@ public class OrderService {
 
         // A promotion's minBillAmount is judged against the whole cart at list price, so the
         // subtotal has to exist before the first line is priced. The items are batch-loaded
-        // into the persistence context here — with their category chain, which promotion
-        // matching reads — so the per-item findById in the loop below finds them already
+        // into the persistence context here, with their category chain, which promotion
+        // matching reads, so the per-item findById in the loop below finds them already
         // initialised instead of issuing two extra queries per line.
         double cartBaseSubtotal = activePromotions.isEmpty()
                 ? 0
@@ -389,7 +389,7 @@ public class OrderService {
             //
             // Online, the engine just decided it. Offline, the till decided it with its own copy
             // of the same engine and the bundle it held, and the customer has already paid that
-            // price and holds the receipt — so the till's attribution is recorded as given. The
+            // price and holds the receipt, so the till's attribution is recorded as given. The
             // arithmetic is not touched either way: discountType/discountValue above already
             // produced the price that was charged.
             Long linePromotionId;
@@ -460,8 +460,8 @@ public class OrderService {
         billDiscount = billPromotionApplication.appliedDiscountAmount();
 
         // Same rule as the lines: offline, the bill promotion the till applied is recorded as
-        // given. billDiscount already carries its amount — the till sent it as the bill
-        // discount — so only the attribution is taken from the metadata.
+        // given. billDiscount already carries its amount, the till sent it as the bill
+        // discount, so only the attribution is taken from the metadata.
         Long orderBillPromotionId;
         String orderBillPromotionName;
         double orderBillPromotionDiscount;
@@ -481,7 +481,7 @@ public class OrderService {
         }
 
         // Loyalty is settled last, on what the promotions left. Points are a balance the
-        // customer already owns — closer to part-payment than to a discount rule — so they are
+        // customer already owns, closer to part-payment than to a discount rule, so they are
         // not routed through the pricing engine and never affect which promotion wins.
         LoyaltyService.Redemption redemption = offlineOrderMetadata != null
                 ? LoyaltyService.Redemption.NONE
@@ -606,8 +606,8 @@ public class OrderService {
         }
 
         // Inside this transaction, so a sale that fails later never leaves points spent or
-        // awarded. Earning is on what was actually paid — after every discount, points
-        // included — so the scheme never pays points on money that did not change hands.
+        // awarded. Earning is on what was actually paid, after every discount, points
+        // included, so the scheme never pays points on money that did not change hands.
         if (offlineOrderMetadata == null && request.getCustomerId() != null) {
             LoyaltyService.SaleOutcome outcome = loyaltyService.applyToSale(request.getCustomerId(),
                     savedOrder.getId(), user.getId(), redemption.points(), grandTotal);
@@ -743,7 +743,7 @@ public class OrderService {
             }
         }
 
-        // A cancelled sale used to stay in every report until its TTL expired — nothing
+        // A cancelled sale used to stay in every report until its TTL expired. Nothing
         // on this path evicted anything.
         reportCacheInvalidator.salesChanged(order.getBranchId());
 
@@ -1164,7 +1164,7 @@ public class OrderService {
 
     private StockOverrideContext buildStockOverrideContext(CreateOrderRequest request, User user, boolean offlineImport) {
         // An offline sale has already happened: the goods left the shelf and the cash is
-        // in the drawer. Refusing it here un-sells nothing — it only keeps real revenue
+        // in the drawer. Refusing it here un-sells nothing. It only keeps real revenue
         // off the books and leaves a paid transaction stranded in the queue forever. So
         // the shortfall is absorbed, stock is allowed to go negative, and the resulting
         // StockOverrideAudit rows become the reconciliation trail for what went short.
@@ -1299,7 +1299,7 @@ public class OrderService {
         if (tenantId == null || "MASTER".equals(tenantId)) {
             return false;
         }
-        // tenant_subscriptions lives in pos_master, not the tenant DB —
+        // tenant_subscriptions lives in pos_master, not the tenant DB,
         // switch context before the transaction opens the Hibernate session.
         TransactionTemplate tx = new TransactionTemplate(transactionManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -1364,7 +1364,7 @@ public class OrderService {
     }
 
     /**
-     * The cart at list price, before any discount — what a promotion's {@code minBillAmount}
+     * The cart at list price, before any discount, what a promotion's {@code minBillAmount}
      * is measured against.
      *
      * <p>Items are fetched in one batch rather than one at a time: the main pricing loop
@@ -1585,7 +1585,7 @@ public class OrderService {
             }
         }
 
-        // Return summary — cheaply computed for every order response
+        // Return summary, cheaply computed for every order response
         long returnCount = orderReturnRepository.countByOriginalOrderId(order.getId());
         double totalReturnedAmount = orderReturnRepository
                 .findByOriginalOrderIdOrderByCreatedAtDesc(order.getId())
@@ -1738,7 +1738,7 @@ public class OrderService {
 
     /**
      * What the till knew that the server cannot re-derive: the number it printed, who took the
-     * money, and — since the till carries the promotion bundle — which promotions it applied
+     * money, and, since the till carries the promotion bundle, which promotions it applied
      * and under which version of the rules.
      */
     private static final class OfflineOrderMetadata {

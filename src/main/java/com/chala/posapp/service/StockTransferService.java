@@ -55,7 +55,7 @@ public class StockTransferService {
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
-    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike() — use SecurityUtils instead
+    // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
     private void ensureManagerBranchAccess(User user, Long branchId) {
         if (user.getRole() != Role.MANAGER) {
@@ -155,7 +155,7 @@ public class StockTransferService {
                         + " (Available: " + batch.getQuantity() + ")");
             }
 
-            // FIX (Bug #12): Collect batches to update — deduct AFTER transfer record is saved.
+            // FIX (Bug #12): Collect batches to update, deduct AFTER transfer record is saved.
             // Previously: deducted here → if transferRepository.save() failed, stock was permanently lost.
             transferItems.add(StockTransferItem.builder()
                     .transferId(null)
@@ -170,7 +170,7 @@ public class StockTransferService {
                             : item.getDefaultUnit())
                     .build());
 
-            // Track batches pending deduction — applied after transfer is persisted
+            // Track batches pending deduction, applied after transfer is persisted
             batch.setQuantity(batch.getQuantity() - normalizedQty);
         }
 

@@ -58,7 +58,7 @@ class CustomerSegmentServiceTest {
     }
 
     @Test
-    @DisplayName("a segment with no rules is refused — it would match the entire customer list")
+    @DisplayName("a segment with no rules is refused. It would match the entire customer list")
     void noRules() {
         assertThatThrownBy(() -> service.create(dto()))
                 .isInstanceOf(BadRequestException.class)
@@ -116,7 +116,7 @@ class CustomerSegmentServiceTest {
     void recomputeReplaces() {
         // Replacing rather than merging is the point: a customer who has dropped below the
         // threshold must leave, or a promotion goes on discounting for someone who no longer
-        // qualifies — and nobody would notice.
+        // qualifies, and nobody would notice.
         saved = CustomerSegment.builder().id(1L).name("Big spenders")
                 .minTotalSpend(BigDecimal.valueOf(50_000)).active(true).build();
         when(segmentRepository.findById(1L)).thenReturn(Optional.of(saved));

@@ -40,7 +40,7 @@ public final class CacheKeyUtils {
      * <p>Report services take the branch the caller <em>asked for</em> and then clamp it:
      * an admin keeps it, anyone else is forced onto their own assigned branch. Keying on
      * the raw request parameter therefore stored a clamped payload under the branch that
-     * was requested — a branch-1 manager asking for branch 3 wrote branch 1's figures to
+     * was requested, a branch-1 manager asking for branch 3 wrote branch 1's figures to
      * the branch 3 key, and the next admin to open branch 3 was served them.
      *
      * <p>Adding the scope makes that impossible. Admins share one namespace because they
@@ -48,7 +48,7 @@ public final class CacheKeyUtils {
      * else gets their own namespace, keyed on the principal name, so a clamped result can
      * only ever be read back by the user it was clamped for.
      *
-     * <p>Read from the {@code Authentication} rather than the database — this runs on
+     * <p>Read from the {@code Authentication} rather than the database. This runs on
      * every cached call, and the authorities are already on the token.
      */
     public static String scopedKey(Object... args) {

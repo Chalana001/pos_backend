@@ -10,7 +10,7 @@ import java.util.List;
  * authoritative for structure (key/parent/name/routes); the database only ever stores
  * <em>enabled-ness</em>, in {@code plan_modules} and {@code tenant_modules}.
  *
- * @param key           stable identifier, never renamed once shipped — plan_modules and
+ * @param key           stable identifier, never renamed once shipped, plan_modules and
  *                      tenant_modules rows reference it by string
  * @param parentKey     {@code null} for a top-level module, otherwise the parent's key.
  *                      A disabled parent disables every child regardless of the child's

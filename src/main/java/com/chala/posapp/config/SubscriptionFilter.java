@@ -28,8 +28,8 @@ import java.util.Optional;
  *
  * <p>Two checks, in order:
  * <ol>
- *   <li><strong>Subscription</strong> — inactive, blocked or expired returns 402.</li>
- *   <li><strong>Module</strong> — the module owning this route is switched off, returns 403.</li>
+ *   <li><strong>Subscription</strong>, inactive, blocked or expired returns 402.</li>
+ *   <li><strong>Module</strong>, the module owning this route is switched off, returns 403.</li>
  * </ol>
  *
  * <p>The module check used to be two hardcoded {@code Set<String>} prefix lists keyed on the
@@ -73,7 +73,7 @@ public class SubscriptionFilter extends OncePerRequestFilter {
 
         // Maintenance is checked before the paywall on purpose: telling a shop to renew
         // while its data is mid-migration would be both wrong and alarming. Different
-        // status too — 503 says "come back shortly", 402 says "you have not paid".
+        // status too, 503 says "come back shortly", 402 says "you have not paid".
         if (subscriptionOpt.isPresent() && subscriptionOpt.get().isMaintenanceMode()) {
             String maintenanceMessage = subscriptionOpt.get().getMaintenanceMessage();
             log.info("Maintenance mode active for tenant: {}", tenantId);
@@ -110,7 +110,7 @@ public class SubscriptionFilter extends OncePerRequestFilter {
         }
 
         // The boot reads (branch list, configuration, categories) are exempt from the module
-        // check but NOT from the subscription check above — an expired shop is still stopped.
+        // check but NOT from the subscription check above, an expired shop is still stopped.
         if (routeResolver.isModuleExempt(normalizedPath, method)) {
             filterChain.doFilter(request, response);
             return;

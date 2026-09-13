@@ -108,7 +108,7 @@ public class SuperAdminModuleService {
      *
      * <p>A change with {@code enabled == null} deletes the override row so the shop follows its
      * plan again. A change that would set the same value the plan already gives also deletes the
-     * row rather than storing a redundant one — otherwise a later plan edit would not reach a
+     * row rather than storing a redundant one; otherwise a later plan edit would not reach a
      * shop that had merely been "confirmed" at some point.
      */
     @Transactional
@@ -265,7 +265,7 @@ public class SuperAdminModuleService {
 
     /**
      * What the POS app fetches at login. Runs in whatever tenant context the caller is in, so it
-     * is safe to expose to a shop admin — it can only ever describe their own shop.
+     * is safe to expose to a shop admin. It can only ever describe their own shop.
      */
     @Transactional(readOnly = true)
     public MyModulesResponse getMyModules() {
@@ -344,7 +344,7 @@ public class SuperAdminModuleService {
                                                Map<String, Boolean> overrides,
                                                Set<String> effective,
                                                Map<String, String> overrideNotes) {
-        // The plan's own view, ignoring tenant overrides — that is what "planEnabled" means,
+        // The plan's own view, ignoring tenant overrides. That is what "planEnabled" means,
         // so the panel can show "plan says on, this shop has it off".
         Set<String> planEffective = moduleAccessService.computeEnabled(planDefaults, Map.of());
 

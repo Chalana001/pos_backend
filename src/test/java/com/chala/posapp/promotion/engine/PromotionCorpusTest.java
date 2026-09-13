@@ -221,7 +221,7 @@ class PromotionCorpusTest {
     void corpusMatchesEngine() throws IOException {
         // Compared as text, not as JsonNode. A BigDecimal serialises to a DecimalNode but parses
         // back as a DoubleNode, so tree equality fails on every decimal even when the numbers
-        // are identical — and it would fail silently in the direction that matters, by never
+        // are identical, and it would fail silently in the direction that matters, by never
         // agreeing. Both sides go through the same writer here, so the comparison is exact.
         String generated = mapper.writeValueAsString(generate()) + "\n";
         boolean write = Boolean.getBoolean("promotion.corpus.write");

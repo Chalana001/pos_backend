@@ -143,7 +143,7 @@ public class AuthService {
             tokenDenyList.revoke(jwtService.extractTokenId(bearerToken),
                     jwtService.extractExpiration(bearerToken));
         } catch (Exception exception) {
-            // Already expired or malformed — there is nothing left to revoke, and a logout
+            // Already expired or malformed. There is nothing left to revoke, and a logout
             // must never fail in a way that leaves the client believing it is still signed in.
             log.debug("Logout called with a token that could not be parsed", exception);
         }
