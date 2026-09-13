@@ -364,7 +364,11 @@ public class OrderService {
                     discountType,
                     discountValue,
                     cartBaseSubtotal,
-                    activePromotions
+                    activePromotions,
+                    // What this sale actually costs: the FIFO cost of the batches just consumed,
+                    // not the reference figure on the item. With two batches in stock they differ,
+                    // and the margin guard has to judge the one going out of the door.
+                    BigDecimal.valueOf(consumption.unitCost)
             );
             PromotionApplication promotionApplication = lineEvaluation.application();
             lineDecisions.add(lineEvaluation.decisions());
@@ -434,7 +438,8 @@ public class OrderService {
                     .build();
 
             preparedItems.add(new PreparedOrderItem(orderItem, consumption.usages, consumption.overrides));
-            pricedLines.add(PricingLine.from(item, finalUnitPrice, normalizedQty, DiscountType.NONE, 0));
+            pricedLines.add(PricingLine.from(item, finalUnitPrice, normalizedQty, DiscountType.NONE, 0,
+                    BigDecimal.valueOf(consumption.unitCost)));
             linesHaveExclusive |= promotionApplication.exclusive();
             subTotal += lineTotal;
         }

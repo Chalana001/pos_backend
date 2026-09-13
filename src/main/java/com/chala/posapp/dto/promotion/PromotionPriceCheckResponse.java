@@ -29,6 +29,17 @@ public class PromotionPriceCheckResponse {
         private String barcode;
         private BigDecimal normalPrice;
         private BigDecimal costPrice;
+
+        /**
+         * The spread of live batch prices behind {@code normalPrice}, when there is one.
+         *
+         * <p>An item sold from two batches has two prices, and the promotion means something
+         * different against each. Null when the item has no stocked batches, and equal to each
+         * other when every batch agrees — the table only says anything when they differ.
+         */
+        private BigDecimal minBatchPrice;
+        private BigDecimal maxBatchPrice;
+        private int batchCount;
         private BigDecimal offerPrice;
         private BigDecimal discountAmount;
         private BigDecimal discountPercent;

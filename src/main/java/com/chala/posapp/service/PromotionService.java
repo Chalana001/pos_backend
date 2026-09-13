@@ -52,6 +52,7 @@ public class PromotionService {
     private final CustomerSegmentRepository customerSegmentRepository;
     private final PromotionLifecycleService lifecycleService;
     private final PromotionSimulationService simulationService;
+    private final com.chala.posapp.repository.StockBatchRepository stockBatchRepository;
 
     public List<PromotionResponse> list() {
         return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
@@ -210,7 +211,26 @@ public class PromotionService {
             double cartBaseSubtotal,
             List<PromotionSnapshot> activePromotions
     ) {
-        PricingLine line = PricingLine.from(item, unitPrice, normalizedQty, manualType, manualValue);
+        return evaluateLine(item, branchId, unitPrice, normalizedQty, manualType, manualValue,
+                cartBaseSubtotal, activePromotions, null);
+    }
+
+    /**
+     * @param unitCost what this line actually costs — the cost of the batches it consumes.
+     *                 Null falls back to the item's reference cost; see {@link PricingLine}.
+     */
+    public LineEvaluation evaluateLine(
+            Item item,
+            Long branchId,
+            double unitPrice,
+            int normalizedQty,
+            DiscountType manualType,
+            double manualValue,
+            double cartBaseSubtotal,
+            List<PromotionSnapshot> activePromotions,
+            BigDecimal unitCost
+    ) {
+        PricingLine line = PricingLine.from(item, unitPrice, normalizedQty, manualType, manualValue, unitCost);
         return PromotionEvaluator.evaluateLine(line, branchId, BigDecimal.valueOf(cartBaseSubtotal), activePromotions);
     }
 
@@ -971,27 +991,38 @@ public class PromotionService {
                 continue;
             }
             double normalPrice = item.getSellingPrice() == null ? 0 : item.getSellingPrice().doubleValue();
-            double cost = item.getCostPrice() == null ? 0 : item.getCostPrice().doubleValue();
 
+            // The headline figures stay the item's - that is the price the shop thinks in, and
+            // the column the table shows. The verdict below does not: it is taken from the
+            // batches this promotion would actually sell.
             double offerPrice = resolveCheckPrice(line, request, normalPrice);
             double discountAmount = roundMoney(Math.max(0, normalPrice - offerPrice));
             double discountPercent = normalPrice > 0 ? roundMoney((discountAmount / normalPrice) * 100.0) : 0;
-            double marginPercent = offerPrice > 0 ? roundMoney(((offerPrice - cost) / offerPrice) * 100.0) : 0;
+
+            BatchVerdict verdict = worstBatchVerdict(item, line, request, offerPrice);
+            double cost = verdict.cost();
+            double marginPercent = verdict.marginPercent();
 
             String status = "OK";
             String message = null;
             if (line.getOfferPrice() != null && normalPrice > 0 && line.getOfferPrice().doubleValue() > normalPrice) {
                 status = "ABOVE_NORMAL_PRICE";
                 message = "Offer price is above the normal price";
-            } else if (item.getCostPrice() != null && offerPrice < cost) {
+            } else if (verdict.belowCost()) {
                 status = "BELOW_COST";
-                message = String.format("Sells at %.2f against a cost of %.2f", offerPrice, cost);
+                message = verdict.batchLabel() == null
+                        ? String.format("Sells at %.2f against a cost of %.2f", verdict.price(), cost)
+                        : String.format("Batch %s sells at %.2f against a cost of %.2f",
+                                verdict.batchLabel(), verdict.price(), cost);
                 belowCost++;
             } else if (request.getMarginFloorPercent() != null
                     && marginPercent < request.getMarginFloorPercent().doubleValue()) {
                 status = "LOW_MARGIN";
-                message = String.format("Margin %.1f%% is below the %.1f%% floor",
-                        marginPercent, request.getMarginFloorPercent().doubleValue());
+                message = verdict.batchLabel() == null
+                        ? String.format("Margin %.1f%% is below the %.1f%% floor",
+                                marginPercent, request.getMarginFloorPercent().doubleValue())
+                        : String.format("Batch %s leaves %.1f%%, below the %.1f%% floor",
+                                verdict.batchLabel(), marginPercent, request.getMarginFloorPercent().doubleValue());
                 belowFloor++;
             }
 
@@ -1003,7 +1034,10 @@ public class PromotionService {
                     .itemName(item.getName())
                     .barcode(item.getBarcode())
                     .normalPrice(bd(normalPrice))
-                    .costPrice(item.getCostPrice())
+                    .costPrice(bd(cost))
+                    .minBatchPrice(verdict.minPrice() == null ? null : bd(verdict.minPrice()))
+                    .maxBatchPrice(verdict.maxPrice() == null ? null : bd(verdict.maxPrice()))
+                    .batchCount(verdict.batchCount())
                     .offerPrice(bd(offerPrice))
                     .discountAmount(bd(discountAmount))
                     .discountPercent(bd(discountPercent))
@@ -1020,6 +1054,71 @@ public class PromotionService {
                 .averageDiscountPercent(bd(results.isEmpty() ? 0 : roundMoney(discountPercentSum / results.size())))
                 .maxLineDiscount(bd(maxLineDiscount))
                 .build();
+    }
+
+    /**
+     * The worst a promotion does across an item's live batches.
+     *
+     * <p>An item bought twice at different costs and priced differently is two products wearing
+     * one name. A guard that reads the item's reference cost passes a promotion that loses money
+     * on one batch and makes money on the other, and FIFO decides which one the customer gets -
+     * the shop does not. So every batch with stock is priced, and the one with the thinnest
+     * margin is the answer, because that is the sale that will happen sooner or later.
+     *
+     * <p>Each batch is priced the way the engine will price it, offer price capped at that
+     * batch's own price, since {@code lineEffectDiscount} takes {@code min(offerPrice, unitPrice)}
+     * and never raises a price.
+     *
+     * <p>An item with no batches - a service, a recipe, something never received - falls back to
+     * the item's own figures, which is exactly what this did before.
+     */
+    private BatchVerdict worstBatchVerdict(Item item, PromotionItemLine line,
+                                           PromotionPriceCheckRequest request, double itemOfferPrice) {
+        double itemCost = item.getCostPrice() == null ? 0 : item.getCostPrice().doubleValue();
+        boolean itemHasCost = item.getCostPrice() != null;
+
+        List<com.chala.posapp.entity.stock.StockBatch> batches = request.getBranchId() != null
+                ? stockBatchRepository.findByBranchIdAndItemId(request.getBranchId(), item.getId())
+                : stockBatchRepository.findByItemId(item.getId());
+
+        List<com.chala.posapp.entity.stock.StockBatch> live = batches.stream()
+                .filter(b -> b.getQuantity() != null && b.getQuantity() > 0)
+                .filter(b -> b.getSellingPrice() != null && b.getSellingPrice().signum() > 0)
+                .toList();
+
+        if (live.isEmpty()) {
+            double margin = itemOfferPrice > 0 ? roundMoney(((itemOfferPrice - itemCost) / itemOfferPrice) * 100.0) : 0;
+            return new BatchVerdict(itemCost, margin, itemHasCost && itemOfferPrice < itemCost,
+                    itemOfferPrice, null, null, null, 0);
+        }
+
+        Double minPrice = null;
+        Double maxPrice = null;
+        BatchVerdict worst = null;
+
+        for (com.chala.posapp.entity.stock.StockBatch batch : live) {
+            double batchPrice = batch.getSellingPrice().doubleValue();
+            minPrice = minPrice == null ? batchPrice : Math.min(minPrice, batchPrice);
+            maxPrice = maxPrice == null ? batchPrice : Math.max(maxPrice, batchPrice);
+
+            double batchCost = batch.getCostPrice() == null ? itemCost : batch.getCostPrice().doubleValue();
+            boolean hasCost = batch.getCostPrice() != null || itemHasCost;
+            double price = Math.min(resolveCheckPrice(line, request, batchPrice), batchPrice);
+            double margin = price > 0 ? roundMoney(((price - batchCost) / price) * 100.0) : 0;
+
+            if (worst == null || margin < worst.marginPercent()) {
+                worst = new BatchVerdict(batchCost, margin, hasCost && price < batchCost, price,
+                        batch.getBatchCode(), null, null, 0);
+            }
+        }
+
+        return new BatchVerdict(worst.cost(), worst.marginPercent(), worst.belowCost(), worst.price(),
+                worst.batchLabel(), minPrice, maxPrice, live.size());
+    }
+
+    /** What the worst batch says, plus the spread the table shows. */
+    private record BatchVerdict(double cost, double marginPercent, boolean belowCost, double price,
+                                String batchLabel, Double minPrice, Double maxPrice, int batchCount) {
     }
 
     private double resolveCheckPrice(PromotionItemLine line, PromotionPriceCheckRequest request, double normalPrice) {

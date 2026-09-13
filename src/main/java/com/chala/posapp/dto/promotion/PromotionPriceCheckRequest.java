@@ -17,6 +17,9 @@ public class PromotionPriceCheckRequest {
     @NotNull
     private List<PromotionItemLine> items;
 
+    /** The promotion's branch, or null for every branch — decides whose batches are checked. */
+    private Long branchId;
+
     /** Falls back to each item's own rate when a line carries no price of its own. */
     private com.chala.posapp.entity.DiscountType discountType;
     private double discountValue;

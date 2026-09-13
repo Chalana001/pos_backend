@@ -36,6 +36,24 @@ public record PricingLine(
 
     public static PricingLine from(Item item, double unitPrice, int normalizedQty,
                                    DiscountType manualType, double manualValue) {
+        return from(item, unitPrice, normalizedQty, manualType, manualValue, item.getCostPrice());
+    }
+
+    /**
+     * The same line, priced against a cost the caller knows better than the item does.
+     *
+     * <p>{@code item.costPrice} is a reference figure kept on the item; what a sale actually
+     * costs is the cost of the batches it consumes, and with two batches in stock those differ.
+     * A margin guard reading the reference figure passes a sale that loses money on the batch
+     * actually going out of the door. The sale hands over the FIFO cost it just computed.
+     *
+     * @param unitCost per unit, in the same units as {@code unitPrice}; a null or non-positive
+     *                 value falls back to the item's own cost, which is what a service or a
+     *                 recipe item with no batches has.
+     */
+    public static PricingLine from(Item item, double unitPrice, int normalizedQty,
+                                   DiscountType manualType, double manualValue, BigDecimal unitCost) {
+        BigDecimal cost = unitCost != null && unitCost.signum() > 0 ? unitCost : item.getCostPrice();
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
         return new PricingLine(
@@ -44,7 +62,7 @@ public record PricingLine(
                 subCategory != null ? subCategory.getId() : null,
                 category != null ? category.getId() : null,
                 BigDecimal.valueOf(unitPrice),
-                item.getCostPrice(),
+                cost,
                 normalizedQty,
                 manualType == null ? DiscountType.NONE : manualType,
                 BigDecimal.valueOf(manualValue)
