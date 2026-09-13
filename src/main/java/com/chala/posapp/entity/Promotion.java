@@ -59,7 +59,8 @@ public class Promotion extends TenantEntity {
     @Column(name = "end_at", nullable = false)
     private LocalDateTime endAt;
 
-    @Column(name = "branch_id")
+    /** The branch this campaign runs at. Required since V50 — there is no "every branch". */
+    @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
     @Column(nullable = false)

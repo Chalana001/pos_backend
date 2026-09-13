@@ -40,6 +40,8 @@ public class PromotionRequest {
     @NotNull
     private LocalDateTime endAt;
 
+    /** Which branch the campaign runs at. Required — a campaign is priced against one branch's stock. */
+    @NotNull
     private Long branchId;
 
     private boolean active = true;

@@ -1,5 +1,6 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.dto.promotion.PromotionRequest;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.Item;
@@ -9,6 +10,8 @@ import com.chala.posapp.entity.Promotion;
 import com.chala.posapp.entity.PromotionScope;
 import com.chala.posapp.entity.PromotionTarget;
 import com.chala.posapp.entity.SubCategory;
+import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.promotion.engine.PromotionApplication;
 import com.chala.posapp.promotion.engine.PromotionOrderApplication;
 import com.chala.posapp.promotion.engine.PromotionSnapshot;
@@ -29,6 +32,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.mock;
 
@@ -67,6 +71,50 @@ class PromotionServiceTest {
                 mock(PromotionSimulationService.class),
                 mock(com.chala.posapp.repository.StockBatchRepository.class)
         );
+    }
+
+    @Nested
+    @DisplayName("a campaign must name a branch")
+    class BranchRequired {
+
+        /** Valid up to the branch check and no further — validateTargets runs after it. */
+        private PromotionRequest tenPercent() {
+            PromotionRequest request = new PromotionRequest();
+            request.setName("Ten off");
+            request.setScope(PromotionScope.ITEM);
+            request.setDiscountType(DiscountType.PERCENT);
+            request.setDiscountValue(10);
+            request.setStartAt(java.time.LocalDateTime.now());
+            request.setEndAt(java.time.LocalDateTime.now().plusDays(7));
+            return request;
+        }
+
+        @Test
+        @DisplayName("refuses one with no branch rather than reading it as every branch")
+        void refusesMissingBranch() {
+            assertThatThrownBy(() -> service.create(tenPercent()))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasMessageContaining("one branch");
+        }
+
+        @Test
+        @DisplayName("refuses branch zero, which is what the top bar's All Branches sends")
+        void refusesBranchZero() {
+            PromotionRequest request = tenPercent();
+            request.setBranchId(0L);
+            assertThatThrownBy(() -> service.create(request))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasMessageContaining("one branch");
+        }
+
+        @Test
+        @DisplayName("refuses a branch that does not exist")
+        void refusesUnknownBranch() {
+            PromotionRequest request = tenPercent();
+            request.setBranchId(42L);
+            assertThatThrownBy(() -> service.create(request))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
     }
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────

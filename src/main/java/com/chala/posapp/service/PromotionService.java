@@ -1344,9 +1344,18 @@ public class PromotionService {
                         .build()));
     }
 
+    /**
+     * The branch a campaign runs at — required, and required on the way in rather than only in
+     * the builder.
+     *
+     * <p>This used to read null as "every branch". That reading stopped being defensible once a
+     * campaign was priced against the stock of the branch selling it: an all-branches campaign
+     * is judged on the worst batch anywhere, can offer items a branch does not carry, and gives
+     * the margin guard nothing definite to measure. V50 makes the column agree.
+     */
     private Long normalizeBranchId(Long branchId) {
         if (branchId == null || branchId <= 0) {
-            return null;
+            throw new BadRequestException("A promotion runs at one branch — choose the branch it applies to");
         }
         if (!branchRepository.existsById(branchId)) {
             throw new ResourceNotFoundException("Branch not found");
