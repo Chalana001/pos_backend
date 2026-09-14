@@ -1,7 +1,6 @@
 package com.chala.posapp.dto.barcodelabel;
 
 import com.chala.posapp.entity.ItemNameSource;
-import com.chala.posapp.entity.ScaleBarcodeValueType;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
@@ -111,29 +110,4 @@ public class BarcodeLabelSettingsRequest {
     // must start with '['; otherwise stored as null → legacy layout).
     private String layoutJson;
 
-    // Scale-barcode decoding (weight/price-embedded barcodes from the shop's
-    // own weighing-scale device). See ScaleBarcodeDecoder / ScaleBarcodeFormatPresets.
-    private boolean scaleBarcodeEnabled;
-
-    @Size(max = 50)
-    private String scaleBarcodePresetKey;
-
-    @Size(max = 4)
-    private String scaleBarcodePrefix;
-
-    @Min(0)
-    @Max(4)
-    private int scaleBarcodePrefixLength;
-
-    @Min(1)
-    @Max(20)
-    private int scaleBarcodeItemCodeLength;
-
-    @Min(1)
-    @Max(20)
-    private int scaleBarcodeValueLength;
-
-    private ScaleBarcodeValueType scaleBarcodeValueType;
-
-    private boolean scaleBarcodeHasCheckDigit;
 }

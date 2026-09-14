@@ -1,6 +1,8 @@
 package com.chala.posapp.dto.configuration;
 
 import com.chala.posapp.entity.CategoryMode;
+import com.chala.posapp.entity.MeasurementUnit;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
 import com.chala.posapp.entity.StockOverrideMode;
 import lombok.Builder;
 import lombok.Data;
@@ -25,4 +27,16 @@ public class AppConfigurationResponse {
     private boolean adminWarrantyAllowed;
     private boolean managerWarrantyAllowed;
     private boolean cashierWarrantyAllowed;
+
+    private boolean scaleBarcodeEnabled;
+    private String scaleBarcodePresetKey;
+    private String scaleBarcodePrefix;
+    private int scaleBarcodePrefixLength;
+    private int scaleBarcodeItemCodeLength;
+    private int scaleBarcodeValueLength;
+    private ScaleBarcodeValueType scaleBarcodeValueType;
+    private MeasurementUnit scaleBarcodeWeightUnit;
+    private int scaleBarcodeValueDecimals;
+    private boolean scaleBarcodeStripLeadingZeros;
+    private boolean scaleBarcodeHasCheckDigit;
 }

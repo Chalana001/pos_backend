@@ -11,7 +11,6 @@ import com.chala.posapp.dto.item.ItemUpdateRequest;
 import com.chala.posapp.dto.item.StockProcessingOutputLinkRequest;
 import com.chala.posapp.dto.item.StockProcessingOutputLinkResponse;
 import com.chala.posapp.dto.stock.StockBatchResponse;
-import com.chala.posapp.entity.BarcodeLabelSettings;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.BranchServiceItem;
 import com.chala.posapp.entity.Category;
@@ -31,7 +30,6 @@ import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
-import com.chala.posapp.repository.BarcodeLabelSettingsRepository;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.BranchServiceItemRepository;
 import com.chala.posapp.repository.ItemRepository;
@@ -78,7 +76,6 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final StockBatchRepository stockBatchRepository;
-    private final BarcodeLabelSettingsRepository barcodeLabelSettingsRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
@@ -286,7 +283,7 @@ public class ItemService {
         } else {
             // No plain item carries this barcode as-is. Before giving up, see if
             // it decodes as a scale barcode under this branch's configured
-            // format (weight/price-embedded, per BarcodeLabelSettings), if so,
+            // format (weight/price-embedded, per AppConfiguration), if so,
             // the item's own short `barcode` field doubles as the embedded
             // item/PLU code, so we look that up instead of adding a new field.
             decoded = decodeScaleBarcode(trimmedBarcode, branchId);
@@ -331,8 +328,7 @@ public class ItemService {
         if (branchId == null) {
             return null;
         }
-        BarcodeLabelSettings settings = barcodeLabelSettingsRepository.findByBranchId(branchId).orElse(null);
-        return ScaleBarcodeDecoder.tryDecode(barcode, settings).orElse(null);
+        return ScaleBarcodeDecoder.tryDecode(barcode, appConfigurationService.getScaleBarcodeFormat(branchId)).orElse(null);
     }
 
     /**
@@ -356,15 +352,20 @@ public class ItemService {
             int grams;
             BigDecimal amount;
 
-            if (decoded.valueType() == ScaleBarcodeValueType.WEIGHT_GRAMS) {
-                grams = decoded.rawValue();
+            if (decoded.valueType() == ScaleBarcodeValueType.WEIGHT) {
+                // The decoder has already applied the branch's unit and implied
+                // decimals, so this is grams, possibly with a fraction when the
+                // scale prints finer than a gram. Stock and orders are whole
+                // grams (normalizeQuantity rejects fractions), so round rather
+                // than refuse: a sub-gram digit is not a reason to lose a sale.
+                grams = decoded.value().setScale(0, RoundingMode.HALF_UP).intValueExact();
                 amount = QuantityConversionUtil.calculateActualAmount(item, sellingPrice, grams);
             } else {
-                // PRICE_CENTS: the amount is embedded directly in the barcode; the
+                // PRICE: the amount is embedded directly in the barcode; the
                 // weight is derived from it at this item's configured (per-kg)
                 // selling price, the inverse of calculateActualAmount's own math,
                 // so the two value types stay consistent with each other.
-                amount = BigDecimal.valueOf(decoded.rawValue(), 2);
+                amount = decoded.value().setScale(2, RoundingMode.HALF_UP);
                 BigDecimal gramsExact = amount
                         .multiply(BigDecimal.valueOf(1000))
                         .divide(sellingPrice, 0, RoundingMode.HALF_UP);

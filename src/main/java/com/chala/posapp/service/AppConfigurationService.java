@@ -1,12 +1,16 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.barcode.ScaleBarcodeDecoder;
+import com.chala.posapp.barcode.ScaleBarcodeFormat;
 import com.chala.posapp.dto.configuration.AppConfigurationRequest;
 import com.chala.posapp.dto.configuration.AppConfigurationResponse;
 import com.chala.posapp.entity.AppConfiguration;
 import com.chala.posapp.entity.Branch;
 import com.chala.posapp.entity.CategoryMode;
 import com.chala.posapp.entity.ItemType;
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Role;
+import com.chala.posapp.entity.ScaleBarcodeValueType;
 import com.chala.posapp.entity.StockOverrideMode;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
@@ -21,6 +25,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -147,6 +153,20 @@ public class AppConfigurationService {
         return getOrDefault(branchId).isKotEnabled();
     }
 
+    /**
+     * The scale barcode layout in force for a branch: the branch's own row, or
+     * the global default row when it has none, the same fallback every other
+     * setting here uses. Disabled unless the plan and the branch both allow
+     * weight items, since there is nothing to resolve a weight against otherwise.
+     */
+    public ScaleBarcodeFormat getScaleBarcodeFormat(Long branchId) {
+        AppConfiguration configuration = getOrDefault(branchId);
+        if (!planSupportsWeightItems() || !configuration.isWeightItemsEnabled()) {
+            return ScaleBarcodeFormat.DISABLED;
+        }
+        return ScaleBarcodeFormat.from(configuration);
+    }
+
     private void applyRequest(AppConfiguration configuration, AppConfigurationRequest request) {
         if (planSupportsRecipeItems()) {
             configuration.setRecipeItemsEnabled(request.isRecipeItemsEnabled());
@@ -194,6 +214,93 @@ public class AppConfigurationService {
         if (request.getCashierWarrantyAllowed() != null) {
             configuration.setCashierWarrantyAllowed(request.getCashierWarrantyAllowed());
         }
+        applyScaleBarcodeRequest(configuration, request);
+    }
+
+    // Scale barcode layout. Every field is optional on the wire so a client that
+    // predates it leaves the stored values alone; when present it is clamped the
+    // same way the label designer clamps its own numbers.
+    private void applyScaleBarcodeRequest(AppConfiguration configuration, AppConfigurationRequest request) {
+        if (request.getScaleBarcodeEnabled() != null) {
+            configuration.setScaleBarcodeEnabled(request.getScaleBarcodeEnabled());
+        }
+        if (request.getScaleBarcodePresetKey() != null) {
+            configuration.setScaleBarcodePresetKey(normalizeNullableText(request.getScaleBarcodePresetKey(), 50));
+        }
+        if (request.getScaleBarcodePrefixLength() != null) {
+            configuration.setScaleBarcodePrefixLength(clamp(request.getScaleBarcodePrefixLength(), 0, 4));
+        }
+        if (request.getScaleBarcodePrefix() != null) {
+            configuration.setScaleBarcodePrefix(
+                    normalizeScalePrefixes(request.getScaleBarcodePrefix(), configuration.getScaleBarcodePrefixLength()));
+        }
+        if (request.getScaleBarcodeItemCodeLength() != null) {
+            configuration.setScaleBarcodeItemCodeLength(clamp(request.getScaleBarcodeItemCodeLength(), 1, 20));
+        }
+        if (request.getScaleBarcodeValueLength() != null) {
+            configuration.setScaleBarcodeValueLength(clamp(request.getScaleBarcodeValueLength(), 1, 12));
+        }
+        if (request.getScaleBarcodeValueType() != null) {
+            configuration.setScaleBarcodeValueType(request.getScaleBarcodeValueType());
+        }
+        if (request.getScaleBarcodeWeightUnit() != null) {
+            MeasurementUnit unit = request.getScaleBarcodeWeightUnit();
+            if (unit != MeasurementUnit.G && unit != MeasurementUnit.KG) {
+                throw new BadRequestException("Scale barcode weight unit must be G or KG");
+            }
+            configuration.setScaleBarcodeWeightUnit(unit);
+        }
+        if (request.getScaleBarcodeValueDecimals() != null) {
+            configuration.setScaleBarcodeValueDecimals(clamp(request.getScaleBarcodeValueDecimals(), 0, 5));
+        }
+        if (request.getScaleBarcodeStripLeadingZeros() != null) {
+            configuration.setScaleBarcodeStripLeadingZeros(request.getScaleBarcodeStripLeadingZeros());
+        }
+        if (request.getScaleBarcodeHasCheckDigit() != null) {
+            configuration.setScaleBarcodeHasCheckDigit(request.getScaleBarcodeHasCheckDigit());
+        }
+    }
+
+    // The prefix column holds a comma separated list ("20,21" or "NS"). Letters
+    // are allowed because some scales print a lettered prefix; every entry must
+    // be exactly prefixLength characters or the layout could never match, so
+    // that is refused with the offending entry named rather than saved and
+    // silently never decoding. Stored upper case; the decoder compares upper case.
+    private String normalizeScalePrefixes(String value, int prefixLength) {
+        List<String> entries = ScaleBarcodeDecoder.parsePrefixes(value);
+        if (entries.isEmpty()) {
+            return null;
+        }
+        if (prefixLength == 0) {
+            throw new BadRequestException("Prefix length is 0, so the prefix list must be empty");
+        }
+        for (String entry : entries) {
+            if (entry.length() != prefixLength) {
+                throw new BadRequestException("Scale barcode prefix \"" + entry + "\" must be exactly "
+                        + prefixLength + " characters to match the prefix length");
+            }
+            if (!entry.chars().allMatch(Character::isLetterOrDigit)) {
+                throw new BadRequestException("Scale barcode prefix \"" + entry + "\" may only contain letters and digits");
+            }
+        }
+        String joined = String.join(",", entries);
+        if (joined.length() > 40) {
+            throw new BadRequestException("Scale barcode prefix list is too long (40 characters at most)");
+        }
+        return joined;
+    }
+
+    private String normalizeNullableText(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.length() > maxLength ? trimmed.substring(0, maxLength) : trimmed;
+    }
+
+    private int clamp(int value, int min, int max) {
+        if (value < min) return min;
+        return Math.min(value, max);
     }
 
     private AppConfiguration getOrDefault(Long branchId) {
@@ -304,6 +411,19 @@ public class AppConfigurationService {
                 .adminWarrantyAllowed(base == null || source.isAdminWarrantyAllowed())
                 .managerWarrantyAllowed(base == null || source.isManagerWarrantyAllowed())
                 .cashierWarrantyAllowed(base != null && source.isCashierWarrantyAllowed())
+                .scaleBarcodeEnabled(base != null && source.isScaleBarcodeEnabled())
+                .scaleBarcodePresetKey(source.getScaleBarcodePresetKey())
+                .scaleBarcodePrefix(source.getScaleBarcodePrefix())
+                .scaleBarcodePrefixLength(source.getScaleBarcodePrefixLength())
+                .scaleBarcodeItemCodeLength(source.getScaleBarcodeItemCodeLength())
+                .scaleBarcodeValueLength(source.getScaleBarcodeValueLength())
+                .scaleBarcodeValueType(source.getScaleBarcodeValueType() != null
+                        ? source.getScaleBarcodeValueType() : ScaleBarcodeValueType.WEIGHT)
+                .scaleBarcodeWeightUnit(source.getScaleBarcodeWeightUnit() != null
+                        ? source.getScaleBarcodeWeightUnit() : MeasurementUnit.G)
+                .scaleBarcodeValueDecimals(source.getScaleBarcodeValueDecimals())
+                .scaleBarcodeStripLeadingZeros(source.isScaleBarcodeStripLeadingZeros())
+                .scaleBarcodeHasCheckDigit(base == null || source.isScaleBarcodeHasCheckDigit())
                 .build();
     }
 
@@ -330,6 +450,19 @@ public class AppConfigurationService {
                 .adminWarrantyAllowed(configuration.isAdminWarrantyAllowed())
                 .managerWarrantyAllowed(configuration.isManagerWarrantyAllowed())
                 .cashierWarrantyAllowed(configuration.isCashierWarrantyAllowed())
+                .scaleBarcodeEnabled(configuration.isScaleBarcodeEnabled())
+                .scaleBarcodePresetKey(configuration.getScaleBarcodePresetKey())
+                .scaleBarcodePrefix(configuration.getScaleBarcodePrefix())
+                .scaleBarcodePrefixLength(configuration.getScaleBarcodePrefixLength())
+                .scaleBarcodeItemCodeLength(configuration.getScaleBarcodeItemCodeLength())
+                .scaleBarcodeValueLength(configuration.getScaleBarcodeValueLength())
+                .scaleBarcodeValueType(configuration.getScaleBarcodeValueType() != null
+                        ? configuration.getScaleBarcodeValueType() : ScaleBarcodeValueType.WEIGHT)
+                .scaleBarcodeWeightUnit(configuration.getScaleBarcodeWeightUnit() != null
+                        ? configuration.getScaleBarcodeWeightUnit() : MeasurementUnit.G)
+                .scaleBarcodeValueDecimals(configuration.getScaleBarcodeValueDecimals())
+                .scaleBarcodeStripLeadingZeros(configuration.isScaleBarcodeStripLeadingZeros())
+                .scaleBarcodeHasCheckDigit(configuration.isScaleBarcodeHasCheckDigit())
                 .build();
     }
 

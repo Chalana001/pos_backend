@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.barcodelabel;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.ScaleBarcodeValueType;
 
 /**
@@ -16,6 +17,9 @@ public record ScaleBarcodePresetResponse(
         int itemCodeLength,
         int valueLength,
         ScaleBarcodeValueType valueType,
+        MeasurementUnit weightUnit,
+        int valueDecimals,
+        boolean stripLeadingZeros,
         boolean hasCheckDigit
 ) {
 }
