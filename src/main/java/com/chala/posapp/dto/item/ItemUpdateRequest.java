@@ -14,6 +14,14 @@ import java.util.List;
 @Data
 public class ItemUpdateRequest {
 
+    /**
+     * Blank or absent leaves the item's current barcode alone. Unlike creation this never
+     * generates one: an item already has a barcode, and handing it a fresh random number
+     * on an unrelated edit would orphan every printed label and scale PLU pointing at it.
+     */
+    @Size(max = 80)
+    private String barcode;
+
     @Size(min = 2, max = 160)
     private String name;
 

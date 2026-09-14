@@ -73,6 +73,13 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ItemService {
 
+    /**
+     * Base units in one primary unit, grams per kilogram and millilitres per litre alike.
+     * QuantityConversionUtil keeps the same 1000 for both measured types; this mirrors it
+     * for the one place that needs the inverse of its arithmetic.
+     */
+    private static final BigDecimal BASE_UNITS_PER_PRIMARY_UNIT = BigDecimal.valueOf(1000);
+
     private final ItemRepository itemRepository;
     private final SubCategoryRepository subCategoryRepository;
     private final StockBatchRepository stockBatchRepository;
@@ -287,11 +294,41 @@ public class ItemService {
             // the item's own short `barcode` field doubles as the embedded
             // item/PLU code, so we look that up instead of adding a new field.
             decoded = decodeScaleBarcode(trimmedBarcode, branchId);
-            item = decoded == null
-                    ? null
-                    : itemRepository.findByBarcode(decoded.itemCode()).orElse(null);
-            if (item == null) {
+            if (decoded == null) {
+                // Not a plain barcode and not this branch's scale format either. Nothing
+                // left to try, and the till should say exactly that rather than hint at a
+                // scale problem that is not there.
                 throw new ResourceNotFoundException("Item not found");
+            }
+
+            item = itemRepository.findByBarcode(decoded.itemCode()).orElse(null);
+            if (item == null) {
+                // The label read fine, the catalogue is what is missing. Naming the code is
+                // the difference between a shop owner fixing an item's barcode in a minute
+                // and going through the scale's settings looking for a fault that is not there.
+                throw new ResourceNotFoundException(
+                        "Scale label read as item code '" + decoded.itemCode()
+                                + "', but no item carries that barcode");
+            }
+
+            // A scale label names an item sold by weight or volume, by definition. Without
+            // this a piece-priced item that happens to carry a PLU-shaped barcode resolved
+            // and went into the cart at quantity one, no weight, no warning, no way for the
+            // cashier to tell it apart from a correct sale.
+            if (!QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
+                throw new ResourceNotFoundException(
+                        "Item code '" + decoded.itemCode() + "' is '" + item.getName()
+                                + "', which is not sold by weight or volume");
+            }
+
+            // A scale label is an instruction to charge for a measured quantity, and there
+            // is no way to do that at no price. Letting it through put the item in the cart
+            // at quantity one with the weight silently dropped, which reads as a completed
+            // sale. Refusing sends the shop to the one field that is actually wrong.
+            if (item.getSellingPrice() == null || item.getSellingPrice().signum() <= 0) {
+                throw new ResourceNotFoundException(
+                        "Item code '" + decoded.itemCode() + "' is '" + item.getName()
+                                + "', which has no selling price set");
             }
         }
 
@@ -334,12 +371,17 @@ public class ItemService {
     /**
      * Resolves the sale quantity/amount implied by a decoded scale barcode against
      * the matched item's own pricing, reusing QuantityConversionUtil so this never
-     * diverges from the rest of the pricing engine. Only meaningful for WEIGHT
-     * items with a positive selling price, returns null otherwise (the item is
-     * still returned, just without the extra scale-resolved fields populated).
+     * diverges from the rest of the pricing engine. Only meaningful for a measured
+     * item (WEIGHT or VOLUME) with a positive selling price, returns null otherwise
+     * (the item is still returned, just without the extra scale-resolved fields).
      */
     private ScaleBarcodeResolution resolveScaleBarcodeResolution(Item item, DecodedScaleBarcode decoded) {
-        if (item.getItemType() != ItemType.WEIGHT) {
+        // Weight and volume both, and by the same arithmetic: QuantityConversionUtil gives
+        // the two the same 1000-to-1 base (grams per kilogram, millilitres per litre), so
+        // the decoded value is simply "base units" and everything below reads the item's own
+        // type for the rest. Oil and milk sold off a scale used to fall through here and go
+        // into the cart at quantity one.
+        if (!QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
             return null;
         }
 
@@ -349,34 +391,35 @@ public class ItemService {
         }
 
         try {
-            int grams;
+            int baseUnits;
             BigDecimal amount;
 
             if (decoded.valueType() == ScaleBarcodeValueType.WEIGHT) {
                 // The decoder has already applied the branch's unit and implied
-                // decimals, so this is grams, possibly with a fraction when the
-                // scale prints finer than a gram. Stock and orders are whole
-                // grams (normalizeQuantity rejects fractions), so round rather
+                // decimals, so this is base units, grams for a weight item and
+                // millilitres for a volume one, possibly with a fraction when the
+                // scale prints finer than one. Stock and orders are whole base
+                // units (normalizeQuantity rejects fractions), so round rather
                 // than refuse: a sub-gram digit is not a reason to lose a sale.
-                grams = decoded.value().setScale(0, RoundingMode.HALF_UP).intValueExact();
-                amount = QuantityConversionUtil.calculateActualAmount(item, sellingPrice, grams);
+                baseUnits = decoded.value().setScale(0, RoundingMode.HALF_UP).intValueExact();
+                amount = QuantityConversionUtil.calculateActualAmount(item, sellingPrice, baseUnits);
             } else {
                 // PRICE: the amount is embedded directly in the barcode; the
-                // weight is derived from it at this item's configured (per-kg)
-                // selling price, the inverse of calculateActualAmount's own math,
-                // so the two value types stay consistent with each other.
+                // quantity is derived from it at this item's configured per-primary-unit
+                // (per-kg, per-litre) selling price, the inverse of calculateActualAmount's
+                // own math, so the two value types stay consistent with each other.
                 amount = decoded.value().setScale(2, RoundingMode.HALF_UP);
-                BigDecimal gramsExact = amount
-                        .multiply(BigDecimal.valueOf(1000))
+                BigDecimal baseUnitsExact = amount
+                        .multiply(BASE_UNITS_PER_PRIMARY_UNIT)
                         .divide(sellingPrice, 0, RoundingMode.HALF_UP);
-                grams = gramsExact.intValueExact();
+                baseUnits = baseUnitsExact.intValueExact();
             }
 
-            if (grams <= 0) {
+            if (baseUnits <= 0) {
                 return null;
             }
 
-            BigDecimal quantity = QuantityConversionUtil.toDisplayQuantity(item, grams);
+            BigDecimal quantity = QuantityConversionUtil.toDisplayQuantity(item, baseUnits);
             MeasurementUnit unit = QuantityConversionUtil.normalizeItemUnit(item.getItemType(), item.getDefaultUnit());
             return new ScaleBarcodeResolution(quantity, unit, amount);
         } catch (ArithmeticException | BadRequestException e) {
@@ -558,6 +601,19 @@ public class ItemService {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
         ItemType previousItemType = item.getItemType();
+
+        // Same rules as createItem: trimmed, and unique across the tenant. The column carries
+        // a unique constraint, so without this check a clash surfaced as a 500 rather than a
+        // message naming the item already holding the barcode. Blank leaves it unchanged.
+        if (request.getBarcode() != null && !request.getBarcode().isBlank()) {
+            String barcode = request.getBarcode().trim();
+            if (!barcode.equals(item.getBarcode())) {
+                if (itemRepository.existsByBarcode(barcode)) {
+                    throw new AlreadyExistsException("Item with barcode '" + barcode + "' already exists!");
+                }
+                item.setBarcode(barcode);
+            }
+        }
 
         if (request.getName() != null && !request.getName().isBlank()) {
             item.setName(request.getName().trim());
