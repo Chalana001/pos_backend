@@ -53,7 +53,9 @@ public class OpenApiConfig {
                                 .url("https://example.com")))
                 .servers(List.of(
                         new Server().url("http://localhost:8080").description("Local dev"),
-                        new Server().url("https://api.chalanawijesingha.xyz").description("Production")
+                        new Server().url("https://api.chalanawijesingha.xyz").description("Production"),
+                        // Gateway readiness: same-host API entry point per tenant.
+                        new Server().url("https://{tenant}.zensys.lk/api").description("Gateway same-origin")
                 ))
                 // JWT Bearer security scheme
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))

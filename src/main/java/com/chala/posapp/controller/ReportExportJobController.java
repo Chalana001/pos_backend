@@ -14,7 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/reports/export-jobs")
+@RequestMapping({"/reports/export-jobs", "/api/reports/export-jobs"})
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
 public class ReportExportJobController {

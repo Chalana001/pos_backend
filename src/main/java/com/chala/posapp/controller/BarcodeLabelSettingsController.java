@@ -10,7 +10,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/branches/{branchId}/barcode-label-settings")
+@RequestMapping({"/branches/{branchId}/barcode-label-settings", "/api/branches/{branchId}/barcode-label-settings"})
 @RequiredArgsConstructor
 public class BarcodeLabelSettingsController {
 

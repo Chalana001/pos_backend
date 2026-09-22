@@ -17,7 +17,7 @@ import java.util.List;
  * module: a segment exists to be targeted by one, so it is switched on and off with them.
  */
 @RestController
-@RequestMapping("/customer-segments")
+@RequestMapping({"/customer-segments", "/api/customer-segments"})
 @RequiredArgsConstructor
 public class CustomerSegmentController {
 

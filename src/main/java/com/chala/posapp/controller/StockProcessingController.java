@@ -18,7 +18,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping("/stock-processing")
+@RequestMapping({"/stock-processing", "/api/stock-processing"})
 @RequiredArgsConstructor
 public class StockProcessingController {
 

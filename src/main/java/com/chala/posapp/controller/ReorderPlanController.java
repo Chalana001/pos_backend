@@ -1,6 +1,6 @@
 package com.chala.posapp.controller;
 import com.chala.posapp.dto.reorder.*; import com.chala.posapp.service.ReorderPlanService; import lombok.RequiredArgsConstructor; import org.springframework.http.ResponseEntity; import org.springframework.security.access.prepost.PreAuthorize; import org.springframework.web.bind.annotation.*; import java.util.List;
-@RestController @RequestMapping("/reorder-plans") @RequiredArgsConstructor @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+@RestController @RequestMapping({"/reorder-plans", "/api/reorder-plans"}) @RequiredArgsConstructor @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
 public class ReorderPlanController {private final ReorderPlanService service;
  @PostMapping public ResponseEntity<ReorderPlanResponse> create(@RequestBody ReorderPlanRequest r){return ResponseEntity.ok(service.create(r));}
  @GetMapping public ResponseEntity<List<ReorderPlanResponse>> list(@RequestParam(required=false) Long branchId){return ResponseEntity.ok(service.list(branchId));}

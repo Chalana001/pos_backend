@@ -20,7 +20,7 @@ import java.util.List;
  * a shop can buy promotions without buying this.
  */
 @RestController
-@RequestMapping("/loyalty")
+@RequestMapping({"/loyalty", "/api/loyalty"})
 @RequiredArgsConstructor
 public class LoyaltyController {
 

@@ -23,7 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 
 @RestController
-@RequestMapping("/purchases")
+@RequestMapping({"/purchases", "/api/purchases"})
 @RequiredArgsConstructor
 public class PurchaseController {
 

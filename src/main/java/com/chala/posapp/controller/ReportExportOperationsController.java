@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/operations/report-exports")
+@RequestMapping({"/operations/report-exports", "/api/operations/report-exports"})
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('SUPER_ADMIN')")
 public class ReportExportOperationsController {

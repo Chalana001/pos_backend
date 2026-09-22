@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/pending-orders")
+@RequestMapping({"/pending-orders", "/api/pending-orders"})
 @RequiredArgsConstructor
 public class PendingOrderController {
 

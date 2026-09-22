@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
-@RequestMapping("/shifts")
+@RequestMapping({"/shifts", "/api/shifts"})
 @RequiredArgsConstructor
 public class ShiftController {
 

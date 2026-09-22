@@ -18,7 +18,7 @@ import java.util.List;
  * All routes live under /api/reports/v2 to avoid conflicts with ReportController.
  */
 @RestController
-@RequestMapping("/api/reports/v2")
+@RequestMapping({"/api/reports/v2", "/reports/v2"})
 @RequiredArgsConstructor
 public class NewReportController {
 

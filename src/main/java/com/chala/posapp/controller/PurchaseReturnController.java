@@ -23,7 +23,7 @@ public class PurchaseReturnController {
      * Only MANAGER and ADMIN can process.
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @PostMapping("/purchases/{purchaseId}/returns")
+    @PostMapping({"/purchases/{purchaseId}/returns", "/api/purchases/{purchaseId}/returns"})
     public ResponseEntity<PurchaseReturnResponse> processReturn(
             @PathVariable Long purchaseId,
             @Valid @RequestBody CreatePurchaseReturnRequest request
@@ -36,7 +36,7 @@ public class PurchaseReturnController {
      * List all debit notes for a purchase.
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @GetMapping("/purchases/{purchaseId}/returns")
+    @GetMapping({"/purchases/{purchaseId}/returns", "/api/purchases/{purchaseId}/returns"})
     public ResponseEntity<List<PurchaseReturnResponse>> listByPurchase(
             @PathVariable Long purchaseId
     ) {
@@ -48,7 +48,7 @@ public class PurchaseReturnController {
      * Fetch single debit note by number (for reprint).
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @GetMapping("/purchase-returns/{debitNoteNo}")
+    @GetMapping({"/purchase-returns/{debitNoteNo}", "/api/purchase-returns/{debitNoteNo}"})
     public ResponseEntity<PurchaseReturnResponse> getByDebitNoteNo(
             @PathVariable String debitNoteNo
     ) {

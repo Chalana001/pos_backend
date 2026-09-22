@@ -24,7 +24,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @RestController
-@RequestMapping("/items")
+@RequestMapping({"/items", "/api/items"})
 @RequiredArgsConstructor
 @Validated
 public class ItemController {

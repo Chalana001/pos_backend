@@ -19,7 +19,7 @@ public class CustomerNotesController {
     private final CustomerNoteService service;
 
     // ✅ list notes (paged) - stable response
-    @GetMapping("/customers/{customerId}/notes")
+    @GetMapping({"/customers/{customerId}/notes", "/api/customers/{customerId}/notes"})
     public ResponseEntity<PageResponse<CustomerNoteResponse>> list(
             @PathVariable (name = "customerId")Long customerId,
             @RequestParam(name = "page", defaultValue = "0") int page,
@@ -42,7 +42,7 @@ public class CustomerNotesController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/customers/{customerId}/notes")
+    @PostMapping({"/customers/{customerId}/notes", "/api/customers/{customerId}/notes"})
     public ResponseEntity<CustomerNoteResponse> create(
             @PathVariable (name = "customerId") Long customerId,
             @Valid @RequestBody CustomerNoteCreateRequest request
@@ -50,7 +50,7 @@ public class CustomerNotesController {
         return ResponseEntity.ok(service.create(customerId, request));
     }
 
-    @PutMapping("/customer-notes/{noteId}")
+    @PutMapping({"/customer-notes/{noteId}", "/api/customer-notes/{noteId}"})
     public ResponseEntity<CustomerNoteResponse> update(
             @PathVariable (name = "noteId")Long noteId,
             @Valid @RequestBody CustomerNoteUpdateRequest request
@@ -59,7 +59,7 @@ public class CustomerNotesController {
     }
 
 
-    @DeleteMapping("/customer-notes/{noteId}")
+    @DeleteMapping({"/customer-notes/{noteId}", "/api/customer-notes/{noteId}"})
     public ResponseEntity<Void> delete(@PathVariable (name = "noteId") Long noteId) {
         service.delete(noteId);
         return ResponseEntity.noContent().build();

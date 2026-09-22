@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/credit")
+@RequestMapping({"/credit", "/api/credit"})
 @RequiredArgsConstructor
 public class CreditController {
 

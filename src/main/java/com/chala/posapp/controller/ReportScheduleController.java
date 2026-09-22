@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/reports/schedules")
+@RequestMapping({"/reports/schedules", "/api/reports/schedules"})
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
 public class ReportScheduleController {

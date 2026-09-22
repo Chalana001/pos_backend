@@ -55,6 +55,42 @@ class ModuleAccessTest {
         }
 
         @Test
+        @DisplayName("the additive /api aliases land on the same module as their bare paths")
+        void apiAliasesResolveToTheSameModuleAsBarePaths() {
+            // Gateway readiness: every bare POS controller also answers under /api. The alias
+            // must not escape module gating, or switching a module off would stop hiding the
+            // screen while the API underneath stayed reachable.
+            assertThat(resolver.resolve(resolver.normalize("/api/orders"), "POST")).contains("POS");
+            assertThat(resolver.resolve(resolver.normalize("/api/orders"), "GET")).contains("SALES");
+            assertThat(resolver.resolve(resolver.normalize("/api/dashboard"), "GET")).contains("DASHBOARD");
+            assertThat(resolver.resolve(resolver.normalize("/api/items"), "GET")).contains("ITEMS");
+            assertThat(resolver.resolve(resolver.normalize("/api/promotions"), "GET")).contains("PROMOTIONS");
+            assertThat(resolver.resolve(resolver.normalize("/api/stock-transfers"), "GET")).contains("STOCK_TRANSFERS");
+            assertThat(resolver.resolve(resolver.normalize("/api/customers/7/notes"), "GET")).contains("CUSTOMERS_NOTES");
+            assertThat(resolver.resolve(resolver.normalize("/api/reports/export-jobs"), "GET")).contains("REPORTS_EXPORT");
+        }
+
+        @Test
+        @DisplayName("the /api aliases keep the same exempt rules as their bare paths")
+        void apiAliasesKeepTheSameExemptions() {
+            assertThat(resolver.isSubscriptionExempt(resolver.normalize("/api/auth/login"), "POST")).isTrue();
+            assertThat(resolver.isSubscriptionExempt(resolver.normalize("/api/health"), "GET")).isTrue();
+            assertThat(resolver.isModuleExempt(resolver.normalize("/api/branches"), "GET")).isTrue();
+            // The boot read is exempt, the write is not, under the alias exactly as under the bare path.
+            assertThat(resolver.resolve(resolver.normalize("/api/branches"), "POST")).contains("SETTINGS_BRANCHES");
+            assertThat(resolver.isSubscriptionExempt(resolver.normalize("/api/branches"), "GET")).isFalse();
+        }
+
+        @Test
+        @DisplayName("the /api prefix is stripped exactly once, so /api/api/... is never unwrapped")
+        void apiPrefixIsStrippedOnceOnly() {
+            // A duplicated prefix has to stay unclaimed: silently unwrapping it would let a
+            // mistyped or double-prefixed URL reach a real controller while looking harmless.
+            assertThat(resolver.normalize("/api/api/orders")).isEqualTo("/api/orders");
+            assertThat(resolver.resolve(resolver.normalize("/api/api/orders"), "POST")).isEmpty();
+        }
+
+        @Test
         @DisplayName("reads and writes on the same path can belong to different modules")
         void methodScopedRules() {
             // Every client reads the branch list at boot, so only writes are gated.

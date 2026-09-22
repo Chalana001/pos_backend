@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/expense-types")
+@RequestMapping({"/expense-types", "/api/expense-types"})
 @RequiredArgsConstructor
 public class ExpenseTypeController {
 

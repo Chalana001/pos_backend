@@ -11,7 +11,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/branches/{branchId}/receipt-settings")
+@RequestMapping({"/branches/{branchId}/receipt-settings", "/api/branches/{branchId}/receipt-settings"})
 @RequiredArgsConstructor
 public class ReceiptSettingsController {
 

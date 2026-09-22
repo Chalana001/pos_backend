@@ -23,7 +23,7 @@ public class OrderReturnController {
      * Only MANAGER and ADMIN can process returns.
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
-    @PostMapping("/orders/{invoiceNo}/returns")
+    @PostMapping({"/orders/{invoiceNo}/returns", "/api/orders/{invoiceNo}/returns"})
     public ResponseEntity<OrderReturnResponse> processReturn(
             @PathVariable("invoiceNo") String invoiceNo,
             @Valid @RequestBody CreateReturnRequest request
@@ -37,7 +37,7 @@ public class OrderReturnController {
      * CASHIER can view (read-only), MANAGER and ADMIN can also process.
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-    @GetMapping("/orders/{invoiceNo}/returns")
+    @GetMapping({"/orders/{invoiceNo}/returns", "/api/orders/{invoiceNo}/returns"})
     public ResponseEntity<List<OrderReturnResponse>> listByInvoice(
             @PathVariable("invoiceNo") String invoiceNo
     ) {
@@ -49,7 +49,7 @@ public class OrderReturnController {
      * Fetch a single return by its return number (for receipt reprint).
      */
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
-    @GetMapping("/returns/{returnNo}")
+    @GetMapping({"/returns/{returnNo}", "/api/returns/{returnNo}"})
     public ResponseEntity<OrderReturnResponse> getByReturnNo(
             @PathVariable("returnNo") String returnNo
     ) {

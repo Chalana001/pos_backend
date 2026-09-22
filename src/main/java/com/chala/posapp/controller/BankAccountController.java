@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/bank-accounts")
+@RequestMapping({"/bank-accounts", "/api/bank-accounts"})
 @RequiredArgsConstructor
 public class BankAccountController {
 

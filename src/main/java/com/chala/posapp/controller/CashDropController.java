@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
 
 @RestController
-@RequestMapping("/cash-drops")
+@RequestMapping({"/cash-drops", "/api/cash-drops"})
 @RequiredArgsConstructor
 public class CashDropController {
 

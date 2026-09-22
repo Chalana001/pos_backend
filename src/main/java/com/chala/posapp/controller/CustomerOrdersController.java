@@ -15,7 +15,7 @@ public class CustomerOrdersController {
 
     private final OrderService service;
 
-    @GetMapping("/customers/{customerId}/orders")
+    @GetMapping({"/customers/{customerId}/orders", "/api/customers/{customerId}/orders"})
     public ResponseEntity<PageResponse<CustomerOrderListResponse>> list(
             @PathVariable (name = "customerId") Long customerId,
             @RequestParam(name = "orderType", defaultValue = "ALL") String orderType,

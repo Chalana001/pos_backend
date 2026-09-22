@@ -75,6 +75,10 @@ public class SecurityConfig {
                 "https://admin.chalanawijesingha.xyz",
                 "https://*.chalanawijesingha.xyz",
                 "https://chalanawijesingha.xyz",
+                // Gateway readiness: POS tenant frontends on {tenant}.zensys.lk
+                // and the control panel on admin.zensys.lk.
+                "https://admin.zensys.lk",
+                "https://*.zensys.lk",
                 "android-app://*"
                 // SECURITY FIX: removed "null". It allows file:// and sandboxed iframes to call the API
         ));
@@ -120,6 +124,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/saas/plans").permitAll()
                         .requestMatchers("/health").permitAll()
+                        .requestMatchers("/api/health").permitAll()
                         // MISS-09: Swagger UI / OpenAPI spec, allow in non-prod only.
                         // In prod this is denyAll rather than authenticated(): the spec lists every
                         // route in the system, and no shop user has any reason to read it.

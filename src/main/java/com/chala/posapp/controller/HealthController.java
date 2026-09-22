@@ -3,7 +3,7 @@ package com.chala.posapp.controller;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/health")
+@RequestMapping({"/health", "/api/health"})
 public class HealthController {
 
     @GetMapping

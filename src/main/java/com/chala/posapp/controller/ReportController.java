@@ -36,7 +36,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @RestController
-@RequestMapping("/reports")
+@RequestMapping({"/reports", "/api/reports"})
 @RequiredArgsConstructor
 public class ReportController {
 

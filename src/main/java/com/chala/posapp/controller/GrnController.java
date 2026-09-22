@@ -9,7 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/grn") // URL එක වෙනස් කරන්න එපා, Frontend අවුල් යයි
+@RequestMapping({"/grn", "/api/grn"}) // URL එක වෙනස් කරන්න එපා, Frontend අවුල් යයි
 @RequiredArgsConstructor
 public class GrnController {
 

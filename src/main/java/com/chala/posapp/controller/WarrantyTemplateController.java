@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/warranty-templates")
+@RequestMapping({"/warranty-templates", "/api/warranty-templates"})
 @RequiredArgsConstructor
 public class WarrantyTemplateController {
 
