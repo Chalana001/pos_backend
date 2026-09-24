@@ -28,11 +28,16 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
      * to fail at the constraint. A native query reads the table directly and tells the
      * truth, letting the service say why the number is taken instead of surfacing the
      * generic "invalid or duplicate data" message.
+     *
+     * Returns a count rather than a boolean: MySQL (and H2 in MODE=MySQL) evaluates
+     * COUNT(*) > 0 to a BIGINT, and the repository proxy cannot cast that Long to a
+     * primitive boolean. Callers compare with > 0 themselves, exactly like
+     * ItemService.countRefs.
      */
-    @Query(value = "SELECT COUNT(*) > 0 FROM suppliers WHERE phone = :phone", nativeQuery = true)
-    boolean existsByPhoneIncludingDeleted(@Param("phone") String phone);
+    @Query(value = "SELECT COUNT(*) FROM suppliers WHERE phone = :phone", nativeQuery = true)
+    long countByPhoneIncludingDeleted(@Param("phone") String phone);
 
     /** The email column is unique too, and a tombstone keeps its value. Same reasoning as above. */
-    @Query(value = "SELECT COUNT(*) > 0 FROM suppliers WHERE email = :email", nativeQuery = true)
-    boolean existsByEmailIncludingDeleted(@Param("email") String email);
+    @Query(value = "SELECT COUNT(*) FROM suppliers WHERE email = :email", nativeQuery = true)
+    long countByEmailIncludingDeleted(@Param("email") String email);
 }

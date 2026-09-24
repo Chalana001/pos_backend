@@ -57,7 +57,7 @@ public class SupplierService {
         // Checked against tombstones too: a soft-deleted supplier keeps its number, and the
         // unique index still enforces it, so a live-only check would pass here and then fail
         // at the constraint with the generic "invalid or duplicate data" message.
-        if (phone != null && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+        if (phone != null && supplierRepository.countByPhoneIncludingDeleted(phone) > 0) {
             throw new AlreadyExistsException(phoneTakenMessage(phone));
         }
 
@@ -69,7 +69,7 @@ public class SupplierService {
         supplier.setDueAmount(BigDecimal.ZERO);
         supplier.setActive(req.getActive() != null ? req.getActive() : true);
 
-        if (email != null && supplierRepository.existsByEmailIncludingDeleted(email)){
+        if (email != null && supplierRepository.countByEmailIncludingDeleted(email) > 0){
             throw new AlreadyExistsException(emailTakenMessage(email));
         }
 
@@ -104,7 +104,7 @@ public class SupplierService {
         // The quick-add modal has always labelled this field optional and sent "" when it
         // was left blank; that empty string was the reason a second numberless supplier
         // could never be created. It normalises to NULL now.
-        if (phone != null && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+        if (phone != null && supplierRepository.countByPhoneIncludingDeleted(phone) > 0) {
             throw new AlreadyExistsException(phoneTakenMessage(phone));
         }
 
@@ -257,7 +257,7 @@ public class SupplierService {
             String phone = normalizeOptional(req.getPhone());
             // Keeping the same number is not a clash with itself.
             if (phone != null && !phone.equals(supplier.getPhone())
-                    && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+                    && supplierRepository.countByPhoneIncludingDeleted(phone) > 0) {
                 throw new AlreadyExistsException(phoneTakenMessage(phone));
             }
             supplier.setPhone(phone);
@@ -266,7 +266,7 @@ public class SupplierService {
         if (req.getEmail() != null) {
             String email = normalizeOptional(req.getEmail());
             if (email != null && !email.equals(supplier.getEmail())
-                    && supplierRepository.existsByEmailIncludingDeleted(email)) {
+                    && supplierRepository.countByEmailIncludingDeleted(email) > 0) {
                 throw new AlreadyExistsException(emailTakenMessage(email));
             }
             supplier.setEmail(email);

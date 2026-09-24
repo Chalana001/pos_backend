@@ -121,7 +121,7 @@ class SupplierServiceTest {
     @Test
     @DisplayName("a duplicate phone number names the clash instead of returning a generic duplicate-data error")
     void duplicatePhone() {
-        when(supplierRepository.existsByPhoneIncludingDeleted("0771234567")).thenReturn(true);
+        when(supplierRepository.countByPhoneIncludingDeleted("0771234567")).thenReturn(1L);
         when(supplierRepository.existsByPhone("0771234567")).thenReturn(true);
 
         assertThatThrownBy(() -> service.create(createRequest("Copycat", "0771234567")))
@@ -132,7 +132,7 @@ class SupplierServiceTest {
     @Test
     @DisplayName("a number held only by a deleted supplier says so, rather than claiming a clash with nobody")
     void phoneHeldByTombstone() {
-        when(supplierRepository.existsByPhoneIncludingDeleted("0771234567")).thenReturn(true);
+        when(supplierRepository.countByPhoneIncludingDeleted("0771234567")).thenReturn(1L);
         when(supplierRepository.existsByPhone("0771234567")).thenReturn(false);
 
         assertThatThrownBy(() -> service.create(createRequest("Copycat", "0771234567")))
@@ -181,7 +181,7 @@ class SupplierServiceTest {
     @DisplayName("a supplier keeping its own number is not a clash with itself")
     void updateKeepsOwnPhone() {
         when(supplierRepository.findById(5L)).thenReturn(Optional.of(existing(5L, "Supplier", "0771111111")));
-        when(supplierRepository.existsByPhoneIncludingDeleted("0771111111")).thenReturn(true);
+        when(supplierRepository.countByPhoneIncludingDeleted("0771111111")).thenReturn(1L);
 
         SupplierUpdateRequest request = new SupplierUpdateRequest();
         request.setPhone("0771111111");
@@ -193,7 +193,7 @@ class SupplierServiceTest {
     @DisplayName("moving to a number another supplier holds is refused")
     void updateRejectsTakenPhone() {
         when(supplierRepository.findById(5L)).thenReturn(Optional.of(existing(5L, "Supplier", "0771111111")));
-        when(supplierRepository.existsByPhoneIncludingDeleted("0779999999")).thenReturn(true);
+        when(supplierRepository.countByPhoneIncludingDeleted("0779999999")).thenReturn(1L);
 
         SupplierUpdateRequest request = new SupplierUpdateRequest();
         request.setPhone("0779999999");
