@@ -74,12 +74,12 @@ class PromotionMechanicsTest {
     private static PricingLine line(long itemId, long categoryId, double unitPrice, int pieces) {
         return new PricingLine(itemId, ItemType.NORMAL, 3L, categoryId,
                 BigDecimal.valueOf(unitPrice), BigDecimal.ONE, pieces * 1000,
-                DiscountType.NONE, BigDecimal.ZERO);
+                DiscountType.NONE, BigDecimal.ZERO, false);
     }
 
     private static PricingLine lineWithManual(long itemId, double unitPrice, int pieces, DiscountType t, double v) {
         return new PricingLine(itemId, ItemType.NORMAL, 3L, 2L,
-                BigDecimal.valueOf(unitPrice), BigDecimal.ONE, pieces * 1000, t, BigDecimal.valueOf(v));
+                BigDecimal.valueOf(unitPrice), BigDecimal.ONE, pieces * 1000, t, BigDecimal.valueOf(v), false);
     }
 
     private static PromotionApplication priceLine(PricingLine line, PromotionSnapshot... promos) {

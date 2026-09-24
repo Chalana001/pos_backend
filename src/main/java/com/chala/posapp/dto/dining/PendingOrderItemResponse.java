@@ -20,6 +20,7 @@ public class PendingOrderItemResponse {
     private double unitPrice;
     private String discountType;
     private double discountValue;
+    private boolean excludePromotions;
     private double finalUnitPrice;
     private double lineTotal;
     private String warrantyLabel;

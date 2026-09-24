@@ -25,6 +25,8 @@ public record LineDecision(
         BLOCKED_BY_EXCLUSIVE,
         /** The cashier typed a discount, but the applied promotion does not allow one on top. */
         MANUAL_BLOCKED,
+        /** The cashier took the offers off this line; every line-level candidate stands down. */
+        EXCLUDED_BY_CASHIER,
         /** A bill or customer promotion being asked about a line, or vice versa. */
         WRONG_SCOPE,
         BRANCH_MISMATCH,

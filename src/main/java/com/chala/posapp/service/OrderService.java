@@ -368,7 +368,8 @@ public class OrderService {
                     // What this sale actually costs: the FIFO cost of the batches just consumed,
                     // not the reference figure on the item. With two batches in stock they differ,
                     // and the margin guard has to judge the one going out of the door.
-                    BigDecimal.valueOf(consumption.unitCost)
+                    BigDecimal.valueOf(consumption.unitCost),
+                    itemReq.isExcludePromotions()
             );
             PromotionApplication promotionApplication = lineEvaluation.application();
             lineDecisions.add(lineEvaluation.decisions());

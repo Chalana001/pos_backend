@@ -32,7 +32,7 @@ class PromotionEvaluatorTest {
     private static PricingLine line(long itemId, double unitPrice, double cost) {
         return new PricingLine(itemId, ItemType.NORMAL, 3L, 2L,
                 BigDecimal.valueOf(unitPrice), BigDecimal.valueOf(cost), TWO_PIECES,
-                DiscountType.NONE, BigDecimal.ZERO);
+                DiscountType.NONE, BigDecimal.ZERO, false);
     }
 
     private static PromotionSnapshot itemPromo(long id, String name, double percent, long itemId, Long branchId) {
@@ -176,7 +176,7 @@ class PromotionEvaluatorTest {
     void bigDecimalArithmetic() {
         // 0.1 + 0.2 territory: three lines at 33.33 with 10% off must come to a clean total.
         PricingLine l = new PricingLine(7L, ItemType.NORMAL, 3L, 2L,
-                BigDecimal.valueOf(33.33), BigDecimal.ONE, 3000, DiscountType.NONE, BigDecimal.ZERO);
+                BigDecimal.valueOf(33.33), BigDecimal.ONE, 3000, DiscountType.NONE, BigDecimal.ZERO, false);
         LineEvaluation result = PromotionEvaluator.evaluateLine(
                 l, 1L, BigDecimal.valueOf(99.99), List.of(itemPromo(1, "10%", 10, 7L, null)));
 

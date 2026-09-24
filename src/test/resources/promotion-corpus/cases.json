@@ -14,7 +14,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -86,7 +87,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -158,7 +160,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -230,7 +233,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -302,7 +306,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200000.0,
@@ -374,7 +379,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 2000.0,
@@ -446,7 +452,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -518,7 +525,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 5000.0,
@@ -590,7 +598,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -698,7 +707,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -806,7 +816,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -878,7 +889,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -941,7 +953,8 @@
         "costPrice" : 2E+2,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 900.0,
@@ -1013,7 +1026,8 @@
         "costPrice" : 2E+2,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 450.0,
@@ -1085,7 +1099,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1157,7 +1172,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 300.0,
@@ -1229,7 +1245,8 @@
         "costPrice" : 1,
         "normalizedQty" : 5000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 500.0,
@@ -1301,7 +1318,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1373,7 +1391,8 @@
         "costPrice" : 1,
         "normalizedQty" : 7000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 700.0,
@@ -1455,7 +1474,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1532,7 +1552,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1604,7 +1625,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1676,7 +1698,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1748,7 +1771,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "PERCENT",
-        "manualDiscountValue" : 1E+1
+        "manualDiscountValue" : 1E+1,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1820,7 +1844,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "FIXED",
-        "manualDiscountValue" : 25
+        "manualDiscountValue" : 25,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1856,7 +1881,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "PERCENT",
-        "manualDiscountValue" : 1E+1
+        "manualDiscountValue" : 1E+1,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -1921,6 +1947,152 @@
       } ]
     }
   }, {
+    "id" : "line/excluded-by-cashier",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 6E+1,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "NONE",
+        "manualDiscountValue" : 0,
+        "excludePromotions" : true
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 1E+1,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "DISCOUNT",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : null,
+        "promotionName" : null,
+        "discountType" : "NONE",
+        "discountValue" : 0.0,
+        "manualDiscountAmount" : 0.0,
+        "promotionDiscountAmount" : 0.0,
+        "appliedDiscountAmount" : 0.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 200.0,
+        "promotionApplied" : false,
+        "appliedPromotionIds" : [ ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "EXCLUDED_BY_CASHIER",
+        "discount" : 0
+      } ]
+    }
+  }, {
+    "id" : "line/excluded-with-manual",
+    "kind" : "line",
+    "input" : {
+      "line" : {
+        "itemId" : 7,
+        "itemType" : "NORMAL",
+        "subCategoryId" : 3,
+        "categoryId" : 2,
+        "unitPrice" : 1E+2,
+        "costPrice" : 6E+1,
+        "normalizedQty" : 2000,
+        "manualDiscountType" : "PERCENT",
+        "manualDiscountValue" : 5,
+        "excludePromotions" : true
+      },
+      "branchId" : 1,
+      "cartBaseSubtotal" : 200.0,
+      "promotions" : [ {
+        "id" : 1,
+        "name" : "Promo",
+        "scope" : "ITEM",
+        "discountType" : "PERCENT",
+        "discountValue" : 1E+1,
+        "minBillAmount" : 0,
+        "maxDiscountAmount" : 0,
+        "startAt" : "2026-01-01T00:00:00",
+        "endAt" : "2026-12-31T23:59:00",
+        "branchId" : null,
+        "priority" : 0,
+        "marginFloorPercent" : null,
+        "allowBelowCost" : true,
+        "effectType" : "DISCOUNT",
+        "buyQty" : null,
+        "getQty" : null,
+        "stackingMode" : "BEST_ONLY",
+        "allowManualStacking" : true,
+        "targets" : [ {
+          "itemId" : 7,
+          "categoryId" : null,
+          "subCategoryId" : null,
+          "customerId" : null,
+          "offerPrice" : null,
+          "discountType" : null,
+          "discountValue" : null,
+          "segmentId" : null
+        } ],
+        "tiers" : [ ],
+        "schedules" : [ ]
+      } ]
+    },
+    "expected" : {
+      "application" : {
+        "promotionId" : null,
+        "promotionName" : null,
+        "discountType" : "PERCENT",
+        "discountValue" : 5.0,
+        "manualDiscountAmount" : 10.0,
+        "promotionDiscountAmount" : 0.0,
+        "appliedDiscountAmount" : 10.0,
+        "baseLineTotal" : 200.0,
+        "finalLineTotal" : 190.0,
+        "promotionApplied" : false,
+        "appliedPromotionIds" : [ ],
+        "exclusive" : false
+      },
+      "decisions" : [ {
+        "promotionId" : 1,
+        "promotionName" : "Promo",
+        "outcome" : "EXCLUDED_BY_CASHIER",
+        "discount" : 0
+      } ]
+    }
+  }, {
     "id" : "line/stackable-adds",
     "kind" : "line",
     "input" : {
@@ -1933,7 +2105,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2041,7 +2214,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2185,7 +2359,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2329,7 +2504,8 @@
         "costPrice" : 8E+2,
         "normalizedQty" : 1500,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 1800.0,
@@ -2401,7 +2577,8 @@
         "costPrice" : 1,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 99.99,
@@ -2473,7 +2650,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2545,7 +2723,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2617,7 +2796,8 @@
         "costPrice" : 6E+1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2689,7 +2869,8 @@
         "costPrice" : 1E+2,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2761,7 +2942,8 @@
         "costPrice" : 0,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 200.0,
@@ -2833,7 +3015,8 @@
         "costPrice" : 33.33,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       },
       "branchId" : 1,
       "cartBaseSubtotal" : 99.99,
@@ -3432,7 +3615,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 8,
         "itemType" : "NORMAL",
@@ -3442,7 +3626,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 9,
         "itemType" : "NORMAL",
@@ -3452,7 +3637,8 @@
         "costPrice" : 1,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       } ],
       "linesHaveExclusive" : false,
       "promotions" : [ {
@@ -3526,7 +3712,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 8,
         "itemType" : "NORMAL",
@@ -3536,7 +3723,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 9,
         "itemType" : "NORMAL",
@@ -3546,7 +3734,8 @@
         "costPrice" : 1,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       } ],
       "linesHaveExclusive" : false,
       "promotions" : [ {
@@ -3620,7 +3809,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 8,
         "itemType" : "NORMAL",
@@ -3630,7 +3820,8 @@
         "costPrice" : 1,
         "normalizedQty" : 2000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       }, {
         "itemId" : 9,
         "itemType" : "NORMAL",
@@ -3640,7 +3831,8 @@
         "costPrice" : 1,
         "normalizedQty" : 1000,
         "manualDiscountType" : "NONE",
-        "manualDiscountValue" : 0
+        "manualDiscountValue" : 0,
+        "excludePromotions" : false
       } ],
       "linesHaveExclusive" : false,
       "promotions" : [ {

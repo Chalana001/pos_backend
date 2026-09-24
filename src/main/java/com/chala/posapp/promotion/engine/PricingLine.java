@@ -25,18 +25,21 @@ public record PricingLine(
         BigDecimal costPrice,
         int normalizedQty,
         DiscountType manualDiscountType,
-        BigDecimal manualDiscountValue
+        BigDecimal manualDiscountValue,
+        /** The cashier took this line's offers off. Line-level promotions stand down; the
+         *  cashier's own discount still applies, and bill-level offers are untouched. */
+        boolean excludePromotions
 ) {
 
     /** The same line at a different unit price, how a line priced after its own discounts is handed to the bill pass. */
     public PricingLine withUnitPrice(BigDecimal newUnitPrice) {
         return new PricingLine(itemId, itemType, subCategoryId, categoryId, newUnitPrice, costPrice,
-                normalizedQty, DiscountType.NONE, BigDecimal.ZERO);
+                normalizedQty, DiscountType.NONE, BigDecimal.ZERO, excludePromotions);
     }
 
     public static PricingLine from(Item item, double unitPrice, int normalizedQty,
                                    DiscountType manualType, double manualValue) {
-        return from(item, unitPrice, normalizedQty, manualType, manualValue, item.getCostPrice());
+        return from(item, unitPrice, normalizedQty, manualType, manualValue, item.getCostPrice(), false);
     }
 
     /**
@@ -53,6 +56,12 @@ public record PricingLine(
      */
     public static PricingLine from(Item item, double unitPrice, int normalizedQty,
                                    DiscountType manualType, double manualValue, BigDecimal unitCost) {
+        return from(item, unitPrice, normalizedQty, manualType, manualValue, unitCost, false);
+    }
+
+    public static PricingLine from(Item item, double unitPrice, int normalizedQty,
+                                   DiscountType manualType, double manualValue, BigDecimal unitCost,
+                                   boolean excludePromotions) {
         BigDecimal cost = unitCost != null && unitCost.signum() > 0 ? unitCost : item.getCostPrice();
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
@@ -65,7 +74,8 @@ public record PricingLine(
                 cost,
                 normalizedQty,
                 manualType == null ? DiscountType.NONE : manualType,
-                BigDecimal.valueOf(manualValue)
+                BigDecimal.valueOf(manualValue),
+                excludePromotions
         );
     }
 }

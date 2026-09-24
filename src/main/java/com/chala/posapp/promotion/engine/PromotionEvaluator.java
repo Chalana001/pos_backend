@@ -63,6 +63,13 @@ public final class PromotionEvaluator {
                 decisions.add(LineDecision.of(promotion, Outcome.WRONG_SCOPE));
                 continue;
             }
+            // The cashier took the offers off this line. Every line-level candidate is
+            // recorded as deliberately excluded rather than as something the engine never
+            // considered, so "why is there no discount?" answers itself in the trace.
+            if (line.excludePromotions()) {
+                decisions.add(LineDecision.of(promotion, Outcome.EXCLUDED_BY_CASHIER));
+                continue;
+            }
             if (!promotion.coversBranch(branchId)) {
                 decisions.add(LineDecision.of(promotion, Outcome.BRANCH_MISMATCH));
                 continue;

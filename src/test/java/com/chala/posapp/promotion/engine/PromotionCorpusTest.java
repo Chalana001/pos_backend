@@ -96,17 +96,22 @@ class PromotionCorpusTest {
 
     private static PricingLine line(long itemId, long categoryId, double unitPrice, double cost, int pieces) {
         return new PricingLine(itemId, ItemType.NORMAL, 3L, categoryId, BigDecimal.valueOf(unitPrice),
-                BigDecimal.valueOf(cost), pieces * 1000, DiscountType.NONE, BigDecimal.ZERO);
+                BigDecimal.valueOf(cost), pieces * 1000, DiscountType.NONE, BigDecimal.ZERO, false);
     }
 
     private static PricingLine weightLine(long itemId, double unitPrice, double cost, int grams) {
         return new PricingLine(itemId, ItemType.WEIGHT, 3L, 2L, BigDecimal.valueOf(unitPrice),
-                BigDecimal.valueOf(cost), grams, DiscountType.NONE, BigDecimal.ZERO);
+                BigDecimal.valueOf(cost), grams, DiscountType.NONE, BigDecimal.ZERO, false);
     }
 
     private static PricingLine manual(PricingLine l, DiscountType t, double v) {
         return new PricingLine(l.itemId(), l.itemType(), l.subCategoryId(), l.categoryId(), l.unitPrice(), l.costPrice(),
-                l.normalizedQty(), t, BigDecimal.valueOf(v));
+                l.normalizedQty(), t, BigDecimal.valueOf(v), l.excludePromotions());
+    }
+
+    private static PricingLine excluded(PricingLine l) {
+        return new PricingLine(l.itemId(), l.itemType(), l.subCategoryId(), l.categoryId(), l.unitPrice(), l.costPrice(),
+                l.normalizedQty(), l.manualDiscountType(), l.manualDiscountValue(), true);
     }
 
     // ── scenarios ───────────────────────────────────────────────────────────────────────
@@ -153,6 +158,12 @@ class PromotionCorpusTest {
                 new LineCase("line/manual-stacks", manual(std, DiscountType.PERCENT, 10), 1L, 200, List.of(new Promo().item(7).build())),
                 new LineCase("line/manual-only", manual(std, DiscountType.FIXED, 25), 1L, 200, List.of()),
                 new LineCase("line/manual-blocked", manual(std, DiscountType.PERCENT, 10), 1L, 200, List.of(new Promo().noManual().item(7).build())),
+                // The cashier took the offer off a line; it sells at its manual discount alone.
+                new LineCase("line/excluded-by-cashier", excluded(std), 1L, 200,
+                        List.of(new Promo().rate(DiscountType.PERCENT, 10).item(7).build())),
+                // Excluded and the cashier typed their own discount: that one still applies.
+                new LineCase("line/excluded-with-manual", excluded(manual(std, DiscountType.PERCENT, 5)), 1L, 200,
+                        List.of(new Promo().rate(DiscountType.PERCENT, 10).item(7).build())),
                 new LineCase("line/stackable-adds", std, 1L, 200,
                         List.of(new Promo().id(1).name("20%").rate(DiscountType.PERCENT, 20).item(7).build(),
                                 new Promo().id(2).name("5 each").rate(DiscountType.FIXED, 5).stacking(StackingMode.STACKABLE).item(7).build())),

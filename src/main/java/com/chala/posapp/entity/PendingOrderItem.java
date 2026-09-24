@@ -49,6 +49,10 @@ public class PendingOrderItem extends TenantEntity {
     @Column(name = "discount_value", nullable = false)
     private double discountValue;
 
+    /** The cashier took the offers off this line; carried so resuming the table keeps them off. */
+    @Column(name = "exclude_promotions", nullable = false)
+    private boolean excludePromotions;
+
     @Column(name = "warranty_label", length = 120)
     private String warrantyLabel;
 

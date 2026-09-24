@@ -230,7 +230,24 @@ public class PromotionService {
             List<PromotionSnapshot> activePromotions,
             BigDecimal unitCost
     ) {
-        PricingLine line = PricingLine.from(item, unitPrice, normalizedQty, manualType, manualValue, unitCost);
+        return evaluateLine(item, branchId, unitPrice, normalizedQty, manualType, manualValue,
+                cartBaseSubtotal, activePromotions, unitCost, false);
+    }
+
+    public LineEvaluation evaluateLine(
+            Item item,
+            Long branchId,
+            double unitPrice,
+            int normalizedQty,
+            DiscountType manualType,
+            double manualValue,
+            double cartBaseSubtotal,
+            List<PromotionSnapshot> activePromotions,
+            BigDecimal unitCost,
+            boolean excludePromotions
+    ) {
+        PricingLine line = PricingLine.from(item, unitPrice, normalizedQty, manualType, manualValue,
+                unitCost, excludePromotions);
         return PromotionEvaluator.evaluateLine(line, branchId, BigDecimal.valueOf(cartBaseSubtotal), activePromotions);
     }
 
@@ -300,7 +317,9 @@ public class PromotionService {
                     itemRequest.getDiscountType(),
                     itemRequest.getDiscountValue(),
                     cartBaseSubtotal,
-                    activePromotions
+                    activePromotions,
+                    null,
+                    itemRequest.isExcludePromotions()
             );
             PromotionApplication application = evaluation.application();
             PricingLine listPriced = PricingLine.from(line.item(), itemRequest.getUnitPrice(), line.normalizedQty(),

@@ -32,6 +32,12 @@ public class OrderItemRequest {
     @PositiveOrZero
     private double discountValue;
 
+    /**
+     * The cashier took the offers off this line at the till. Line-level promotions stand down for
+     * it and the cashier's own discount applies alone; bill-level promotions are unaffected.
+     */
+    private boolean excludePromotions;
+
     // ── offline tills only ──────────────────────────────────────────────────────────────
     // An offline till prices with its own copy of the engine and reports what fired. These
     // are honoured only on the offline import path; an online sale is priced by the server
