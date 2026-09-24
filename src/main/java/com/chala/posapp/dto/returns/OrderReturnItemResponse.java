@@ -17,7 +17,7 @@ public class OrderReturnItemResponse {
     private String itemName;
     private String barcode;
 
-    // Returned quantity in base units
+    // Returned quantity in display units (what the slip shows)
     private int returnQty;
 
     private double unitPrice;

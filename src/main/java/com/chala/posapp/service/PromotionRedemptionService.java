@@ -244,6 +244,35 @@ public class PromotionRedemptionService {
         log.info("Reversed {} promotion redemption(s) on order {}", rows.size(), orderId);
     }
 
+    /**
+     * Gives the redemption count back when returns have taken the whole order, the counterpart of
+     * {@link #reverseForReturn}, which deliberately keeps it. A partial return genuinely used the
+     * promotion on what the customer kept; an order that came back in full did not.
+     *
+     * <p>Only genuine original live ledger rows are considered; reversal rows have negative
+     * amounts and do not represent another redemption. This method does not mark those originals
+     * as reversed, so it is not independently idempotent. The caller must invoke it only once,
+     * on the return that completes the order. The partial-return path has already refunded the
+     * budget, so this releases promotion counts and code counts only.
+     */
+    @Transactional
+    public void releaseCountersForCompletedReturn(Long orderId) {
+        List<PromotionRedemption> live = redemptionRepository.findLiveForOrder(orderId);
+        if (live.isEmpty()) {
+            return;
+        }
+        live.stream()
+                .map(PromotionRedemption::getPromotionId)
+                .distinct()
+                .forEach(promotionRepository::releaseCounter);
+        live.stream()
+                .map(PromotionRedemption::getPromotionCodeId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(codeRepository::release);
+        log.info("Released redemption counters for fully returned order {}", orderId);
+    }
+
     private PromotionRedemption row(Order order, LineDecision decision, PromotionRedemption.Level level,
                                     Long orderItemId, Long itemId, Long codePromotionId, PromotionCode code,
                                     LocalDateTime now) {

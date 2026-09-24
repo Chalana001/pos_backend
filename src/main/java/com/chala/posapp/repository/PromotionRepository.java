@@ -108,6 +108,20 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
         """, nativeQuery = true)
     int releaseBudget(@Param("id") Long id, @Param("amount") java.math.BigDecimal amount);
 
+    /**
+     * Gives back only a redemption count when a return completes an order.
+     *
+     * <p>The budget for each returned portion was already refunded by the partial-return path;
+     * refunding it here as well would subtract that budget twice.
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE promotions
+        SET times_redeemed = GREATEST(0, times_redeemed - 1)
+        WHERE id = :id
+        """, nativeQuery = true)
+    int releaseCounter(@Param("id") Long id);
+
     /** Gives a redemption and its budget back on refund, floored at zero. */
     @Modifying
     @Query(value = """

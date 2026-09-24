@@ -33,4 +33,8 @@ public class OrderItemStockUsage extends TenantEntity {
 
     @Column(nullable = false)
     private Integer quantity;
+
+    @Column(name = "restored_quantity", nullable = false)
+    @Builder.Default
+    private int restoredQuantity = 0;
 }

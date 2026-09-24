@@ -14,6 +14,15 @@ public interface PromotionRedemptionRepository extends JpaRepository<PromotionRe
     List<PromotionRedemption> findByOrderIdAndReversedAtIsNull(Long orderId);
 
     /**
+     * Genuine original live ledger rows for an order. Reversal rows also have a null
+     * {@code reversedAt}, but carry negative amounts and represent refunds, not redemptions;
+     * exclude them so completed-return counter handling sees only the original usages.
+     */
+    @Query("SELECT r FROM PromotionRedemption r WHERE r.orderId = :orderId "
+           + "AND r.reversedAt IS NULL AND r.reversalOfId IS NULL")
+    List<PromotionRedemption> findLiveForOrder(@Param("orderId") Long orderId);
+
+    /**
      * The live line-level rows for one order item, what a return of that line has to give back.
      * Excludes reversal rows themselves, which carry a negative amount and are the giving-back.
      */

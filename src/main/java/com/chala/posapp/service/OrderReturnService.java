@@ -10,6 +10,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
+import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
 
 import java.math.BigDecimal;
@@ -18,8 +19,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -94,7 +93,34 @@ public class OrderReturnService {
                     "Invalid refund method: " + refundMethod + ". Must be one of: " + validMethods);
         }
 
-        // 2. Validate every return line
+        // STORE_CREDIT is a promise this system can only keep on a credit sale: there is no customer
+        // wallet or credit-note ledger, so a cash sale refunded as store credit would write the method
+        // onto the return and the receipt while recording the credit nowhere. Refuse it here rather
+        // than print a slip for money that does not exist. A real store-credit balance is a feature,
+        // not a line of code.
+        if ("STORE_CREDIT".equals(refundMethod)
+                && (order.getOrderType() != OrderType.CREDIT || order.getCustomerId() == null)) {
+            throw new BadRequestException(
+                    "Store credit can only be refunded on a credit sale. "
+                            + "Use cash, bank or card for this sale.");
+        }
+
+        // 2. Validate every return line.
+        //
+        // Units, read carefully, because mixing the two scales is what broke this whole flow.
+        //
+        // The request, the UI and order_return_items.return_qty are in DISPLAY units: the unit
+        // the till showed the cashier (10 pcs, 2 kg). OrderItem.qty, order_item_stock_usages
+        // .quantity and stock_batches.quantity are in NORMALIZED base units, thousandths, so
+        // 10 pcs is 10000. final_unit_price is per primary display unit, so the money is only
+        // right when multiplied by the display quantity.
+        //
+        // This block used to compare the display figure straight against OrderItem.qty: a
+        // return of 10 pcs passed a cap of 9990 and put 10 base units back on the shelf, one
+        // hundredth of a piece, which is the "stock only rises by 0.001 after a return" a shop
+        // reported. Compare display against display, and normalize once, only for the stock
+        // arithmetic. PurchaseReturnService already does this correctly and documents the same
+        // bug at length.
         List<ValidatedReturnLine> validatedLines = new ArrayList<>();
         for (ReturnItemRequest itemReq : request.getItems()) {
 
@@ -105,23 +131,38 @@ public class OrderReturnService {
                                 + " does not belong to order " + invoiceNo);
             }
 
-            int alreadyReturned = orderReturnItemRepository
-                    .sumReturnedQtyByOrderItemId(originalItem.getId());
-            int maxReturnable = originalItem.getQty() - alreadyReturned;
+            Item item = itemRepository.findById(originalItem.getItemId()).orElse(null);
+            if (item == null) {
+                throw new ResourceNotFoundException(
+                        "Item not found for return: " + originalItem.getItemName());
+            }
 
-            if (maxReturnable <= 0) {
+            BigDecimal displaySold = displayQtyOf(originalItem);
+            BigDecimal alreadyReturned = BigDecimal.valueOf(orderReturnItemRepository
+                    .sumReturnedQtyByOrderItemId(originalItem.getId()));
+            BigDecimal maxReturnable = displaySold.subtract(alreadyReturned);
+
+            if (maxReturnable.signum() <= 0) {
                 throw new BadRequestException(
                         "Item '" + originalItem.getItemName() + "' has already been fully returned");
             }
-            if (itemReq.getReturnQty() > maxReturnable) {
+            if (BigDecimal.valueOf(itemReq.getReturnQty()).compareTo(maxReturnable) > 0) {
                 throw new BadRequestException(
                         "Return qty " + itemReq.getReturnQty()
-                                + " exceeds returnable qty " + maxReturnable
+                                + " exceeds returnable qty "
+                                + maxReturnable.stripTrailingZeros().toPlainString()
                                 + " for item '" + originalItem.getItemName() + "'");
             }
 
+            // The same display figure in base units: what every stock calculation uses.
+            int normalizedReturnQty = QuantityConversionUtil.normalizeSaleQuantity(
+                    item,
+                    BigDecimal.valueOf(itemReq.getReturnQty()),
+                    originalItem.getQtyUnit());
+
             double ticketLine = roundMoney(itemReq.getReturnQty() * originalItem.getFinalUnitPrice());
-            validatedLines.add(new ValidatedReturnLine(originalItem, itemReq.getReturnQty(), ticketLine));
+            validatedLines.add(new ValidatedReturnLine(
+                    originalItem, itemReq.getReturnQty(), normalizedReturnQty, ticketLine));
         }
 
         // 3. Calculate the refund, what the customer actually handed over for these goods.
@@ -143,11 +184,18 @@ public class OrderReturnService {
         double cashShare = saleValue > 0 ? order.getGrandTotal() / saleValue : 1.0;
         double pointsShare = saleValue > 0 ? pointsCharged / saleValue : 0.0;
 
-        validatedLines.replaceAll(line -> new ValidatedReturnLine(
-                line.originalItem, line.returnQty, roundMoney(line.refundLineAmount * cashShare)));
+        // Each line re-priced to its cash share, with the base quantity carried alongside so
+        // the stock call below still gets base units rather than the display figure.
+        List<ValidatedReturnLine> pricedLines = validatedLines.stream()
+                .map(line -> new ValidatedReturnLine(
+                        line.originalItem,
+                        line.returnQty,
+                        line.normalizedReturnQty,
+                        roundMoney(line.refundLineAmount * cashShare)))
+                .toList();
 
         double totalRefund = roundMoney(
-                validatedLines.stream().mapToDouble(l -> l.refundLineAmount).sum());
+                pricedLines.stream().mapToDouble(l -> l.refundLineAmount).sum());
         // What the points paid for, in money. Converted to points and handed back below.
         double pointsValueBack = roundMoney(ticketTotal * pointsShare);
 
@@ -176,12 +224,16 @@ public class OrderReturnService {
 
         OrderReturn savedReturn = orderReturnRepository.save(orderReturn);
 
-        // 6. Persist return items + reverse stock
+        // 6. Persist return items + reverse stock.
+        //
+        // return_qty keeps the DISPLAY figure: it is what the return slip prints and what the
+        // cashier and the customer can both check against the goods on the counter. Only the
+        // stock call wants base units, and it is passed them explicitly.
         List<OrderReturnItem> savedReturnItems = new ArrayList<>();
-        for (ValidatedReturnLine line : validatedLines) {
+        for (ValidatedReturnLine line : pricedLines) {
 
             boolean stockReversed = reverseStockForReturnItem(
-                    line.originalItem, line.returnQty,
+                    line.originalItem, line.normalizedReturnQty,
                     order.getBranchId(), order.isOfflineImported());
 
             OrderReturnItem returnItem = OrderReturnItem.builder()
@@ -210,8 +262,12 @@ public class OrderReturnService {
         // cancellation does, the redemption count is released too. Anything less is
         // proportional: the money comes off the budget, but the promotion was still used on the
         // order for whatever the customer kept.
+        //
+        // Both sides of this test are DISPLAY quantities: the repository sums what the returns
+        // stored, and displayQtyOf is what the till sold.
         boolean fullyReturned = allOrderItems.stream().allMatch(item ->
-                orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()) >= item.getQty());
+                BigDecimal.valueOf(orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()))
+                        .compareTo(displayQtyOf(item)) >= 0);
 
         // The whole-order path is for a single return that undoes the whole sale. A return that
         // merely completes an order after earlier partials is still a partial: the whole-order
@@ -225,15 +281,25 @@ public class OrderReturnService {
             promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
             pointsMoved = loyaltyService.reverseForOrder(order.getId(), user.getId());
         } else {
-            List<PromotionRedemptionService.ReturnedLine> returnedShares = validatedLines.stream()
+            // The share of each line that came back. Both quantities are base units, so the
+            // ratio is dimensionless and correct; pairing the display figure with the base one
+            // here understated every partial return's share a thousandfold.
+            List<PromotionRedemptionService.ReturnedLine> returnedShares = pricedLines.stream()
                     .filter(line -> line.originalItem.getQty() > 0)
                     .map(line -> new PromotionRedemptionService.ReturnedLine(
                             line.originalItem.getId(),
-                            BigDecimal.valueOf(line.returnQty)
+                            BigDecimal.valueOf(line.normalizedReturnQty)
                                     .divide(BigDecimal.valueOf(line.originalItem.getQty()), 6, RoundingMode.HALF_UP)))
                     .toList();
             promotionRedemptionService.reverseForReturn(
                     order.getId(), savedReturn.getId(), user.getId(), returnedShares);
+
+            // The budget share was already given back above. A partial return keeps the
+            // promotion because the customer kept goods; when none remain, that rule no longer
+            // applies, so release only the remaining redemption count and any code.
+            if (fullyReturned) {
+                promotionRedemptionService.releaseCountersForCompletedReturn(order.getId());
+            }
 
             // Earned points come back in proportion to the share of the sale returned, which
             // is the share of its value, not of its cash, or a sale settled mostly in points
@@ -255,10 +321,9 @@ public class OrderReturnService {
             savedReturn = orderReturnRepository.save(savedReturn);
         }
 
-        // 7. Adjust credit customer due for STORE_CREDIT refund
-        if ("STORE_CREDIT".equals(refundMethod)
-                && order.getOrderType() == OrderType.CREDIT
-                && order.getCustomerId() != null) {
+        // 7. Adjust credit customer due for STORE_CREDIT refund. The request-level guard above
+        // guarantees this is a credit sale with a customer.
+        if ("STORE_CREDIT".equals(refundMethod)) {
             customerRepository.findById(order.getCustomerId()).ifPresent(customer -> {
                 double newDue = roundMoney(customer.getDueAmount() - totalRefund);
                 customer.setDueAmount(Math.max(0.0, newDue));
@@ -272,7 +337,7 @@ public class OrderReturnService {
         }
 
         // 9. Void warranties for returned items only (not entire order)
-        voidWarrantiesForReturnedItems(order.getId(), validatedLines);
+        voidWarrantiesForReturnedItems(order.getId(), pricedLines);
 
         // 10. Build and return response
         String cashierName  = userRepository.findById(user.getId())
@@ -327,15 +392,77 @@ public class OrderReturnService {
         return buildResponse(orderReturn, items, cashierName, customerName);
     }
 
+    /**
+     * What the till sold this line as, in DISPLAY units. display_qty was not on the earliest
+     * rows, so a null there falls back to the base quantity rather than comparing against a
+     * null; a sale old enough to have one predates returns anyway.
+     */
+    private BigDecimal displayQtyOf(OrderItem orderItem) {
+        return orderItem.getDisplayQty() == null
+                ? BigDecimal.valueOf(orderItem.getQty())
+                : orderItem.getDisplayQty();
+    }
+
     // ---------------------------------------------------------------
     // PRIVATE: Stock reversal, mirrors cancelOrder() in OrderService
     //   Case 1: usage rows exist  -> proportional restore across batches
     //   Case 2: offline-imported, no batchId -> skip
     //   Case 3: single batchId fallback -> restore directly
     //   SERVICE / RECIPE -> skip (no physical stock)
+    //
+    // normalizedReturnQty is BASE units, the scale of usage.getQuantity() and
+    // StockBatch.quantity. A display quantity here puts back a thousandth of the goods.
     // ---------------------------------------------------------------
 
-    private boolean reverseStockForReturnItem(OrderItem originalItem, int returnQty,
+    private int alreadyRestoredQtyForItem(Long orderItemId) {
+        return orderItemStockUsageRepository.sumRestoredQtyByOrderItemId(orderItemId);
+    }
+
+    private List<UsageAllocation> apportion(int cumulativeReturn, List<OrderItemStockUsage> usages,
+                                            int originalQty) {
+        List<UsageAllocation> allocations = new ArrayList<>();
+        int allocated = 0;
+        for (OrderItemStockUsage usage : usages) {
+            long numerator = (long) cumulativeReturn * usage.getQuantity();
+            int target = (int) (numerator / originalQty);
+            long remainder = numerator % originalQty;
+            allocations.add(new UsageAllocation(usage, target, remainder));
+            allocated += target;
+        }
+
+        int leftover = cumulativeReturn - allocated;
+        List<UsageAllocation> byLargestRemainder = new ArrayList<>(allocations);
+        byLargestRemainder.sort(Comparator.comparingLong(UsageAllocation::remainder).reversed()
+                .thenComparingInt(a -> a.usage().getQuantity())
+                .thenComparing(a -> a.usage().getId()));
+        for (UsageAllocation allocation : byLargestRemainder) {
+            if (leftover == 0) break;
+            if (allocation.target() < allocation.usage().getQuantity()) {
+                allocation.increaseTarget();
+                leftover--;
+            }
+        }
+        return allocations;
+    }
+
+    private static final class UsageAllocation {
+        private final OrderItemStockUsage usage;
+        private int target;
+        private final long remainder;
+
+        private UsageAllocation(OrderItemStockUsage usage, int target, long remainder) {
+            this.usage = usage;
+            this.target = target;
+            this.remainder = remainder;
+        }
+
+        private OrderItemStockUsage usage() { return usage; }
+        private int target() { return target; }
+        private long remainder() { return remainder; }
+        private void increaseTarget() { target++; }
+    }
+
+    private boolean reverseStockForReturnItem(OrderItem originalItem, int normalizedReturnQty,
                                                Long branchId, boolean offlineImported) {
         Item item = itemRepository.findById(originalItem.getItemId()).orElse(null);
         if (item != null
@@ -349,22 +476,34 @@ public class OrderReturnService {
 
         if (!usages.isEmpty()) {
             int originalQty = originalItem.getQty();
-            Map<Long, StockBatch> batchesToSave = new LinkedHashMap<>();
+            if (originalQty <= 0) return false;
 
-            for (OrderItemStockUsage usage : usages) {
-                int restoreQty = (int) Math.ceil(
-                        (double) returnQty / originalQty * usage.getQuantity());
-                restoreQty = Math.min(restoreQty, usage.getQuantity());
+            int previouslyRestored = alreadyRestoredQtyForItem(originalItem.getId());
+            int cumulativeReturn = (int) Math.min(
+                    (long) previouslyRestored + normalizedReturnQty, originalQty);
+            List<UsageAllocation> allocations = apportion(cumulativeReturn, usages, originalQty);
+            Map<Long, StockBatch> batchesToSave = new LinkedHashMap<>();
+            List<OrderItemStockUsage> usagesToSave = new ArrayList<>();
+
+            for (UsageAllocation allocation : allocations) {
+                OrderItemStockUsage usage = allocation.usage();
+                int alreadyRestored = usage.getRestoredQuantity();
+                int restoreQty = Math.max(0, Math.min(
+                        allocation.target() - alreadyRestored,
+                        usage.getQuantity() - alreadyRestored));
                 if (restoreQty <= 0) continue;
 
                 StockBatch batch = stockBatchRepository.findById(usage.getBatchId())
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Stock batch not found for return stock restoration"));
                 batch.setQuantity(batch.getQuantity() + restoreQty);
+                usage.setRestoredQuantity(alreadyRestored + restoreQty);
                 batchesToSave.put(batch.getId(), batch);
+                usagesToSave.add(usage);
             }
             if (!batchesToSave.isEmpty()) {
                 stockBatchRepository.saveAll(batchesToSave.values());
+                orderItemStockUsageRepository.saveAll(usagesToSave);
             }
             return true;
 
@@ -375,7 +514,7 @@ public class OrderReturnService {
             StockBatch batch = stockBatchRepository.findById(originalItem.getBatchId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Original batch not found for return: " + originalItem.getItemName()));
-            batch.setQuantity(batch.getQuantity() + returnQty);
+            batch.setQuantity(batch.getQuantity() + normalizedReturnQty);
             stockBatchRepository.save(batch);
             return true;
         }
@@ -469,10 +608,13 @@ public class OrderReturnService {
                 .build();
     }
 
-    // Carries validated data cleanly between validation and persistence steps
+    // Carries validated data between validation and persistence.
+    // returnQty is DISPLAY units (what is persisted, printed and shown);
+    // normalizedReturnQty is BASE units (what every stock calculation uses).
     private record ValidatedReturnLine(
             OrderItem originalItem,
             int returnQty,
+            int normalizedReturnQty,
             double refundLineAmount) {
     }
 }

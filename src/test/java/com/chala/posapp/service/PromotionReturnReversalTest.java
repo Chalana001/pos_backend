@@ -42,6 +42,7 @@ import static org.mockito.Mockito.when;
 class PromotionReturnReversalTest {
 
     private PromotionRepository promotionRepository;
+    private PromotionCodeRepository codeRepository;
     private PromotionRedemptionRepository redemptionRepository;
     private PromotionRedemptionService promotions;
 
@@ -52,9 +53,10 @@ class PromotionReturnReversalTest {
     @BeforeEach
     void setUp() {
         promotionRepository = mock(PromotionRepository.class);
+        codeRepository = mock(PromotionCodeRepository.class);
         redemptionRepository = mock(PromotionRedemptionRepository.class);
         promotions = new PromotionRedemptionService(
-                promotionRepository, mock(PromotionCodeRepository.class), redemptionRepository);
+                promotionRepository, codeRepository, redemptionRepository);
 
         LoyaltySettingsRepository settingsRepository = mock(LoyaltySettingsRepository.class);
         LoyaltyTierRepository tierRepository = mock(LoyaltyTierRepository.class);
@@ -176,6 +178,50 @@ class PromotionReturnReversalTest {
                     List.of(new PromotionRedemptionService.ReturnedLine(10L, BigDecimal.ONE)));
 
             verify(redemptionRepository, never()).saveAll(any());
+        }
+
+        @Test
+        @DisplayName("a completed return releases each original promotion and code counter once")
+        void completedReturnReleasesCountersWithoutRefundingBudgetAgain() {
+            PromotionRedemption first = redemption(1, 100L, 10L, "40.00");
+            first.setPromotionCodeId(700L);
+            PromotionRedemption second = redemption(2, 100L, 11L, "10.00");
+            second.setPromotionCodeId(700L);
+            PromotionRedemption third = redemption(3, 200L, 12L, "5.00");
+            third.setPromotionCodeId(800L);
+            PromotionRedemption reversal = redemption(4, 100L, 10L, "-25.00");
+            reversal.setReversalOfId(1L);
+            reversal.setPromotionCodeId(700L);
+
+            // The old finder includes reversal rows; the completed-return finder must return
+            // genuine originals only, despite those negative ledger rows being present.
+            when(redemptionRepository.findByOrderIdAndReversedAtIsNull(500L))
+                    .thenReturn(List.of(first, second, third, reversal));
+            when(redemptionRepository.findLiveForOrder(500L)).thenReturn(List.of(first, second, third));
+
+            promotions.releaseCountersForCompletedReturn(500L);
+
+            verify(redemptionRepository).findLiveForOrder(500L);
+            verify(promotionRepository).releaseCounter(100L);
+            verify(promotionRepository).releaseCounter(200L);
+            verify(promotionRepository, never()).release(anyLong(), any());
+            verify(promotionRepository, never()).releaseBudget(anyLong(), any());
+            verify(codeRepository).release(700L);
+            verify(codeRepository).release(800L);
+            verify(codeRepository, org.mockito.Mockito.times(2)).release(anyLong());
+        }
+
+        @Test
+        @DisplayName("a completed return with no original live redemptions releases nothing")
+        void completedReturnWithNoLiveRowsIsNoOp() {
+            when(redemptionRepository.findLiveForOrder(500L)).thenReturn(List.of());
+
+            promotions.releaseCountersForCompletedReturn(500L);
+
+            verify(promotionRepository, never()).releaseCounter(anyLong());
+            verify(promotionRepository, never()).release(anyLong(), any());
+            verify(promotionRepository, never()).releaseBudget(anyLong(), any());
+            verify(codeRepository, never()).release(anyLong());
         }
     }
 

@@ -35,7 +35,9 @@ public class OrderReturnItem extends TenantEntity {
     @Column(nullable = false, length = 80)
     private String barcode;
 
-    // Quantity being returned, in same base units as OrderItem.qty
+    // Quantity being returned, in DISPLAY units (same as OrderItem.displayQty).
+    // This is what the return slip prints and what the cashier checks against goods on the counter.
+    // Stock arithmetic uses a separate normalized quantity that must be derived at runtime.
     @Column(name = "return_qty", nullable = false)
     private int returnQty;
 

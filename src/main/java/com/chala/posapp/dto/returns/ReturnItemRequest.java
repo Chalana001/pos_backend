@@ -11,7 +11,7 @@ public class ReturnItemRequest {
     @NotNull(message = "orderItemId is required")
     private Long orderItemId;
 
-    // How many units to return (in base units, same as OrderItem.qty)
+    // How many units to return, in DISPLAY units (what the till shows), not base units.
     @NotNull(message = "returnQty is required")
     @Min(value = 1, message = "returnQty must be at least 1")
     private Integer returnQty;
