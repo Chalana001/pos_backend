@@ -35,7 +35,16 @@ public class Supplier extends TenantEntity {
     @Column(nullable = false)
     private String name;
 
-    @Column(nullable = false, length = 20)
+    /**
+     * Optional. A supplier is often known by name only at the moment it is first
+     * entered, so the number is asked for later rather than blocking the record.
+     *
+     * Stays unique: MySQL allows any number of NULLs in a unique index, so many
+     * suppliers can go without a number while two suppliers sharing a real number
+     * are still rejected. Blank input must be stored as NULL, never as '', or the
+     * unique key would permit only one numberless supplier.
+     */
+    @Column(length = 20)
     private String phone;
 
     @Column(length = 100)

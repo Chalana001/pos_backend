@@ -5,6 +5,7 @@ import com.chala.posapp.dto.supplier.SupplierPaymentRequest;
 import com.chala.posapp.dto.supplier.SupplierPaymentResponse;
 import com.chala.posapp.dto.supplier.SupplierQuickCreateRequest;
 import com.chala.posapp.dto.supplier.SupplierResponse;
+import com.chala.posapp.dto.supplier.SupplierUpdateRequest;
 import com.chala.posapp.entity.CashShift;
 import com.chala.posapp.entity.CashSource;
 import com.chala.posapp.entity.GRN;
@@ -19,6 +20,7 @@ import com.chala.posapp.entity.supplier.SupplierContact;
 import com.chala.posapp.entity.supplier.SupplierPayment;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.ConflictException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.PurchaseRepository;
@@ -48,16 +50,27 @@ public class SupplierService {
     @Transactional
     public SupplierResponse create(SupplierCreateRequest req) {
 
+        String name = normalizeRequired(req.getName(), "Supplier name is required");
+        String phone = normalizeOptional(req.getPhone());
+        String email = normalizeOptional(req.getEmail());
+
+        // Checked against tombstones too: a soft-deleted supplier keeps its number, and the
+        // unique index still enforces it, so a live-only check would pass here and then fail
+        // at the constraint with the generic "invalid or duplicate data" message.
+        if (phone != null && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+            throw new AlreadyExistsException(phoneTakenMessage(phone));
+        }
+
         Supplier supplier = new Supplier();
-        supplier.setName(req.getName());
-        supplier.setPhone(req.getPhone());
-        supplier.setEmail(req.getEmail());
-        supplier.setAddress(req.getAddress());
+        supplier.setName(name);
+        supplier.setPhone(phone);
+        supplier.setEmail(email);
+        supplier.setAddress(normalizeOptional(req.getAddress()));
         supplier.setDueAmount(BigDecimal.ZERO);
         supplier.setActive(req.getActive() != null ? req.getActive() : true);
 
-        if (req.getEmail() != null && !req.getEmail().isBlank() && supplierRepository.existsByEmail(req.getEmail())){
-            throw new AlreadyExistsException("A supplier with email "+ req.getEmail()+ "already exists");
+        if (email != null && supplierRepository.existsByEmailIncludingDeleted(email)){
+            throw new AlreadyExistsException(emailTakenMessage(email));
         }
 
         if (req.getContacts() != null) {
@@ -83,16 +96,26 @@ public class SupplierService {
     }
 
     @Transactional
-    public Supplier createQuickSupplier(SupplierQuickCreateRequest req) {
+    public SupplierResponse createQuickSupplier(SupplierQuickCreateRequest req) {
+
+        String name = normalizeRequired(req.getName(), "Supplier name is required");
+        String phone = normalizeOptional(req.getPhone());
+
+        // The quick-add modal has always labelled this field optional and sent "" when it
+        // was left blank; that empty string was the reason a second numberless supplier
+        // could never be created. It normalises to NULL now.
+        if (phone != null && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+            throw new AlreadyExistsException(phoneTakenMessage(phone));
+        }
 
         Supplier s = new Supplier();
-        s.setName(req.getName());
-        s.setPhone(req.getPhone());
-        s.setAddress(req.getAddress());
+        s.setName(name);
+        s.setPhone(phone);
+        s.setAddress(normalizeOptional(req.getAddress()));
         s.setDueAmount(BigDecimal.ZERO);
         s.setActive(true);
 
-        return supplierRepository.save(s);
+        return mapToResponse(supplierRepository.save(s));
     }
 
     @Transactional(readOnly = true)
@@ -210,6 +233,164 @@ public class SupplierService {
         return supplierPaymentRepository.findBySupplierIdOrderByPaidAtDesc(supplierId).stream()
                 .map(this::mapPayment)
                 .toList();
+    }
+
+    /**
+     * Edit the fields a shop actually knows about a supplier: name, phone number,
+     * address, email and bank details.
+     *
+     * A null field means "leave it alone", so a partial body is safe. dueAmount is
+     * deliberately NOT settable here: it is the payables ledger, moved only by receiving
+     * stock and by recording a payment, and a form that could write it would let one
+     * typo quietly erase a debt.
+     */
+    @Transactional
+    public SupplierResponse update(Long id, SupplierUpdateRequest req) {
+        Supplier supplier = supplierRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + id));
+
+        if (req.getName() != null) {
+            supplier.setName(normalizeRequired(req.getName(), "Supplier name is required"));
+        }
+
+        if (req.getPhone() != null) {
+            String phone = normalizeOptional(req.getPhone());
+            // Keeping the same number is not a clash with itself.
+            if (phone != null && !phone.equals(supplier.getPhone())
+                    && supplierRepository.existsByPhoneIncludingDeleted(phone)) {
+                throw new AlreadyExistsException(phoneTakenMessage(phone));
+            }
+            supplier.setPhone(phone);
+        }
+
+        if (req.getEmail() != null) {
+            String email = normalizeOptional(req.getEmail());
+            if (email != null && !email.equals(supplier.getEmail())
+                    && supplierRepository.existsByEmailIncludingDeleted(email)) {
+                throw new AlreadyExistsException(emailTakenMessage(email));
+            }
+            supplier.setEmail(email);
+        }
+
+        if (req.getAddress() != null) {
+            supplier.setAddress(normalizeOptional(req.getAddress()));
+        }
+
+        if (req.getActive() != null) {
+            supplier.setActive(req.getActive());
+        }
+
+        applyBankDetails(supplier, req.getBank());
+
+        return mapToResponse(supplierRepository.save(supplier));
+    }
+
+    /**
+     * Soft delete. The row stays, keeping its purchase and payment history and its phone
+     * number, and simply stops appearing: Supplier carries
+     * @SQLRestriction("deleted_at IS NULL"), so it drops out of every JPA query without a
+     * single finder having to be changed.
+     *
+     * Refused while money is still owed. A supplier with an outstanding payable is a debt
+     * the shop has to settle, and hiding it would make the balance disappear from the
+     * directory while the ledger kept it -- the worst of both.
+     */
+    @Transactional
+    public void delete(Long id) {
+        Supplier supplier = supplierRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Supplier not found with id: " + id));
+
+        BigDecimal due = normalizeMoney(supplier.getDueAmount());
+        if (due.compareTo(BigDecimal.ZERO) > 0) {
+            throw new ConflictException("This supplier still has an outstanding payable of " + due
+                    + ". Settle it before deleting the supplier.");
+        }
+
+        if (purchaseRepository.existsBySupplierId(id)) {
+            throw new ConflictException("This supplier has purchase history and cannot be deleted. You can mark it as Inactive instead.");
+        }
+
+        supplier.setActive(false);
+        supplier.setDeletedAt(LocalDateTime.now());
+        supplierRepository.save(supplier);
+    }
+
+    /**
+     * Blank is not a value here.
+     *
+     * Storing "" in an optional *unique* column is exactly what capped numberless
+     * suppliers at one: '' is a value, so the unique index tolerated a single row
+     * holding it. NULL is what "not given" has to mean.
+     */
+    private String normalizeOptional(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizeRequired(String value, String message) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            throw new BadRequestException(message);
+        }
+        return normalized;
+    }
+
+    /**
+     * Say which kind of clash this is. "Already exists" is misleading when the supplier
+     * the operator is being told about appears nowhere in the directory, because it is a
+     * tombstone -- and a tombstone keeps its phone number, so the unique index still
+     * refuses it.
+     */
+    private String phoneTakenMessage(String phone) {
+        return supplierRepository.existsByPhone(phone)
+                ? "Another supplier already uses the phone number " + phone
+                : "A deleted supplier still holds the phone number " + phone
+                        + ". Use a different number, or restore that supplier instead.";
+    }
+
+    private String emailTakenMessage(String email) {
+        return supplierRepository.existsByEmail(email)
+                ? "Another supplier already uses the email address " + email
+                : "A deleted supplier still holds the email address " + email
+                        + ". Use a different address, or restore that supplier instead.";
+    }
+
+    /**
+     * Upsert or clear the bank details attached to a supplier.
+     *
+     * A null bank object means the caller said nothing about banking, so the existing row
+     * is left alone. An object whose every field is blank is an operator clearing the
+     * section, which removes the child row through the entity's orphanRemoval.
+     */
+    private void applyBankDetails(Supplier supplier, SupplierUpdateRequest.Bank bank) {
+        if (bank == null) {
+            return;
+        }
+
+        String bankName = normalizeOptional(bank.getBankName());
+        String accountNumber = normalizeOptional(bank.getAccountNumber());
+        String accountName = normalizeOptional(bank.getAccountName());
+        String branchName = normalizeOptional(bank.getBranchName());
+
+        boolean anyValue = bankName != null || accountNumber != null
+                || accountName != null || branchName != null;
+
+        if (!anyValue) {
+            supplier.setBankDetails(null);
+            return;
+        }
+
+        SupplierBankDetails details = supplier.getBankDetails();
+        if (details == null) {
+            details = new SupplierBankDetails();
+            details.setSupplier(supplier);
+            supplier.setBankDetails(details);
+        }
+        details.setBankName(bankName);
+        details.setAccountNumber(accountNumber);
+        details.setAccountName(accountName);
+        details.setBranchName(branchName);
     }
 
     private SupplierResponse mapToResponse(Supplier s) {

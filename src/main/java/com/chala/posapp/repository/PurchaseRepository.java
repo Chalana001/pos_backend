@@ -12,6 +12,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
+    boolean existsBySupplierId(Long supplierId);
+
     Page<Purchase> findAllByOrderByIdDesc(Pageable pageable);
 
     /**
