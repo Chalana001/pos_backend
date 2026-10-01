@@ -8,13 +8,17 @@ import com.chala.posapp.entity.ItemType;
 import com.chala.posapp.entity.MeasurementUnit;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderItem;
+import com.chala.posapp.entity.OrderItemStockUsage;
 import com.chala.posapp.entity.OrderReturn;
+import com.chala.posapp.entity.OrderReturnItem;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.SecurityUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,8 +53,10 @@ class OrderReturnServiceTest {
 
     private OrderRepository orderRepository;
     private OrderItemRepository orderItemRepository;
+    private OrderItemStockUsageRepository orderItemStockUsageRepository;
     private OrderReturnRepository orderReturnRepository;
     private OrderReturnItemRepository orderReturnItemRepository;
+    private StockBatchRepository stockBatchRepository;
     private SecurityUtils securityUtils;
     private CustomerRepository customerRepository;
     private ItemRepository itemRepository;
@@ -61,12 +67,12 @@ class OrderReturnServiceTest {
     void setUp() {
         orderRepository = mock(OrderRepository.class);
         orderItemRepository = mock(OrderItemRepository.class);
-        OrderItemStockUsageRepository orderItemStockUsageRepository = mock(OrderItemStockUsageRepository.class);
+        orderItemStockUsageRepository = mock(OrderItemStockUsageRepository.class);
         orderReturnRepository = mock(OrderReturnRepository.class);
         orderReturnItemRepository = mock(OrderReturnItemRepository.class);
         securityUtils = mock(SecurityUtils.class);
         customerRepository = mock(CustomerRepository.class);
-        StockBatchRepository stockBatchRepository = mock(StockBatchRepository.class);
+        stockBatchRepository = mock(StockBatchRepository.class);
         itemRepository = mock(ItemRepository.class);
         CashShiftRepository cashShiftRepository = mock(CashShiftRepository.class);
         WarrantyRepository warrantyRepository = mock(WarrantyRepository.class);
@@ -138,13 +144,33 @@ class OrderReturnServiceTest {
     private CreateReturnRequest request(String refundMethod) {
         ReturnItemRequest item = new ReturnItemRequest();
         item.setOrderItemId(100L);
-        item.setReturnQty(1);
+        item.setReturnQty(BigDecimal.ONE);
 
         CreateReturnRequest request = new CreateReturnRequest();
         request.setRefundMethod(refundMethod);
         request.setReason("Damaged on opening");
         request.setItems(List.of(item));
         return request;
+    }
+
+    /**
+     * The wire payload is the source of truth for the request type. The service itself can be
+     * called with an already-built DTO, which would hide a JSON deserialization failure, so
+     * this keeps the RED state honest: 0.7 either fails to bind or arrives truncated.
+     */
+    private CreateReturnRequest requestFromJson(String refundMethod, String itemJson) {
+        try {
+            String json = """
+                    {
+                      "refundMethod": "%s",
+                      "reason": "Damaged on opening",
+                      "items": [%s]
+                    }
+                    """.formatted(refundMethod, itemJson);
+            return new ObjectMapper().readValue(json, CreateReturnRequest.class);
+        } catch (Exception e) {
+            throw new AssertionError("Failed to deserialize return request", e);
+        }
     }
 
     private OrderReturn savedReturn() {
@@ -241,5 +267,66 @@ class OrderReturnServiceTest {
         service.processReturn(INVOICE_NO, request("STORE_CREDIT"));
 
         assertThat(customer.getDueAmount()).isZero();
+    }
+
+    @Test
+    @DisplayName("a fractional WEIGHT return persists 0.7 KG, restores 700 base units and refunds 0.7 x price")
+    void fractionalWeightReturnPersistsRestoresAndPrices() {
+        givenOrder(OrderType.CASH, null);
+
+        OrderItem line = OrderItem.builder()
+                .id(100L)
+                .orderId(10L)
+                .itemId(7L)
+                .itemName("Rice")
+                .qty(2000)
+                .displayQty(new BigDecimal("2"))
+                .qtyUnit(MeasurementUnit.KG)
+                .unitPrice(500.0)
+                .finalUnitPrice(500.0)
+                .build();
+        when(orderItemRepository.findByOrderId(anyLong())).thenReturn(List.of(line));
+        when(itemRepository.findById(7L)).thenReturn(Optional.of(Item.builder()
+                .id(7L).itemType(ItemType.WEIGHT).defaultUnit(MeasurementUnit.KG).build()));
+
+        StockBatch batch = StockBatch.builder()
+                .id(30L)
+                .item(Item.builder().id(7L).itemType(ItemType.WEIGHT).build())
+                .quantity(1000)
+                .originalQuantity(3000)
+                .costPrice(new BigDecimal("100.00"))
+                .sellingPrice(new BigDecimal("500.00"))
+                .build();
+        OrderItemStockUsage usage = OrderItemStockUsage.builder()
+                .id(40L)
+                .orderItemId(100L)
+                .itemId(7L)
+                .batchId(30L)
+                .quantity(2000)
+                .restoredQuantity(0)
+                .build();
+        when(orderItemStockUsageRepository.findByOrderItemId(100L)).thenReturn(List.of(usage));
+        when(stockBatchRepository.findById(30L)).thenReturn(Optional.of(batch));
+        when(orderItemStockUsageRepository.sumRestoredQtyByOrderItemId(100L)).thenReturn(0);
+        when(orderReturnRepository.save(any(OrderReturn.class)))
+                .thenAnswer(call -> call.getArgument(0));
+
+        service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":0.7}"));
+
+        ArgumentCaptor<OrderReturnItem> returnItemCaptor =
+                ArgumentCaptor.forClass(OrderReturnItem.class);
+        verify(orderReturnItemRepository).save(returnItemCaptor.capture());
+        OrderReturnItem savedItem = returnItemCaptor.getValue();
+        assertThat(savedItem.getReturnQty()).isEqualByComparingTo(new BigDecimal("0.7"));
+        assertThat(savedItem.getRefundLineAmount()).isEqualTo(350.0);
+
+        assertThat(batch.getQuantity()).isEqualTo(1700);
+        assertThat(usage.getRestoredQuantity()).isEqualTo(700);
+        verify(stockBatchRepository).saveAll(any());
+        verify(orderItemStockUsageRepository).saveAll(any());
+
+        OrderReturn saved = savedReturn();
+        assertThat(saved.getTotalRefundAmount()).isEqualTo(350.0);
     }
 }

@@ -3,6 +3,8 @@ package com.chala.posapp.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(
         name = "order_return_items",
@@ -38,8 +40,8 @@ public class OrderReturnItem extends TenantEntity {
     // Quantity being returned, in DISPLAY units (same as OrderItem.displayQty).
     // This is what the return slip prints and what the cashier checks against goods on the counter.
     // Stock arithmetic uses a separate normalized quantity that must be derived at runtime.
-    @Column(name = "return_qty", nullable = false)
-    private int returnQty;
+    @Column(name = "return_qty", nullable = false, precision = 12, scale = 3)
+    private BigDecimal returnQty;
 
     @Column(name = "unit_price", nullable = false)
     private double unitPrice;

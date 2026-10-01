@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 public interface OrderReturnItemRepository extends JpaRepository<OrderReturnItem, Long> {
@@ -23,5 +24,5 @@ public interface OrderReturnItemRepository extends JpaRepository<OrderReturnItem
         FROM OrderReturnItem ri
         WHERE ri.orderItemId = :orderItemId
     """)
-    int sumReturnedQtyByOrderItemId(@Param("orderItemId") Long orderItemId);
+    BigDecimal sumReturnedQtyByOrderItemId(@Param("orderItemId") Long orderItemId);
 }

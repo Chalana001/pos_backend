@@ -62,6 +62,10 @@ public class OrderReturnService {
         return BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    private double roundMoney(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
+
     // ---------------------------------------------------------------
     // PUBLIC: Process a partial return
     // ---------------------------------------------------------------
@@ -138,7 +142,7 @@ public class OrderReturnService {
             }
 
             BigDecimal displaySold = displayQtyOf(originalItem);
-            BigDecimal alreadyReturned = BigDecimal.valueOf(orderReturnItemRepository
+            BigDecimal alreadyReturned = orZero(orderReturnItemRepository
                     .sumReturnedQtyByOrderItemId(originalItem.getId()));
             BigDecimal maxReturnable = displaySold.subtract(alreadyReturned);
 
@@ -146,9 +150,9 @@ public class OrderReturnService {
                 throw new BadRequestException(
                         "Item '" + originalItem.getItemName() + "' has already been fully returned");
             }
-            if (BigDecimal.valueOf(itemReq.getReturnQty()).compareTo(maxReturnable) > 0) {
+            if (itemReq.getReturnQty().compareTo(maxReturnable) > 0) {
                 throw new BadRequestException(
-                        "Return qty " + itemReq.getReturnQty()
+                        "Return qty " + itemReq.getReturnQty().stripTrailingZeros().toPlainString()
                                 + " exceeds returnable qty "
                                 + maxReturnable.stripTrailingZeros().toPlainString()
                                 + " for item '" + originalItem.getItemName() + "'");
@@ -157,10 +161,11 @@ public class OrderReturnService {
             // The same display figure in base units: what every stock calculation uses.
             int normalizedReturnQty = QuantityConversionUtil.normalizeSaleQuantity(
                     item,
-                    BigDecimal.valueOf(itemReq.getReturnQty()),
+                    itemReq.getReturnQty(),
                     originalItem.getQtyUnit());
 
-            double ticketLine = roundMoney(itemReq.getReturnQty() * originalItem.getFinalUnitPrice());
+            double ticketLine = roundMoney(itemReq.getReturnQty()
+                    .multiply(BigDecimal.valueOf(originalItem.getFinalUnitPrice())));
             validatedLines.add(new ValidatedReturnLine(
                     originalItem, itemReq.getReturnQty(), normalizedReturnQty, ticketLine));
         }
@@ -266,7 +271,7 @@ public class OrderReturnService {
         // Both sides of this test are DISPLAY quantities: the repository sums what the returns
         // stored, and displayQtyOf is what the till sold.
         boolean fullyReturned = allOrderItems.stream().allMatch(item ->
-                BigDecimal.valueOf(orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()))
+                orZero(orderReturnItemRepository.sumReturnedQtyByOrderItemId(item.getId()))
                         .compareTo(displayQtyOf(item)) >= 0);
 
         // The whole-order path is for a single return that undoes the whole sale. A return that
@@ -401,6 +406,14 @@ public class OrderReturnService {
         return orderItem.getDisplayQty() == null
                 ? BigDecimal.valueOf(orderItem.getQty())
                 : orderItem.getDisplayQty();
+    }
+
+    /**
+     * The repository sums a nullable BigDecimal column. COALESCE covers the empty-result case in
+     * query languages that keep it, but a Java null must never flow into the cap arithmetic.
+     */
+    private BigDecimal orZero(BigDecimal amount) {
+        return amount == null ? BigDecimal.ZERO : amount;
     }
 
     // ---------------------------------------------------------------
@@ -613,7 +626,7 @@ public class OrderReturnService {
     // normalizedReturnQty is BASE units (what every stock calculation uses).
     private record ValidatedReturnLine(
             OrderItem originalItem,
-            int returnQty,
+            BigDecimal returnQty,
             int normalizedReturnQty,
             double refundLineAmount) {
     }

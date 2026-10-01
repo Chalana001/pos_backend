@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
+
 @Data
 @Builder
 @AllArgsConstructor
@@ -18,7 +20,7 @@ public class OrderReturnItemResponse {
     private String barcode;
 
     // Returned quantity in display units (what the slip shows)
-    private int returnQty;
+    private BigDecimal returnQty;
 
     private double unitPrice;
     private double finalUnitPrice;
