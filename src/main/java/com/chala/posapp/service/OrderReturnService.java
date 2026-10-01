@@ -421,10 +421,13 @@ public class OrderReturnService {
     //   Case 1: usage rows exist  -> proportional restore across batches
     //   Case 2: offline-imported, no batchId -> skip
     //   Case 3: single batchId fallback -> restore directly
-    //   SERVICE / RECIPE -> skip (no physical stock)
+    //   SERVICE -> skip (no physical stock)
     //
     // normalizedReturnQty is BASE units, the scale of usage.getQuantity() and
     // StockBatch.quantity. A display quantity here puts back a thousandth of the goods.
+    // RECIPE pieces are their own scale: the usage rows hold ingredient base units and
+    // apportion() works off the ratio, so a partial return still restores exactly its
+    // share of each ingredient.
     // ---------------------------------------------------------------
 
     private int alreadyRestoredQtyForItem(Long orderItemId) {
@@ -444,15 +447,20 @@ public class OrderReturnService {
         }
 
         int leftover = cumulativeReturn - allocated;
-        List<UsageAllocation> byLargestRemainder = new ArrayList<>(allocations);
-        byLargestRemainder.sort(Comparator.comparingLong(UsageAllocation::remainder).reversed()
-                .thenComparingInt(a -> a.usage().getQuantity())
-                .thenComparing(a -> a.usage().getId()));
-        for (UsageAllocation allocation : byLargestRemainder) {
-            if (leftover == 0) break;
-            if (allocation.target() < allocation.usage().getQuantity()) {
-                allocation.increaseTarget();
-                leftover--;
+        // Multi-batch lines keep the invariant that the targets add up to the cumulative
+        // return; for RECIPE lines the usage rows sum to ingredient base units, not
+        // pieces, so leftover is negative and this loop does not apply.
+        if (leftover > 0) {
+            List<UsageAllocation> byLargestRemainder = new ArrayList<>(allocations);
+            byLargestRemainder.sort(Comparator.comparingLong(UsageAllocation::remainder).reversed()
+                    .thenComparingInt(a -> a.usage().getQuantity())
+                    .thenComparing(a -> a.usage().getId()));
+            for (UsageAllocation allocation : byLargestRemainder) {
+                if (leftover == 0) break;
+                if (allocation.target() < allocation.usage().getQuantity()) {
+                    allocation.increaseTarget();
+                    leftover--;
+                }
             }
         }
         return allocations;
@@ -478,9 +486,7 @@ public class OrderReturnService {
     private boolean reverseStockForReturnItem(OrderItem originalItem, int normalizedReturnQty,
                                                Long branchId, boolean offlineImported) {
         Item item = itemRepository.findById(originalItem.getItemId()).orElse(null);
-        if (item != null
-                && (item.getItemType() == ItemType.SERVICE
-                || item.getItemType() == ItemType.RECIPE)) {
+        if (item != null && item.getItemType() == ItemType.SERVICE) {
             return false;
         }
 

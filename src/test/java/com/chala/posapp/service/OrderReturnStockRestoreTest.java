@@ -75,6 +75,36 @@ class OrderReturnStockRestoreTest {
         assertThat(secondUsage.getRestoredQuantity()).isEqualTo(2000);
     }
 
+    @Test
+    @DisplayName("a recipe line restores its ingredients in proportion, exactly, across partials")
+    void recipeReturnsRestoreIngredientsProportionally() {
+        Item flour = Item.builder().id(30L).itemType(ItemType.NORMAL).build();
+        StockBatch flourBatch = StockBatch.builder().id(101L).quantity(0).build();
+        OrderItem recipeLine = OrderItem.builder().id(10L).itemId(20L).qty(2).build();
+        OrderItemStockUsage ingredientUsage = OrderItemStockUsage.builder()
+                .id(1L).orderItemId(10L).itemId(30L).batchId(101L).quantity(400).build();
+
+        when(itemRepository.findById(20L)).thenReturn(Optional.of(Item.builder()
+                .id(20L).itemType(ItemType.RECIPE).build()));
+        when(itemRepository.findById(30L)).thenReturn(Optional.of(flour));
+        when(usageRepository.findByOrderItemId(10L)).thenReturn(List.of(ingredientUsage));
+        when(usageRepository.sumRestoredQtyByOrderItemId(10L))
+                .thenAnswer(call -> ingredientUsage.getRestoredQuantity());
+        when(stockBatchRepository.findById(101L)).thenReturn(Optional.of(flourBatch));
+
+        Boolean first = ReflectionTestUtils.invokeMethod(service, "reverseStockForReturnItem",
+                recipeLine, 1, 1L, false);
+        assertThat(first).isTrue();
+        assertThat(flourBatch.getQuantity()).isEqualTo(200);
+        assertThat(ingredientUsage.getRestoredQuantity()).isEqualTo(200);
+
+        Boolean second = ReflectionTestUtils.invokeMethod(service, "reverseStockForReturnItem",
+                recipeLine, 1, 1L, false);
+        assertThat(second).isTrue();
+        assertThat(flourBatch.getQuantity()).isEqualTo(400);
+        assertThat(ingredientUsage.getRestoredQuantity()).isEqualTo(400);
+    }
+
     private void restore(int normalizedReturnQty) {
         ReflectionTestUtils.invokeMethod(service, "reverseStockForReturnItem",
                 soldLine, normalizedReturnQty, 1L, false);
