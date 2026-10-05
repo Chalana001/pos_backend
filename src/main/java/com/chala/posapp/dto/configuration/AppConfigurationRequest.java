@@ -66,6 +66,14 @@ public class AppConfigurationRequest {
     private Integer scaleBarcodeValueDecimals;
 
     private Boolean scaleBarcodeStripLeadingZeros;
-
     private Boolean scaleBarcodeHasCheckDigit;
+
+    // Quick Sale held bills. Omitted fields leave stored values alone; zero clears
+    // the limit (unlimited), since null is omitted by partial-update semantics.
+    // The service checks allowed positive limits.
+    private Boolean quickSaleHeldBillsEnabled;
+
+    @Min(0)
+    @Max(50)
+    private Integer quickSaleHeldBillsMax;
 }

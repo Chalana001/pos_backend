@@ -39,4 +39,7 @@ public class AppConfigurationResponse {
     private int scaleBarcodeValueDecimals;
     private boolean scaleBarcodeStripLeadingZeros;
     private boolean scaleBarcodeHasCheckDigit;
+    private boolean quickSaleHeldBillsEnabled;
+    // Null means unlimited.
+    private Integer quickSaleHeldBillsMax;
 }

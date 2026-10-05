@@ -331,6 +331,7 @@ public class PromotionService {
             linesHaveExclusive |= application.exclusive();
             items.add(PromotionPreviewItemResponse.builder()
                     .itemId(line.item().getId())
+                    .batchId(itemRequest.getBatchId())
                     .promotionId(application.promotionId())
                     .promotionName(application.promotionName())
                     .discountType(application.discountType())

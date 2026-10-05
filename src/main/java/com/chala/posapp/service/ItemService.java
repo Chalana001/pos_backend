@@ -297,8 +297,9 @@ public class ItemService {
             if (decoded == null) {
                 // Not a plain barcode and not this branch's scale format either. Nothing
                 // left to try, and the till should say exactly that rather than hint at a
-                // scale problem that is not there.
-                throw new ResourceNotFoundException("Item not found");
+                // scale problem that is not there. (E10) tags it as the generic miss so the
+                // till never confuses it with a decoded-but-unknown item code (E11).
+                throw new ResourceNotFoundException("Item not found (E10)");
             }
 
             item = itemRepository.findByBarcode(decoded.itemCode()).orElse(null);
@@ -308,7 +309,7 @@ public class ItemService {
                 // and going through the scale's settings looking for a fault that is not there.
                 throw new ResourceNotFoundException(
                         "Scale label read as item code '" + decoded.itemCode()
-                                + "', but no item carries that barcode");
+                                + "', but no item carries that barcode (E11)");
             }
 
             // A scale label names an item sold by weight or volume, by definition. Without
@@ -318,7 +319,7 @@ public class ItemService {
             if (!QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
                 throw new ResourceNotFoundException(
                         "Item code '" + decoded.itemCode() + "' is '" + item.getName()
-                                + "', which is not sold by weight or volume");
+                                + "', which is not sold by weight or volume (E12)");
             }
 
             // A scale label is an instruction to charge for a measured quantity, and there
@@ -328,21 +329,21 @@ public class ItemService {
             if (item.getSellingPrice() == null || item.getSellingPrice().signum() <= 0) {
                 throw new ResourceNotFoundException(
                         "Item code '" + decoded.itemCode() + "' is '" + item.getName()
-                                + "', which has no selling price set");
+                                + "', which has no selling price set (E12)");
             }
         }
 
         if (!item.isActive() || !item.isPosVisible()) {
-            throw new ResourceNotFoundException("Item not available in POS");
+            throw new ResourceNotFoundException("Item not available in POS (E12)");
         }
 
         if (!appConfigurationService.isItemTypeEnabled(item.getItemType(), branchId)) {
-            throw new ResourceNotFoundException("Item type is disabled");
+            throw new ResourceNotFoundException("Item type is disabled (E12)");
         }
 
         if (item.getItemType() == ItemType.SERVICE && branchId != null && branchId != 0L
                 && !branchServiceItemRepository.existsByBranchIdAndItemIdAndActiveTrue(branchId, item.getId())) {
-            throw new ResourceNotFoundException("Service item not available in this branch");
+            throw new ResourceNotFoundException("Service item not available in this branch (E12)");
         }
 
         // Existing exact-barcode-match behavior is completely unchanged: this is

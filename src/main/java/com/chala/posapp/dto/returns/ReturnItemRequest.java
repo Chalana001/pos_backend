@@ -1,5 +1,6 @@
 package com.chala.posapp.dto.returns;
 
+import com.chala.posapp.entity.MeasurementUnit;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
@@ -20,4 +21,10 @@ public class ReturnItemRequest {
     @DecimalMin(value = "0.001", message = "returnQty must be at least 0.001", inclusive = true)
     @Digits(integer = 9, fraction = 3, message = "returnQty supports up to 3 decimal places")
     private BigDecimal returnQty;
+
+    // Unit the cashier entered the returnQty in. Null = the sale line's qtyUnit.
+    // Measured items accept either unit of their family (WEIGHT: G/KG, VOLUME: ML/L);
+    // the service converts to the line's unit once at the boundary. Optional, so
+    // existing clients that send only returnQty keep working.
+    private MeasurementUnit unit;
 }

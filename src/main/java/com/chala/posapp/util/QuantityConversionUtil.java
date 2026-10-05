@@ -251,6 +251,20 @@ public final class QuantityConversionUtil {
         return item.getDefaultUnit();
     }
 
+    /**
+     * How much of one primary unit a display unit represents: G and ML are thousandths
+     * (0.001), every other display unit is 1:1. Multiplying a quantity expressed in a display
+     * unit by this factor expresses it in primary units; dividing converts back. Used at the
+     * return boundary to restate a figure the cashier typed in one unit of a family (G) in the
+     * unit the line was sold in (KG), and to scale the per-primary-unit price back down for the
+     * smaller unit. It is the backend twin of the POS app's {@code unitFactor}.
+     */
+    public static BigDecimal displayUnitFactor(MeasurementUnit unit) {
+        return unit == MeasurementUnit.G || unit == MeasurementUnit.ML
+                ? BigDecimal.valueOf(1, 3)
+                : BigDecimal.ONE;
+    }
+
     private static BigDecimal baseUnitsPerPrimaryUnit(ItemType itemType) {
         return itemType == ItemType.NORMAL || itemType == ItemType.VOLUME
                 ? MILLILITERS_PER_LITER

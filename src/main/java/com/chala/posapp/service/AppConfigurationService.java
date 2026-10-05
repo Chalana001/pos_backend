@@ -214,6 +214,16 @@ public class AppConfigurationService {
         if (request.getCashierWarrantyAllowed() != null) {
             configuration.setCashierWarrantyAllowed(request.getCashierWarrantyAllowed());
         }
+        if (request.getQuickSaleHeldBillsEnabled() != null) {
+            configuration.setQuickSaleHeldBillsEnabled(request.getQuickSaleHeldBillsEnabled());
+        }
+        if (request.getQuickSaleHeldBillsMax() != null) {
+            int max = request.getQuickSaleHeldBillsMax();
+            if (max != 1 && max != 2 && max != 3 && max != 5 && max != 10 && max != 20 && max != 50 && max != 0) {
+                throw new BadRequestException("Held bill limit must be unlimited or 1, 2, 3, 5, 10, 20, or 50");
+            }
+            configuration.setQuickSaleHeldBillsMax(max == 0 ? null : max);
+        }
         applyScaleBarcodeRequest(configuration, request);
     }
 
@@ -414,6 +424,8 @@ public class AppConfigurationService {
                 .scaleBarcodeEnabled(base != null && source.isScaleBarcodeEnabled())
                 .scaleBarcodePresetKey(source.getScaleBarcodePresetKey())
                 .scaleBarcodePrefix(source.getScaleBarcodePrefix())
+                .quickSaleHeldBillsEnabled(source.isQuickSaleHeldBillsEnabled())
+                .quickSaleHeldBillsMax(source.getQuickSaleHeldBillsMax())
                 .scaleBarcodePrefixLength(source.getScaleBarcodePrefixLength())
                 .scaleBarcodeItemCodeLength(source.getScaleBarcodeItemCodeLength())
                 .scaleBarcodeValueLength(source.getScaleBarcodeValueLength())
@@ -449,6 +461,8 @@ public class AppConfigurationService {
                 .printReceiptAfterCheckout(configuration.isPrintReceiptAfterCheckout())
                 .adminWarrantyAllowed(configuration.isAdminWarrantyAllowed())
                 .managerWarrantyAllowed(configuration.isManagerWarrantyAllowed())
+                .quickSaleHeldBillsEnabled(configuration.isQuickSaleHeldBillsEnabled())
+                .quickSaleHeldBillsMax(configuration.getQuickSaleHeldBillsMax())
                 .cashierWarrantyAllowed(configuration.isCashierWarrantyAllowed())
                 .scaleBarcodeEnabled(configuration.isScaleBarcodeEnabled())
                 .scaleBarcodePresetKey(configuration.getScaleBarcodePresetKey())

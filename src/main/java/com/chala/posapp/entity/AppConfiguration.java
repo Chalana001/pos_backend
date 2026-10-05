@@ -86,6 +86,18 @@ public class AppConfiguration extends TenantEntity {
     @Builder.Default
     private boolean cashierWarrantyAllowed = false;
 
+    // Quick Sale held bills (tenant V57): a cashier can park a takeaway cart and
+    // come back to it. Count is a branch decision, not a plan gate.
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private boolean quickSaleHeldBillsEnabled = true;
+
+    // Maximum simultaneous held bills per cashier at this branch. Null means
+    // unlimited, the same convention Promotion.maxUses uses.
+    @Column(name = "quick_sale_held_bills_max", columnDefinition = "int null")
+    @Builder.Default
+    private Integer quickSaleHeldBillsMax = 2;
+
     // Scale-barcode decoding (tenant V51, moved here from barcode_label_settings):
     // the digit layout the branch's own weighing scale prints, so that
     // ItemService.getByBarcode can pull an embedded weight or price out of a

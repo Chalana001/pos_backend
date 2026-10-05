@@ -8,6 +8,7 @@ import lombok.Data;
 @Builder
 public class PromotionPreviewItemResponse {
     private Long itemId;
+    private Long batchId;
     private Long promotionId;
     private String promotionName;
     private DiscountType discountType;

@@ -141,6 +141,61 @@ class OrderReturnServiceTest {
                 .thenAnswer(call -> call.getArgument(0));
     }
 
+    /**
+     * A WEIGHT/VOLUME line sold in {@code qtyUnit}, with one stock batch and its usage row behind
+     * it. Returns the mutable batch and usage so a test can assert what the reversal did to them.
+     */
+    private MeasuredFixture givenMeasuredLine(ItemType itemType, MeasurementUnit qtyUnit, int qty,
+                                              BigDecimal displayQty, double finalUnitPrice,
+                                              int batchQty, int originalBatchQty) {
+        OrderItem line = OrderItem.builder()
+                .id(100L)
+                .orderId(10L)
+                .itemId(7L)
+                .itemName("Rice")
+                .qty(qty)
+                .displayQty(displayQty)
+                .qtyUnit(qtyUnit)
+                .unitPrice(finalUnitPrice)
+                .finalUnitPrice(finalUnitPrice)
+                .build();
+        when(orderItemRepository.findByOrderId(anyLong())).thenReturn(List.of(line));
+        when(itemRepository.findById(7L)).thenReturn(Optional.of(Item.builder()
+                .id(7L).itemType(itemType).defaultUnit(qtyUnit).build()));
+
+        StockBatch batch = StockBatch.builder()
+                .id(30L)
+                .item(Item.builder().id(7L).itemType(itemType).build())
+                .quantity(batchQty)
+                .originalQuantity(originalBatchQty)
+                .costPrice(new BigDecimal("100.00"))
+                .sellingPrice(BigDecimal.valueOf(finalUnitPrice))
+                .build();
+        OrderItemStockUsage usage = OrderItemStockUsage.builder()
+                .id(40L)
+                .orderItemId(100L)
+                .itemId(7L)
+                .batchId(30L)
+                .quantity(qty)
+                .restoredQuantity(0)
+                .build();
+        when(orderItemStockUsageRepository.findByOrderItemId(100L)).thenReturn(List.of(usage));
+        when(stockBatchRepository.findById(30L)).thenReturn(Optional.of(batch));
+        when(orderItemStockUsageRepository.sumRestoredQtyByOrderItemId(100L)).thenReturn(0);
+        when(orderReturnRepository.save(any(OrderReturn.class)))
+                .thenAnswer(call -> call.getArgument(0));
+
+        return new MeasuredFixture(batch, usage);
+    }
+
+    private record MeasuredFixture(StockBatch batch, OrderItemStockUsage usage) { }
+
+    private OrderReturnItem savedReturnItem() {
+        ArgumentCaptor<OrderReturnItem> captor = ArgumentCaptor.forClass(OrderReturnItem.class);
+        verify(orderReturnItemRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
     private CreateReturnRequest request(String refundMethod) {
         ReturnItemRequest item = new ReturnItemRequest();
         item.setOrderItemId(100L);
@@ -329,4 +384,106 @@ class OrderReturnServiceTest {
         OrderReturn saved = savedReturn();
         assertThat(saved.getTotalRefundAmount()).isEqualTo(350.0);
     }
+
+    // ── unit selection on measured lines ─────────────────────────────────────
+
+    @Test
+    @DisplayName("a return entered in G against a KG line converts once and refunds its own share")
+    void gramsAgainstKilogramLine() {
+        givenOrder(OrderType.CASH, null);
+        MeasuredFixture fixture = givenMeasuredLine(
+                ItemType.WEIGHT, MeasurementUnit.KG, 2000, new BigDecimal("2"), 500.0, 1000, 3000);
+
+        service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":250,\"unit\":\"G\"}"));
+
+        OrderReturnItem savedItem = savedReturnItem();
+        // Persisted in the line's own unit, not the cashier's: 250 G is 0.25 KG.
+        assertThat(savedItem.getReturnQty()).isEqualByComparingTo(new BigDecimal("0.25"));
+        // 0.25 KG at 500 per KG - not 250 x 500, the thousandfold bug this fixes.
+        assertThat(savedItem.getRefundLineAmount()).isEqualTo(125.0);
+        assertThat(fixture.batch().getQuantity()).isEqualTo(1250);
+        assertThat(fixture.usage().getRestoredQuantity()).isEqualTo(250);
+        assertThat(savedReturn().getTotalRefundAmount()).isEqualTo(125.0);
+    }
+
+    @Test
+    @DisplayName("a return entered in KG against a G line converts back up to the sale unit")
+    void kilogramsAgainstGramLine() {
+        givenOrder(OrderType.CASH, null);
+        MeasuredFixture fixture = givenMeasuredLine(
+                ItemType.WEIGHT, MeasurementUnit.G, 2000, new BigDecimal("2000"), 500.0, 1000, 3000);
+
+        service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":0.25,\"unit\":\"KG\"}"));
+
+        OrderReturnItem savedItem = savedReturnItem();
+        assertThat(savedItem.getReturnQty()).isEqualByComparingTo(new BigDecimal("250"));
+        assertThat(savedItem.getRefundLineAmount()).isEqualTo(125.0);
+        assertThat(fixture.batch().getQuantity()).isEqualTo(1250);
+        assertThat(fixture.usage().getRestoredQuantity()).isEqualTo(250);
+    }
+
+    @Test
+    @DisplayName("the cap is checked in the line's unit, so 2500 G is rejected against a 2 KG line")
+    void capRejectedAcrossUnits() {
+        givenOrder(OrderType.CASH, null);
+        givenMeasuredLine(ItemType.WEIGHT, MeasurementUnit.KG, 2000, new BigDecimal("2"), 500.0, 1000, 3000);
+
+        // 250 G of the 2 KG line passes (proved by gramsAgainstKilogramLine); 2500 G does not.
+        assertThatThrownBy(() -> service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":2500,\"unit\":\"G\"}")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("exceeds returnable qty");
+
+        verify(orderReturnRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ML on a WEIGHT item is a bad request, not a conversion")
+    void volumeUnitOnWeightItemIsRejected() {
+        givenOrder(OrderType.CASH, null);
+        givenMeasuredLine(ItemType.WEIGHT, MeasurementUnit.KG, 2000, new BigDecimal("2"), 500.0, 1000, 3000);
+
+        assertThatThrownBy(() -> service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":250,\"unit\":\"ML\"}")))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("weight");
+
+        verify(orderReturnRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("no unit on the request still returns in the line's own unit")
+    void nullUnitDefaultsToTheLineUnit() {
+        givenOrder(OrderType.CASH, null);
+        givenMeasuredLine(ItemType.WEIGHT, MeasurementUnit.G, 2000, new BigDecimal("2000"), 500.0, 1000, 3000);
+
+        service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":250}"));
+
+        OrderReturnItem savedItem = savedReturnItem();
+        assertThat(savedItem.getReturnQty()).isEqualByComparingTo(new BigDecimal("250"));
+        // A G line's price is per KG, so 250 G is a quarter of it.
+        assertThat(savedItem.getRefundLineAmount()).isEqualTo(125.0);
+    }
+
+    @Test
+    @DisplayName("a full return of a G line refunds exactly the line's own value")
+    void fullGramLineReturnMatchesLineTotal() {
+        givenOrder(OrderType.CASH, null);
+        givenMeasuredLine(ItemType.WEIGHT, MeasurementUnit.G, 2000, new BigDecimal("2000"), 500.0, 1000, 3000);
+
+        service.processReturn(INVOICE_NO,
+                requestFromJson("CASH", "{\"orderItemId\":100,\"returnQty\":2000,\"unit\":\"G\"}"));
+
+        // 2000 G at 500 per KG: the same 1000.0 the line was sold for, not a thousand times it.
+        double lineTotal = new BigDecimal("2000")
+                .multiply(BigDecimal.valueOf(500.0))
+                .multiply(new BigDecimal("0.001"))
+                .doubleValue();
+        assertThat(savedReturnItem().getRefundLineAmount()).isEqualTo(lineTotal);
+        assertThat(savedReturn().getTotalRefundAmount()).isEqualTo(1000.0);
+    }
+
 }

@@ -62,6 +62,11 @@ public class OrderReturnService {
         return BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    // The smallest figure a return line can carry in the line's own unit. The DTO's
+    // @DecimalMin only sees the pre-conversion figure, so a request in the small unit
+    // (0.5 G on a KG line) is only caught after the boundary conversion below.
+    private static final BigDecimal MIN_RETURNABLE_QTY = new BigDecimal("0.001");
+
     private double roundMoney(BigDecimal amount) {
         return amount.setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
@@ -111,15 +116,27 @@ public class OrderReturnService {
 
         // 2. Validate every return line.
         //
-        // Units, read carefully, because mixing the two scales is what broke this whole flow.
+        // Two scales meet here, and mixing them is what broke this whole flow.
         //
-        // The request, the UI and order_return_items.return_qty are in DISPLAY units: the unit
-        // the till showed the cashier (10 pcs, 2 kg). OrderItem.qty, order_item_stock_usages
-        // .quantity and stock_batches.quantity are in NORMALIZED base units, thousandths, so
-        // 10 pcs is 10000. final_unit_price is per primary display unit, so the money is only
-        // right when multiplied by the display quantity.
+        // order_return_items.return_qty, the return slip and the cap sums are in the sale
+        // line's own DISPLAY unit: the unit the till sold in and showed the cashier (10 PCS,
+        // 2 KG, 2000 G). A request may arrive in the other unit of the item's family (a
+        // cashier returns 250 G against a line sold in KG), so the request carries an optional
+        // unit and this loop restates the figure in the line's unit exactly once. Everything
+        // downstream — the cap, persistence, reports, the receipt — then sees one unit per
+        // line, which is what keeps sumReturnedQtyByOrderItemId honest.
         //
-        // This block used to compare the display figure straight against OrderItem.qty: a
+        // OrderItem.qty, order_item_stock_usages.quantity and stock_batches.quantity are in
+        // NORMALIZED base units, thousandths (2 KG is 2000, 1 PCS is 1000). They are fed the
+        // converted display figure through normalizeSaleQuantity, the only place that crosses
+        // the scales for stock.
+        //
+        // final_unit_price is per primary unit (per KG/L/PC), so the money is the line-unit
+        // figure scaled back down to the primary unit: qty x price x displayUnitFactor(qtyUnit).
+        // Multiplying the raw display quantity by it is a thousandfold error on a G or ML line,
+        // which is the bug that made only default-unit lines refund correctly.
+        //
+        // This block also used to compare the display figure straight against OrderItem.qty: a
         // return of 10 pcs passed a cap of 9990 and put 10 base units back on the shelf, one
         // hundredth of a piece, which is the "stock only rises by 0.001 after a return" a shop
         // reported. Compare display against display, and normalize once, only for the stock
@@ -141,6 +158,28 @@ public class OrderReturnService {
                         "Item not found for return: " + originalItem.getItemName());
             }
 
+            // The unit everything below works in: the unit the line was sold in.
+            MeasurementUnit lineUnit = originalItem.getQtyUnit();
+            // What the cashier actually typed in. Absent means "the unit it was sold in".
+            MeasurementUnit returnUnit = itemReq.getUnit() != null
+                    ? itemReq.getUnit() : lineUnit;
+            validateReturnUnit(item, originalItem, lineUnit, returnUnit);
+
+            // The one conversion, at this boundary: the request figure restated in the line's
+            // unit. Both sides of the ratio are in the same family, so its units cancel exactly.
+            BigDecimal lineUnitQty = itemReq.getReturnQty()
+                    .multiply(QuantityConversionUtil.displayUnitFactor(returnUnit))
+                    .divide(QuantityConversionUtil.displayUnitFactor(lineUnit), 3,
+                            RoundingMode.HALF_UP);
+
+            // @DecimalMin saw the pre-conversion figure; a sub-thousandth entered in the small
+            // unit (0.5 G) only becomes visible once it is expressed in the line's unit.
+            if (lineUnitQty.compareTo(MIN_RETURNABLE_QTY) < 0) {
+                throw new BadRequestException("Return qty is below the smallest returnable amount (0.001"
+                        + (lineUnit == null ? "" : " " + lineUnit)
+                        + ") for item '" + originalItem.getItemName() + "'");
+            }
+
             BigDecimal displaySold = displayQtyOf(originalItem);
             BigDecimal alreadyReturned = orZero(orderReturnItemRepository
                     .sumReturnedQtyByOrderItemId(originalItem.getId()));
@@ -150,24 +189,26 @@ public class OrderReturnService {
                 throw new BadRequestException(
                         "Item '" + originalItem.getItemName() + "' has already been fully returned");
             }
-            if (itemReq.getReturnQty().compareTo(maxReturnable) > 0) {
+            if (lineUnitQty.compareTo(maxReturnable) > 0) {
                 throw new BadRequestException(
-                        "Return qty " + itemReq.getReturnQty().stripTrailingZeros().toPlainString()
+                        "Return qty " + lineUnitQty.stripTrailingZeros().toPlainString()
                                 + " exceeds returnable qty "
                                 + maxReturnable.stripTrailingZeros().toPlainString()
                                 + " for item '" + originalItem.getItemName() + "'");
             }
 
-            // The same display figure in base units: what every stock calculation uses.
+            // The same figure in base units: what every stock calculation uses.
             int normalizedReturnQty = QuantityConversionUtil.normalizeSaleQuantity(
                     item,
-                    itemReq.getReturnQty(),
-                    originalItem.getQtyUnit());
+                    lineUnitQty,
+                    lineUnit);
 
-            double ticketLine = roundMoney(itemReq.getReturnQty()
-                    .multiply(BigDecimal.valueOf(originalItem.getFinalUnitPrice())));
+            // final_unit_price is per primary unit, so a smaller unit scales the money down.
+            double ticketLine = roundMoney(lineUnitQty
+                    .multiply(BigDecimal.valueOf(originalItem.getFinalUnitPrice()))
+                    .multiply(QuantityConversionUtil.displayUnitFactor(lineUnit)));
             validatedLines.add(new ValidatedReturnLine(
-                    originalItem, itemReq.getReturnQty(), normalizedReturnQty, ticketLine));
+                    originalItem, lineUnitQty, normalizedReturnQty, ticketLine));
         }
 
         // 3. Calculate the refund, what the customer actually handed over for these goods.
@@ -231,9 +272,11 @@ public class OrderReturnService {
 
         // 6. Persist return items + reverse stock.
         //
-        // return_qty keeps the DISPLAY figure: it is what the return slip prints and what the
-        // cashier and the customer can both check against the goods on the counter. Only the
-        // stock call wants base units, and it is passed them explicitly.
+        // return_qty keeps the DISPLAY figure in the line's own unit: it is what the return slip
+        // prints and what the cashier and the customer can both check against the goods on the
+        // counter, and staying in that one unit is what makes sumReturnedQtyByOrderItemId's cap
+        // add up across a line's returns. Only the stock call wants base units, and it is passed
+        // them explicitly.
         List<OrderReturnItem> savedReturnItems = new ArrayList<>();
         for (ValidatedReturnLine line : pricedLines) {
 
@@ -414,6 +457,36 @@ public class OrderReturnService {
      */
     private BigDecimal orZero(BigDecimal amount) {
         return amount == null ? BigDecimal.ZERO : amount;
+    }
+
+    /**
+     * A measured item may only be returned in a unit of its own family (WEIGHT: G or KG,
+     * VOLUME: ML or L); every other item only in the exact unit it was sold in. Crossing families
+     * (grams to millilitres) or putting a weight on a piece is never meaningful, so it is a bad
+     * request rather than a figure to convert.
+     */
+    private void validateReturnUnit(Item item, OrderItem originalItem,
+                                    MeasurementUnit lineUnit, MeasurementUnit returnUnit) {
+        if (QuantityConversionUtil.isMeasuredItem(item.getItemType())) {
+            boolean weightOk = item.getItemType() == ItemType.WEIGHT
+                    && (returnUnit == MeasurementUnit.G || returnUnit == MeasurementUnit.KG);
+            boolean volumeOk = item.getItemType() == ItemType.VOLUME
+                    && (returnUnit == MeasurementUnit.ML || returnUnit == MeasurementUnit.L);
+            if (!weightOk && !volumeOk) {
+                throw new BadRequestException("Item '" + originalItem.getItemName()
+                        + "' is sold by "
+                        + (item.getItemType() == ItemType.WEIGHT
+                                ? "weight (G or KG)" : "volume (ML or L)")
+                        + " and cannot be returned in "
+                        + (returnUnit == null ? "an unspecified unit" : returnUnit));
+            }
+            return;
+        }
+
+        if (returnUnit != lineUnit) {
+            throw new BadRequestException("Item '" + originalItem.getItemName()
+                    + "' can only be returned in its sale unit " + lineUnit);
+        }
     }
 
     // ---------------------------------------------------------------
@@ -628,8 +701,8 @@ public class OrderReturnService {
     }
 
     // Carries validated data between validation and persistence.
-    // returnQty is DISPLAY units (what is persisted, printed and shown);
-    // normalizedReturnQty is BASE units (what every stock calculation uses).
+    // returnQty is DISPLAY units in the sale line's own qtyUnit (what is persisted, printed and
+    // shown); normalizedReturnQty is BASE units (what every stock calculation uses).
     private record ValidatedReturnLine(
             OrderItem originalItem,
             BigDecimal returnQty,
