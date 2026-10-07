@@ -12,6 +12,6 @@ public class OrderPaymentRequest {
     private Double amount;
 
     private String paymentMethod;
-
+    private String bankReference;
     private String note;
 }

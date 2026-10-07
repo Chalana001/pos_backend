@@ -32,6 +32,8 @@ public class CreditPayment extends TenantEntity {
 
     @Column(length = 255)
     private String note;
+    @Column(name = "bank_reference", length = 120)
+    private String bankReference;
 
     private LocalDateTime paidAt;
 

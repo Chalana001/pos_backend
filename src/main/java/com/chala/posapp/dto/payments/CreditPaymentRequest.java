@@ -16,4 +16,5 @@ public class CreditPaymentRequest {
     private String paymentMethod;
 
     private String note;
+    private String bankReference;
 }

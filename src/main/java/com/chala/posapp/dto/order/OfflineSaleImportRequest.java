@@ -57,11 +57,11 @@ public class OfflineSaleImportRequest {
     private Long billPromotionId;
     private String billPromotionName;
     private Double billPromotionDiscountAmount;
-
     @Min(0)
     private double paidAmount;
 
     private String paymentMethod;
-
+    private Double tenderedAmount;
+    private String bankReference;
     private String note;
 }

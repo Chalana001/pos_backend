@@ -8,6 +8,7 @@ import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.util.PaymentMethodUtil;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.util.SecurityUtils;
@@ -45,9 +46,14 @@ public class CreditService {
         if (request.getAmount() <= 0)
             throw new BadRequestException("Invalid amount");
 
-
-        if (customer.getDueAmount() <= 0)
-            throw new BadRequestException("Customer has no due");
+        String method = PaymentMethodUtil.requireSettlementMethod(
+                request.getPaymentMethod(), PaymentMethodUtil.CASH);
+        String bankReference = PaymentMethodUtil.BANK.equals(method)
+                ? trimToNull(request.getBankReference())
+                : null;
+        if (PaymentMethodUtil.BANK.equals(method) && bankReference == null) {
+            throw new BadRequestException("Bank reference is required for BANK payments");
+        }
 
         double newDue = customer.getDueAmount() - request.getAmount();
         if (newDue < 0) newDue = 0;
@@ -57,12 +63,14 @@ public class CreditService {
 
         reportCacheInvalidator.creditChanged();
 
+
         CreditPayment payment = CreditPayment.builder()
                 .customerId(customer.getId())
                 .branchId(user.getBranchId())
                 .cashierUserId(user.getId())
                 .amount(request.getAmount())
-                .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
+                .paymentMethod(method)
+                .bankReference(bankReference)
                 .note(request.getNote())
                 .build();
 
@@ -75,6 +83,7 @@ public class CreditService {
                 .cashierUserId(payment.getCashierUserId())
                 .amount(payment.getAmount())
                 .paymentMethod(payment.getPaymentMethod())
+                .bankReference(payment.getBankReference())
                 .note(payment.getNote())
                 .paidAt(payment.getPaidAt())
                 .build();
@@ -89,16 +98,13 @@ public class CreditService {
                         .cashierUserId(p.getCashierUserId())
                         .amount(p.getAmount())
                         .paymentMethod(p.getPaymentMethod())
+                        .bankReference(p.getBankReference())
                         .note(p.getNote())
                         .paidAt(p.getPaidAt())
                         .build())
                 .toList();
     }
-
-    private String normalizePaymentMethod(String paymentMethod) {
-        if (paymentMethod == null || paymentMethod.isBlank()) {
-            return "CASH";
-        }
-        return paymentMethod.trim().toUpperCase();
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

@@ -46,7 +46,13 @@ public class OrderResponse {
     private int loyaltyPointsBalance;
     private double grandTotal;
     private double paidAmount;
+    private Double salePaidAmount;
     private double dueAmount;
+    private Double saleDueAmount;
+    private Double tenderedAmount;
+    private Double changeAmount;
+    private Double shortfallAmount;
+    private String bankReference;
 
     private String note;
 

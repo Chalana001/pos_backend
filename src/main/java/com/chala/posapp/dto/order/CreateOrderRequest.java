@@ -45,7 +45,8 @@ public class CreateOrderRequest {
     private double paidAmount; // for CASH
 
     private String paymentMethod;
-
+    private Double tenderedAmount;
+    private String bankReference;
     private String note;
 
     private boolean allowStockOverride;

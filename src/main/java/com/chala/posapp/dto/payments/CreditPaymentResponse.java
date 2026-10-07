@@ -16,5 +16,6 @@ public class CreditPaymentResponse {
     private double amount;
     private String paymentMethod;
     private String note;
+    private String bankReference;
     private LocalDateTime paidAt;
 }

@@ -9,10 +9,11 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.ItemRepository;
+import com.chala.posapp.repository.OrderPaymentRepository;
 import com.chala.posapp.repository.OrderItemRepository;
 import com.chala.posapp.repository.OrderRepository;
 import com.chala.posapp.repository.UserRepository;
-import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.util.PaymentMethodUtil;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class LegacySalesImportService {
     private final ItemRepository itemRepository;
     private final BranchRepository branchRepository;
     private final UserRepository userRepository;
+    private final OrderPaymentRepository orderPaymentRepository;
     private final SecurityUtils securityUtils;
 
     @Transactional(readOnly = true)
@@ -98,9 +100,29 @@ public class LegacySalesImportService {
                     .importedAt(LocalDateTime.now())
                     .offlineImported(true)
                     .build();
+            List<OrderItem> orderItems = new ArrayList<>();
 
             Order savedOrder = orderRepository.save(order);
-            List<OrderItem> orderItems = new ArrayList<>();
+
+            // Legacy imports run after V59 has already backfilled the pre-existing
+            // orders, so they must write the same initial-payment row the live POS
+            // path writes. Otherwise imported completed sales violate the
+            // one-row-per-completed-sale invariant.
+            orderPaymentRepository.save(OrderPayment.builder()
+                    .orderId(savedOrder.getId())
+                    .invoiceNo(savedOrder.getInvoiceNo())
+                    .branchId(savedOrder.getBranchId())
+                    .cashierUserId(savedOrder.getCashierUserId())
+                    .amount(savedOrder.getSalePaidAmount())
+                    .paymentMethod(PaymentMethodUtil.isSaleMethod(savedOrder.getPaymentMethod())
+                            ? savedOrder.getPaymentMethod() : "LEGACY")
+                    .shortfallAmount(savedOrder.getSaleDueAmount() > 0
+                            ? roundMoney(savedOrder.getSaleDueAmount()) : null)
+                    .note("Legacy import initial payment")
+                    .paidAt(savedOrder.getOfflineSoldAt() != null
+                            ? savedOrder.getOfflineSoldAt() : savedOrder.getCreatedAt())
+                    .legacyBackfilled(true)
+                    .build());
 
             for (LegacySaleLine line : sale.lines) {
                 Item item = line.resolvedItem;

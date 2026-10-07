@@ -11,6 +11,7 @@ import com.chala.posapp.dto.order.OrderPaymentRequest;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.order.StockShortageIssue;
 import com.chala.posapp.entity.*;
+import com.chala.posapp.entity.OrderPayment;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.exception.AlreadyExistsException;
@@ -31,6 +32,7 @@ import com.chala.posapp.audit.Audited;
 import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
+import com.chala.posapp.util.PaymentMethodUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -71,6 +73,7 @@ public class OrderService {
     private final PendingOrderItemRepository pendingOrderItemRepository;
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final CreditPaymentRepository creditPaymentRepository;
+    private final OrderPaymentRepository orderPaymentRepository;
     private final WarrantyRepository warrantyRepository;
     private final AppConfigurationService appConfigurationService;
     private final PromotionService promotionService;
@@ -124,6 +127,17 @@ public class OrderService {
         if (saleMode != SaleMode.TAKEAWAY) {
             throw new BadRequestException("Offline import supports TAKEAWAY sales only");
         }
+        // The queue contract is narrower than the online sale contract: only fully paid
+        // cash takeaway sales may be imported. Enforce it here rather than trusting the
+        // client that queued the row.
+        String offlinePaymentMethod = PaymentMethodUtil.requireSaleMethod(
+                request.getPaymentMethod(), PaymentMethodUtil.CASH);
+        if (!PaymentMethodUtil.CASH.equals(offlinePaymentMethod)) {
+            throw new BadRequestException("Offline import supports CASH payments only");
+        }
+        if (trimToNull(request.getBankReference()) != null) {
+            throw new BadRequestException("Offline import does not support bank references");
+        }
 
         Order existingOrder = orderRepository.findByClientSaleId(request.getClientSaleId()).orElse(null);
         if (existingOrder != null) {
@@ -145,7 +159,9 @@ public class OrderService {
         createOrderRequest.setItems(request.getItems());
         createOrderRequest.setBillDiscount(request.getBillDiscount());
         createOrderRequest.setPaidAmount(request.getPaidAmount());
-        createOrderRequest.setPaymentMethod(request.getPaymentMethod());
+        createOrderRequest.setPaymentMethod(PaymentMethodUtil.CASH);
+        createOrderRequest.setTenderedAmount(request.getTenderedAmount());
+        createOrderRequest.setBankReference(null);
         createOrderRequest.setNote(request.getNote());
 
         OrderResponse response = createOrderInternal(
@@ -490,17 +506,65 @@ public class OrderService {
                         request.getLoyaltyPointsToRedeem(), roundRupee(subTotal - billDiscount));
 
         double grandTotal = roundRupee(subTotal - billDiscount - redemption.amount().doubleValue());
-        double paidAmount = request.getPaidAmount();
-        if (paidAmount < 0) paidAmount = 0;
-        paidAmount = roundRupee(paidAmount);
-
-        double dueAmount;
+        double requestedPaidAmount = request.getPaidAmount();
         Customer customer = null;
         OrderType effectiveOrderType = request.getOrderType();
-
-        double paidTowardSale = Math.min(paidAmount, grandTotal);
-        dueAmount = roundMoney(grandTotal - paidTowardSale);
-        String paymentMethod = normalizeSalePaymentMethod(request.getPaymentMethod(), paidTowardSale, dueAmount);
+        // The till method is validated up front so an unsupported method (CHEQUE,
+        // anything unknown) is rejected before stock, promotions or credit limits
+        // are touched. Everything below still commits or rolls back as one unit.
+        String tenderMethod = PaymentMethodUtil.requireSaleMethod(request.getPaymentMethod(),
+                request.getPaidAmount() > 0 || request.getTenderedAmount() != null
+                        ? PaymentMethodUtil.CASH
+                        : PaymentMethodUtil.CREDIT);
+        boolean cashPayment = PaymentMethodUtil.CASH.equals(tenderMethod);
+        if (PaymentMethodUtil.BANK.equals(tenderMethod)
+                && trimToNull(request.getBankReference()) == null) {
+            throw new BadRequestException("Bank reference is required for BANK payments");
+        }
+        if (request.getTenderedAmount() != null && !cashPayment) {
+            throw new BadRequestException("Tendered cash amount is only allowed for CASH payments");
+        }
+        double tenderedAmount = cashPayment
+                ? request.getTenderedAmount() == null
+                        ? requestedPaidAmount
+                        : Math.max(0, roundRupee(request.getTenderedAmount()))
+                : 0.0;
+        double paidAmount = cashPayment
+                ? tenderedAmount
+                : Math.max(0, roundRupee(request.getPaidAmount()));
+        if (PaymentMethodUtil.CREDIT.equals(tenderMethod)) {
+            paidAmount = 0.0;
+            if (request.getPaidAmount() > 0) {
+                throw new BadRequestException("CREDIT payments cannot include a paid amount");
+            }
+        }
+        if (PaymentMethodUtil.CREDIT.equals(tenderMethod)
+                && request.getCustomerId() == null) {
+            throw new BadRequestException("Customer is required for CREDIT sales");
+        }
+        double changeAmount = PaymentMethodUtil.CASH.equals(tenderMethod)
+                ? roundMoney(Math.max(0, tenderedAmount - grandTotal))
+                : 0.0;
+        double paidTowardSale = PaymentMethodUtil.CASH.equals(tenderMethod)
+                ? roundMoney(Math.min(tenderedAmount, grandTotal))
+                : roundMoney(Math.min(paidAmount, grandTotal));
+        double dueAmount = roundMoney(grandTotal - paidTowardSale);
+        if (paidAmount > grandTotal && !cashPayment) {
+            throw new BadRequestException(String.format(
+                    "Paid amount %.2f exceeds grand total %.2f for %s payment",
+                    paidAmount, grandTotal, tenderMethod));
+        }
+        if (!cashPayment && !PaymentMethodUtil.CREDIT.equals(tenderMethod)
+                && paidTowardSale < grandTotal) {
+            throw new BadRequestException(String.format(
+                    "%s payments must cover the full grand total. Paid %.2f of %.2f",
+                    tenderMethod, paidTowardSale, grandTotal));
+        }
+        if (offlineOrderMetadata != null && paidTowardSale < grandTotal) {
+            throw new BadRequestException(
+                    "Paid amount cannot be less than the grand total for offline import");
+        }
+        String paymentMethod = tenderMethod;
         if (dueAmount > 0) {
             if (isFreePlanWithoutCustomerCredit()) {
                 throw new BadRequestException("Credit sales are not available in FREE plan");
@@ -545,7 +609,7 @@ public class OrderService {
                 .cashierUserId(cashierUserId)
                 .customerId(request.getCustomerId())
                 .orderType(effectiveOrderType)
-                .paymentMethod(paymentMethod)
+                .paymentMethod(tenderMethod)
                 .saleMode(saleMode)
                 .tableId(diningTable != null ? diningTable.getId() : null)
                 .tableName(diningTable != null ? diningTable.getTableName() : null)
@@ -560,7 +624,7 @@ public class OrderService {
                 .loyaltyPointsRedeemed(redemption.points())
                 .loyaltyDiscountAmount(java.math.BigDecimal.valueOf(redemption.amount().doubleValue()))
                 .grandTotal(grandTotal)
-                .paidAmount(paidAmount)
+                .paidAmount(paidTowardSale)
                 .dueAmount(dueAmount)
                 .salePaidAmount(paidTowardSale)
                 .saleDueAmount(dueAmount)
@@ -574,6 +638,25 @@ public class OrderService {
                 .build();
 
         Order savedOrder = orderRepository.save(order);
+
+
+        // The initial payment now has its own ledger row, atomically with the order and
+        // the stock/credit effects above. CreditPayment stays reserved for later
+        // settlement of what this row leaves outstanding.
+        orderPaymentRepository.save(OrderPayment.builder()
+                .orderId(savedOrder.getId())
+                .invoiceNo(savedOrder.getInvoiceNo())
+                .branchId(savedOrder.getBranchId())
+                .cashierUserId(savedOrder.getCashierUserId())
+                .amount(paidTowardSale)
+                .paymentMethod(tenderMethod)
+                .tenderedAmount(PaymentMethodUtil.CASH.equals(tenderMethod) ? tenderedAmount : null)
+                .changeAmount(PaymentMethodUtil.CASH.equals(tenderMethod) ? changeAmount : null)
+                .shortfallAmount(dueAmount > 0 ? roundMoney(dueAmount) : null)
+                .bankReference(PaymentMethodUtil.BANK.equals(tenderMethod)
+                        ? trimToNull(request.getBankReference()) : null)
+                .note(trimToNull(request.getNote()))
+                .build());
 
         List<OrderItem> orderItemsToSave = preparedItems.stream()
                 .map(PreparedOrderItem::orderItem)
@@ -788,6 +871,13 @@ public class OrderService {
             throw new BadRequestException("Payment amount exceeds this order due amount: " + orderDue);
         }
 
+        // Later settlement is not an initial payment: CHEQUE and CREDIT are rejected,
+        String method = PaymentMethodUtil.requireSettlementMethod(
+                request.getPaymentMethod(), PaymentMethodUtil.CASH);
+        if (PaymentMethodUtil.BANK.equals(method) && trimToNull(request.getBankReference()) == null) {
+            throw new BadRequestException("Bank reference is required for BANK payments");
+        }
+
         Customer customer = customerRepository.findById(order.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
 
@@ -804,7 +894,6 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         customerRepository.save(customer);
 
-        String method = normalizePaymentMethod(request.getPaymentMethod(), "CASH");
         String note = request.getNote() == null || request.getNote().isBlank()
                 ? "Payment for invoice " + order.getInvoiceNo() + " (" + method + ")"
                 : request.getNote().trim() + " (" + method + ", invoice " + order.getInvoiceNo() + ")";
@@ -815,6 +904,8 @@ public class OrderService {
                 .cashierUserId(user.getId())
                 .amount(paymentAmount)
                 .paymentMethod(method)
+                .bankReference(PaymentMethodUtil.BANK.equals(method)
+                        ? trimToNull(request.getBankReference()) : null)
                 .note(note)
                 .build());
 
@@ -1320,18 +1411,8 @@ public class OrderService {
         return isFreePlanWithoutStockManagement();
     }
 
-    private String normalizeSalePaymentMethod(String paymentMethod, double paidAmount, double dueAmount) {
-        if (paidAmount <= 0 && dueAmount > 0) {
-            return "CREDIT";
-        }
-        return normalizePaymentMethod(paymentMethod, "CASH");
-    }
-
-    private String normalizePaymentMethod(String paymentMethod, String fallback) {
-        if (paymentMethod == null || paymentMethod.isBlank()) {
-            return fallback;
-        }
-        return paymentMethod.trim().toUpperCase();
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private double calculateRecipeOverheadCost(Item item, int normalizedQty, double directLineCost) {
@@ -1518,7 +1599,10 @@ public class OrderService {
         if (order == null) {
             return 0.0;
         }
-        return Math.max(0.0, Math.min(order.getPaidAmount(), order.getGrandTotal()));
+        return orderPaymentRepository.findByOrderId(order.getId())
+                .filter(payment -> PaymentMethodUtil.CASH.equals(payment.getPaymentMethod()))
+                .map(payment -> Math.max(0.0, roundMoney(payment.getAmount())))
+                .orElse(0.0);
     }
 
     private double roundMoney(double amount) {
@@ -1535,6 +1619,8 @@ public class OrderService {
     }
 
     private OrderResponse buildOrderResponse(Order order, List<OrderItem> items) {
+        OrderPayment orderPayment = orderPaymentRepository.findByOrderId(order.getId())
+                .orElse(null);
         String customerName = "Walk-in Customer";
         if (order.getCustomerId() != null) {
             customerName = customerRepository.findById(order.getCustomerId())
@@ -1625,7 +1711,13 @@ public class OrderService {
                 .loyaltyPointsBalance(order.getLoyaltyPointsBalance())
                 .grandTotal(order.getGrandTotal())
                 .paidAmount(order.getPaidAmount())
+                .salePaidAmount(order.getSalePaidAmount())
                 .dueAmount(order.getDueAmount())
+                .saleDueAmount(order.getSaleDueAmount())
+                .tenderedAmount(orderPayment == null ? null : orderPayment.getTenderedAmount())
+                .changeAmount(orderPayment == null ? null : orderPayment.getChangeAmount())
+                .shortfallAmount(orderPayment == null ? null : orderPayment.getShortfallAmount())
+                .bankReference(orderPayment == null ? null : orderPayment.getBankReference())
                 .note(order.getNote())
                 .createdAt(order.getCreatedAt())
                 .items(itemResponses)
