@@ -25,6 +25,16 @@ public class PromotionController {
         return ResponseEntity.ok(promotionService.list());
     }
 
+    /**
+     * One campaign with its item targets resolved. The edit screen used to read the whole list
+     * and find its row client-side, then fetch each item separately; this is that in one call.
+     */
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @GetMapping("/{id}")
+    public ResponseEntity<PromotionResponse> getById(@PathVariable Long id) {
+        return ResponseEntity.ok(promotionService.getById(id));
+    }
+
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping
     public ResponseEntity<PromotionResponse> create(@Valid @RequestBody PromotionRequest request) {

@@ -48,4 +48,11 @@ public class PromotionItemLine {
 
     /** Display-only twin of {@link #name}; a barcode search finds promotions by their items. */
     private String barcode;
+
+    /**
+     * Display-only. The shelf price the offer price is judged against. Filled by reads that
+     * resolve items ({@code list} and {@code getById}); write responses pass no items and
+     * leave it null. Null on soft-deleted items, whose rows the repository no longer returns.
+     */
+    private BigDecimal sellingPrice;
 }

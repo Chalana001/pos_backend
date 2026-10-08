@@ -27,6 +27,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,19 +59,30 @@ public class PromotionService {
         List<Promotion> promotions = promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc();
         // The admin list is searched by item name/barcode, which the targets don't store:
         // they hold bare ids. One batched read resolves the whole page's worth.
-        List<Long> itemIds = promotions.stream()
-                .flatMap(promotion -> promotion.getTargets().stream())
-                .map(PromotionTarget::getItemId)
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        Map<Long, Item> itemsById = itemIds.isEmpty()
-                ? Map.of()
-                : itemRepository.findAllById(itemIds).stream()
-                        .collect(Collectors.toMap(Item::getId, Function.identity()));
+        Map<Long, Item> itemsById = itemsByIdFor(promotions);
+        // One grouped count for the page, not one count per row: the same lazy-collection
+        // trap as items, sizes of the codes relation, asked for N times over.
+        Map<Long, Long> codeCounts = codeCountsFor(promotions);
         return promotions.stream()
-                .map(promotion -> mapResponse(promotion, itemsById))
+                .map(promotion -> mapResponse(promotion, itemsById, codeCounts))
                 .toList();
+    }
+
+    /**
+     * One campaign, with its item targets resolved to name, barcode and price.
+     *
+     * <p>The edit screen used to read the whole list and find its row client-side, then fetch
+     * every item by id one at a time. This is that in one call, and it also reads the item
+     * rows the list search needs: the builder's price table shows the normal price next to
+     * each offer price, which the bare ids in {@code items} do not carry.
+     *
+     * <p>Items soft-deleted since the promotion was written stay as bare ids, same as in
+     * {@link #list()}, so an edit round-trips them unchanged instead of dropping them.
+     */
+    public PromotionResponse getById(Long id) {
+        Promotion promotion = promotionRepository.findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Promotion not found"));
+        return mapResponse(promotion, itemsByIdFor(promotion));
     }
 
     @Transactional
@@ -1417,17 +1429,65 @@ public class PromotionService {
         return requestedBranchId;
     }
 
+    /**
+     * The item rows a set of promotions' targets point at, read in one batch. Items
+     * soft-deleted since the promotion was written stay absent, so their lines keep the bare
+     * ids: findAllById honours Item's deleted-at restriction, so an edit round-trips them
+     * unchanged instead of dropping them.
+     */
+    private Map<Long, Item> itemsByIdFor(Collection<Promotion> promotions) {
+        List<Long> itemIds = promotions.stream()
+                .flatMap(promotion -> promotion.getTargets().stream())
+                .map(PromotionTarget::getItemId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        return itemIds.isEmpty()
+                ? Map.of()
+                : itemRepository.findAllById(itemIds).stream()
+                        .collect(Collectors.toMap(Item::getId, Function.identity()));
+    }
+
+    private Map<Long, Item> itemsByIdFor(Promotion promotion) {
+        return itemsByIdFor(List.of(promotion));
+    }
+
+    /**
+     * How many codes gate each campaign, counted in one grouped query. Sizing the {@code codes}
+     * relation instead would pull every code of every campaign into the persistence context,
+     * when the admin surface only ever shows the number.
+     */
+    private Map<Long, Long> codeCountsFor(Collection<Promotion> promotions) {
+        List<Long> ids = promotions.stream().map(Promotion::getId).toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return promotionCodeRepository.countByPromotionIdIn(ids).stream()
+                .collect(Collectors.toMap(row -> ((Number) row[0]).longValue(),
+                        row -> ((Number) row[1]).longValue()));
+    }
+
     private PromotionResponse mapResponse(Promotion promotion) {
         return mapResponse(promotion, Map.of());
+    }
+
+    private PromotionResponse mapResponse(Promotion promotion, Map<Long, Item> itemsById) {
+        // Counted, not sized off the relation: touching getCodes() here would load every code of
+        // the campaign into the persistence context, when nothing but the number is read. The
+        // single-promotion read; the list passes a pre-counted map instead.
+        return mapResponse(promotion, itemsById,
+                Map.of(promotion.getId(), promotionCodeRepository.countByPromotionId(promotion.getId())));
     }
 
     /**
      * {@code itemsById} carries the names and barcodes the admin list searches by; write paths
      * pass it empty, the builder page resolves item details itself. Items soft-deleted since the
      * promotion was written stay as bare ids — findAllById honours Item's deleted-at restriction,
-     * so their lines simply never match an item search.
+     * so their lines simply never match an item search. {@code codeCounts} carries one grouped
+     * count per campaign for the list; write responses route through the single-count overload.
      */
-    private PromotionResponse mapResponse(Promotion promotion, Map<Long, Item> itemsById) {
+    private PromotionResponse mapResponse(Promotion promotion, Map<Long, Item> itemsById, Map<Long, Long> codeCounts) {
+        int codeCount = codeCounts.getOrDefault(promotion.getId(), 0L).intValue();
         return PromotionResponse.builder()
                 .id(promotion.getId())
                 .name(promotion.getName())
@@ -1453,7 +1513,7 @@ public class PromotionService {
                 .budgetAmount(promotion.getBudgetAmount())
                 .timesRedeemed(promotion.getTimesRedeemed())
                 .budgetConsumed(promotion.getBudgetConsumed() == null ? BigDecimal.ZERO : promotion.getBudgetConsumed())
-                .codeCount(promotion.getCodes() == null ? 0 : promotion.getCodes().size())
+                .codeCount(codeCount)
                 .exhausted(promotion.isExhausted())
                 .status(promotion.getStatus())
                 .lifecycle(lifecycleStatus(promotion, LocalDateTime.now()))
@@ -1490,6 +1550,7 @@ public class PromotionService {
                                     .discountValue(target.getDiscountValue())
                                     .name(item == null ? null : item.getName())
                                     .barcode(item == null ? null : item.getBarcode())
+                                    .sellingPrice(item == null ? null : item.getSellingPrice())
                                     .build();
                         })
                         .toList())
