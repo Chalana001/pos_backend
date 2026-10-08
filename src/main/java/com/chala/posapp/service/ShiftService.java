@@ -239,21 +239,13 @@ public class ShiftService {
             throw new AlreadyExistsException("Shift already closed");
         }
 
-        Double calculatedSales = orderRepository.sumCashSales(
-                shift.getBranchId(),
-                shift.getCashierUserId(),
-                OrderStatus.COMPLETED,
-                shift.getOpenedAt(),
-                LocalDateTime.now()
-        );
-
-        // Null check and fallback to 0.0
-        double safeCashSales = (calculatedSales == null) ? 0.0 : calculatedSales;
-
-        shift.setCashSales(safeCashSales);
-
+        // cashSales is maintained event-by-event while the shift is open (cash in from
+        // order_payments, out on refunds) and must NOT be recomputed here. The old
+        // sumCashSales query counted card/bank sales as cash, re-added refunded sales
+        // and window-guessed membership, which is why a shift's live and closed totals
+        // disagreed.
         Double expected = shift.getOpeningCash()
-                + safeCashSales
+                + shift.getCashSales()
                 - shift.getTotalExpenses()
                 - shift.getTotalCashDrops();
 
@@ -275,21 +267,11 @@ public class ShiftService {
 
         CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
 
-        Double calculatedSales = orderRepository.sumCashSales(
-                shift.getBranchId(),
-                shift.getCashierUserId(),
-                OrderStatus.COMPLETED,
-                shift.getOpenedAt(),
-                LocalDateTime.now()
-        );
-
-        // Null check and fallback to 0.0
-        double safeCashSales = (calculatedSales == null) ? 0.0 : calculatedSales;
-
-        shift.setCashSales(safeCashSales);
-
+        // Same rule as closeShiftById: the incrementally maintained cashSales is the
+        // shift's ledger; re-deriving it from orders at close time produced a different
+        // number than the live screen and wrongly included card/bank tenders.
         Double expected = shift.getOpeningCash()
-                + safeCashSales
+                + shift.getCashSales()
                 - shift.getTotalExpenses()
                 - shift.getTotalCashDrops();
 
@@ -302,60 +284,6 @@ public class ShiftService {
 
         return map(cashShiftRepository.save(shift));
     }
-
-//    @Transactional
-//    public ShiftResponse closeShift(CloseShiftRequest request) {
-//        User user = securityUtils.getCurrentUser();
-//        if (user.getBranchId() == null)
-//            throw new NotAssignedException("User branch not assigned");
-//
-//        CashShift shift = getOpenShiftOrThrow(user.getBranchId(), user.getId());
-//
-//        Double cashSales = orderRepository.sumCashSales(
-//                shift.getBranchId(),
-//                shift.getCashierUserId(),
-//                OrderType.CASH,
-//                OrderStatus.COMPLETED,
-//                shift.getOpenedAt(),
-//                LocalDateTime.now()
-//        );
-//
-//        shift.setCashSales(cashSales);
-//
-//        Double expected = shift.getOpeningCash()
-//                + cashSales
-//                - shift.getTotalExpenses()
-//                - shift.getTotalCashDrops();
-//
-//        shift.setExpectedCash(expected);
-//        shift.setCountedCash(request.getCountedCash());
-//        shift.setCashDifference(request.getCountedCash() - expected);
-//        shift.setStatus(ShiftStatus.CLOSED);
-//        shift.setCloseNote(request.getNote());
-//        shift.setClosedAt(LocalDateTime.now());
-//
-//        return map(cashShiftRepository.save(shift));
-//    }
-
-//    private ShiftResponse map(CashShift s) {
-//        return ShiftResponse.builder()
-//                .id(s.getId())
-//                .branchId(s.getBranchId())
-//                .cashierUserId(s.getCashierUserId())
-//                .status(s.getStatus())
-//                .openingCash(s.getOpeningCash())
-//                .totalExpenses(s.getTotalExpenses())
-//                .totalCashDrops(s.getTotalCashDrops())
-//                .cashSales(s.getCashSales())
-//                .expectedCash(s.getExpectedCash())
-//                .countedCash(s.getCountedCash())
-//                .cashDifference(s.getCashDifference())
-//                .openNote(s.getOpenNote())
-//                .closeNote(s.getCloseNote())
-//                .openedAt(s.getOpenedAt())
-//                .closedAt(s.getClosedAt())
-//                .build();
-//    }
 
     public List<ShiftResponse> getAllActiveShiftsByBranch(Long branchId) {
         User user = securityUtils.getCurrentUser();
@@ -513,51 +441,6 @@ public class ShiftService {
                 .build();
     }
 
-//    @Transactional
-//    public ShiftResponse closeShiftById(Long shiftId, CloseShiftRequest request) {
-//
-//        if (shiftId == null) {
-//            throw new BadRequestException("Shift ID cannot be null");
-//        }
-//
-//        User user = securityUtils.getCurrentUser();
-//
-//        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER) {
-//            throw new RuntimeException("Not allowed");
-//        }
-//
-//        CashShift shift = cashShiftRepository.findById(shiftId)
-//                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
-//
-//        if (shift.getStatus() != ShiftStatus.OPEN) {
-//            throw new AlreadyExistsException("Shift already closed");
-//        }
-//
-//        Double cashSales = orderRepository.sumCashSales(
-//                shift.getBranchId(),
-//                shift.getCashierUserId(),
-//                OrderType.CASH,
-//                OrderStatus.COMPLETED,
-//                shift.getOpenedAt(),
-//                LocalDateTime.now()
-//        );
-//
-//        shift.setCashSales(cashSales);
-//
-//        Double expected = shift.getOpeningCash()
-//                + cashSales
-//                - shift.getTotalExpenses()
-//                - shift.getTotalCashDrops();
-//
-//        shift.setExpectedCash(expected);
-//        shift.setCountedCash(request.getCountedCash());
-//        shift.setCashDifference(request.getCountedCash() - expected);
-//        shift.setStatus(ShiftStatus.CLOSED);
-//        shift.setCloseNote(request.getNote());
-//        shift.setClosedAt(LocalDateTime.now());
-//
-//        return map(cashShiftRepository.save(shift));
-//    }
     @Transactional
     public ShiftResponse openShiftByBranch(Long branchId, OpenShiftRequest request) {
 
@@ -593,40 +476,6 @@ public class ShiftService {
         return map(persistNewShift(shift, "You already have an open shift in this branch"));
     }
 
-//    @Transactional
-//    public ShiftResponse addExpenseByShiftId(Long shiftId, CreateExpenseRequest request) {
-//
-//        if (shiftId == null) {
-//            throw new BadRequestException("Shift ID cannot be null");
-//        }
-//
-//        User user = securityUtils.getCurrentUser();
-//        if (user.getRole() != Role.ADMIN && user.getRole() != Role.MANAGER)
-//            throw new RuntimeException("Not allowed");
-//
-//        CashShift shift = cashShiftRepository.findById(shiftId)
-//                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
-//
-//        if (shift.getStatus() != ShiftStatus.OPEN)
-//            throw new BadRequestException("Shift is closed");
-//
-//        Expense expense = Expense.builder()
-//                .shiftId(shift.getId())
-//                .branchId(shift.getBranchId())
-//                .cashierUserId(user.getId())
-//                .category(request.getCategory())
-//                .amount(request.getAmount())
-//                .description(request.getDescription().trim())
-//                .build();
-//
-//        expenseRepository.save(expense);
-//
-//        shift.setTotalExpenses(shift.getTotalExpenses() + request.getAmount());
-//        cashShiftRepository.save(shift);
-//
-//        return map(shift);
-//    }
-
     @Transactional
     public ShiftResponse addCashDropByShiftId(Long shiftId, CreateCashDropRequest request) {
         if (shiftId == null) {
@@ -660,6 +509,10 @@ public class ShiftService {
         return map(shift);
     }
 
+    private double orZero(Double value) {
+        return value == null ? 0.0 : value;
+    }
+
     private ShiftResponse map(CashShift s) {
         ShiftResponse response = ShiftResponse.builder()
                 .id(s.getId())
@@ -670,6 +523,9 @@ public class ShiftService {
                 .totalExpenses(s.getTotalExpenses())
                 .totalCashDrops(s.getTotalCashDrops())
                 .cashSales(s.getCashSales())
+                .cardSales(orZero(s.getCardSales()))
+                .bankSales(orZero(s.getBankSales()))
+                .cashCollections(orZero(s.getCashCollections()))
                 .expectedCash(s.getExpectedCash())
                 .countedCash(s.getCountedCash())
                 .cashDifference(s.getCashDifference())

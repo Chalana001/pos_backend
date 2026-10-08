@@ -30,6 +30,12 @@ public class ShiftResponse {
     private Double cashDifference;
     private double cashSales;
 
+    /** Non-cash tender and cash credit-collection buckets (V60); informational,
+     * not part of Expected Cash. */
+    private double cardSales;
+    private double bankSales;
+    private double cashCollections;
+
     private String openNote;
     private String closeNote;
 

@@ -37,6 +37,20 @@ public class CashShift extends TenantEntity {
     @Column(nullable = false)
     private Double cashSales;
 
+    /**
+     * Card and bank tender taken during this shift, and cash received settling
+     * credit dues from earlier sales. Informational buckets: only cashSales,
+     * expenses and drops feed Expected Cash. Nullable in the DB (V60 backfills
+     * historical rows to 0) but always non-null in memory, so readers never
+     * have to null-check.
+     */
+    @Column
+    private Double cardSales;
+    @Column
+    private Double bankSales;
+    @Column
+    private Double cashCollections;
+
     private Double countedCash;
     private Double expectedCash;
     private Double cashDifference;
@@ -54,5 +68,8 @@ public class CashShift extends TenantEntity {
         totalExpenses = 0;
         totalCashDrops = 0;
         cashSales = 0.0;
+        if (cardSales == null) cardSales = 0.0;
+        if (bankSales == null) bankSales = 0.0;
+        if (cashCollections == null) cashCollections = 0.0;
     }
 }

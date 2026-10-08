@@ -49,28 +49,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             @Param("branchId") Long branchId
     );
 
-    @Query("""
-        SELECT COALESCE(SUM(
-            CASE
-                WHEN o.paidAmount < o.grandTotal THEN o.paidAmount
-                ELSE o.grandTotal
-            END
-        ), 0)
-        FROM Order o
-        WHERE o.branchId = :branchId
-          AND o.cashierUserId = :cashierId
-          AND o.paidAmount > 0
-          AND o.status = :status
-          AND o.createdAt BETWEEN :from AND :to
-    """)
-    double sumCashSales(
-            @Param("branchId") Long branchId,
-            @Param("cashierId") Long cashierId,
-            @Param("status") OrderStatus status,
-            @Param("from") LocalDateTime from,
-            @Param("to") LocalDateTime to
-    );
-
     Page<Order> findByCustomerId(Long customerId, Pageable pageable);
 
     Page<Order> findByCustomerIdAndOrderType(Long customerId, OrderType orderType, Pageable pageable);

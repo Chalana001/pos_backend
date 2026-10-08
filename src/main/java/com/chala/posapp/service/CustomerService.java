@@ -4,17 +4,21 @@ import com.chala.posapp.dto.customer.CustomerCreateRequest;
 import com.chala.posapp.dto.customer.CustomerPaymentRequest;
 import com.chala.posapp.dto.customer.CustomerResponse;
 import com.chala.posapp.dto.customer.CustomerUpdateRequest;
+import com.chala.posapp.entity.CashShift;
 import com.chala.posapp.entity.CreditPayment;
 import com.chala.posapp.entity.Customer;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
+import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
+import com.chala.posapp.repository.CashShiftRepository;
 import com.chala.posapp.repository.CreditPaymentRepository;
 import com.chala.posapp.repository.CustomerRepository;
 import com.chala.posapp.repository.OrderRepository;
+import com.chala.posapp.util.PaymentMethodUtil;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -36,6 +40,7 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
     private final CreditPaymentRepository creditPaymentRepository;
+    private final CashShiftRepository cashShiftRepository;
     private final SecurityUtils securityUtils;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
@@ -172,6 +177,21 @@ public class CustomerService {
                 .paymentMethod(normalizePaymentMethod(request.getPaymentMethod()))
                 .note(request.getNote())
                 .build());
+
+        // Cash settling old credit balances physically enters the drawer during this
+        // shift, so record it as a collection there. Card/bank never touched the
+        // drawer; an admin paying without a branch/open shift is attached nowhere
+        // (the credit_payments row above stays authoritative).
+        if (PaymentMethodUtil.CASH.equals(normalizePaymentMethod(request.getPaymentMethod()))
+                && paymentBranchId != null) {
+            cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
+                            paymentBranchId, user.getId(), ShiftStatus.OPEN)
+                    .ifPresent(shift -> {
+                        double current = shift.getCashCollections() == null ? 0.0 : shift.getCashCollections();
+                        shift.setCashCollections(current + paymentAmount);
+                        cashShiftRepository.save(shift);
+                    });
+        }
 
         return map(customer);
     }

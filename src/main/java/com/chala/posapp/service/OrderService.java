@@ -912,6 +912,21 @@ public class OrderService {
         // Settling a due changes credit aging and the dashboard's outstanding figure.
         reportCacheInvalidator.salesChanged(savedOrder.getBranchId());
 
+        // Cash settling an old credit balance physically enters the drawer during this
+        // shift, so it belongs on the shift as a collection. Card/bank settlements
+        // never touched the drawer and are skipped. No open shift for the paying
+        // user at the order's branch: the collection is still recorded (the ledger
+        // row above is authoritative), it just has no shift to attach to.
+        if (PaymentMethodUtil.CASH.equals(method) && user.getBranchId() != null
+                && user.getBranchId().equals(order.getBranchId())) {
+            cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
+                            order.getBranchId(), user.getId(), ShiftStatus.OPEN)
+                    .ifPresent(shift -> {
+                        shift.setCashCollections(shiftBounded(shift.getCashCollections(), paymentAmount));
+                        cashShiftRepository.save(shift);
+                    });
+        }
+
         return mapToOrderResponse(savedOrder, true);
     }
 
@@ -1559,8 +1574,12 @@ public class OrderService {
     }
 
     private void addCashSaleToOpenShift(Order order) {
-        double cashAmount = cashAmountForShift(order);
-        if (cashAmount <= 0 || order.getStatus() != OrderStatus.COMPLETED) {
+        if (order.getStatus() != OrderStatus.COMPLETED) {
+            return;
+        }
+        OrderPayment payment = orderPaymentRepository.findByOrderId(order.getId()).orElse(null);
+        double tenderAmount = ledgerAmountForShift(payment);
+        if (payment == null || tenderAmount <= 0) {
             return;
         }
 
@@ -1570,15 +1589,15 @@ public class OrderService {
                         ShiftStatus.OPEN
                 )
                 .ifPresent(shift -> {
-                    double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
-                    shift.setCashSales(currentCashSales + cashAmount);
+                    applyTenderToShift(shift, payment.getPaymentMethod(), tenderAmount);
                     cashShiftRepository.save(shift);
                 });
     }
 
     private void reverseCashSaleFromOpenShift(Order order) {
-        double cashAmount = cashAmountForShift(order);
-        if (cashAmount <= 0) {
+        OrderPayment payment = orderPaymentRepository.findByOrderId(order.getId()).orElse(null);
+        double tenderAmount = ledgerAmountForShift(payment);
+        if (payment == null || tenderAmount <= 0) {
             return;
         }
 
@@ -1589,20 +1608,39 @@ public class OrderService {
                 )
                 .filter(shift -> !order.getCreatedAt().isBefore(shift.getOpenedAt()))
                 .ifPresent(shift -> {
-                    double currentCashSales = shift.getCashSales() == null ? 0.0 : shift.getCashSales();
-                    shift.setCashSales(Math.max(0.0, currentCashSales - cashAmount));
+                    applyTenderToShift(shift, payment.getPaymentMethod(), -tenderAmount);
                     cashShiftRepository.save(shift);
                 });
     }
 
-    private double cashAmountForShift(Order order) {
-        if (order == null) {
+    private double ledgerAmountForShift(OrderPayment payment) {
+        if (payment == null) {
             return 0.0;
         }
-        return orderPaymentRepository.findByOrderId(order.getId())
-                .filter(payment -> PaymentMethodUtil.CASH.equals(payment.getPaymentMethod()))
-                .map(payment -> Math.max(0.0, roundMoney(payment.getAmount())))
-                .orElse(0.0);
+        return Math.max(0.0, roundMoney(payment.getAmount()));
+    }
+
+    /**
+     * One amount lands in exactly one tender bucket. CASH feeds Expected Cash; CARD
+     * and BANK are recorded for visibility only — the drawer never held that money.
+     * A negative amount reverses the same bucket, clamped at zero so a reversal can
+     * never drive a bucket below empty.
+     */
+    private void applyTenderToShift(CashShift shift, String paymentMethod, double amount) {
+        if (PaymentMethodUtil.CARD.equals(paymentMethod)) {
+            shift.setCardSales(shiftBounded(shift.getCardSales(), amount));
+        } else if (PaymentMethodUtil.BANK.equals(paymentMethod)) {
+            shift.setBankSales(shiftBounded(shift.getBankSales(), amount));
+        } else {
+            // CASH, and any backfilled legacy method we cannot classify: the drawer's
+            // own bucket. Offline imports are CASH-only by contract.
+            shift.setCashSales(shiftBounded(shift.getCashSales(), amount));
+        }
+    }
+
+    private double shiftBounded(Double current, double delta) {
+        double base = current == null ? 0.0 : current;
+        return Math.max(0.0, base + delta);
     }
 
     private double roundMoney(double amount) {

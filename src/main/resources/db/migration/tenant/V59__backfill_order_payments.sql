@@ -91,6 +91,9 @@ INSERT INTO order_payments (
 )
 SELECT
     o.id,
+    o.invoice_no,
+    o.branch_id,
+    o.cashier_user_id,
     COALESCE(o.sale_paid_amount, 0),
     CASE
         WHEN o.payment_method IN ('CASH', 'CARD', 'BANK', 'CREDIT', 'CHEQUE') THEN o.payment_method
