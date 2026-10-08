@@ -55,8 +55,21 @@ public class PromotionService {
     private final com.chala.posapp.repository.StockBatchRepository stockBatchRepository;
 
     public List<PromotionResponse> list() {
-        return promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc().stream()
-                .map(this::mapResponse)
+        List<Promotion> promotions = promotionRepository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc();
+        // The admin list is searched by item name/barcode, which the targets don't store:
+        // they hold bare ids. One batched read resolves the whole page's worth.
+        List<Long> itemIds = promotions.stream()
+                .flatMap(promotion -> promotion.getTargets().stream())
+                .map(PromotionTarget::getItemId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, Item> itemsById = itemIds.isEmpty()
+                ? Map.of()
+                : itemRepository.findAllById(itemIds).stream()
+                        .collect(Collectors.toMap(Item::getId, Function.identity()));
+        return promotions.stream()
+                .map(promotion -> mapResponse(promotion, itemsById))
                 .toList();
     }
 
@@ -1405,6 +1418,16 @@ public class PromotionService {
     }
 
     private PromotionResponse mapResponse(Promotion promotion) {
+        return mapResponse(promotion, Map.of());
+    }
+
+    /**
+     * {@code itemsById} carries the names and barcodes the admin list searches by; write paths
+     * pass it empty, the builder page resolves item details itself. Items soft-deleted since the
+     * promotion was written stay as bare ids — findAllById honours Item's deleted-at restriction,
+     * so their lines simply never match an item search.
+     */
+    private PromotionResponse mapResponse(Promotion promotion, Map<Long, Item> itemsById) {
         return PromotionResponse.builder()
                 .id(promotion.getId())
                 .name(promotion.getName())
@@ -1458,12 +1481,17 @@ public class PromotionService {
                 .itemIds(promotion.getTargets().stream().map(PromotionTarget::getItemId).filter(Objects::nonNull).toList())
                 .items(promotion.getTargets().stream()
                         .filter(target -> target.getItemId() != null)
-                        .map(target -> PromotionItemLine.builder()
-                                .id(target.getItemId())
-                                .offerPrice(target.getOfferPrice())
-                                .discountType(target.getDiscountType())
-                                .discountValue(target.getDiscountValue())
-                                .build())
+                        .map(target -> {
+                            Item item = itemsById.get(target.getItemId());
+                            return PromotionItemLine.builder()
+                                    .id(target.getItemId())
+                                    .offerPrice(target.getOfferPrice())
+                                    .discountType(target.getDiscountType())
+                                    .discountValue(target.getDiscountValue())
+                                    .name(item == null ? null : item.getName())
+                                    .barcode(item == null ? null : item.getBarcode())
+                                    .build();
+                        })
                         .toList())
                 .categoryIds(promotion.getTargets().stream().map(PromotionTarget::getCategoryId).filter(Objects::nonNull).toList())
                 .subCategoryIds(promotion.getTargets().stream().map(PromotionTarget::getSubCategoryId).filter(Objects::nonNull).toList())

@@ -39,4 +39,13 @@ public class PromotionItemLine {
 
     @PositiveOrZero
     private BigDecimal discountValue;
+
+    /**
+     * Display-only, filled when a promotion is read so the list can be searched by item.
+     * Clients sending this DTO back are ignored: {@code applyTargets} never reads these.
+     */
+    private String name;
+
+    /** Display-only twin of {@link #name}; a barcode search finds promotions by their items. */
+    private String barcode;
 }

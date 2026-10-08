@@ -1,6 +1,7 @@
 package com.chala.posapp.service;
 
 import com.chala.posapp.dto.promotion.PromotionRequest;
+import com.chala.posapp.dto.promotion.PromotionResponse;
 import com.chala.posapp.entity.Category;
 import com.chala.posapp.entity.DiscountType;
 import com.chala.posapp.entity.Item;
@@ -34,7 +35,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * The pricing half of {@link PromotionService}, the code that decides how much money leaves
@@ -741,5 +744,79 @@ class PromotionServiceTest {
         assertThat(result.promotionApplied()).isFalse();
         assertThat(result.finalLineTotal()).isEqualTo(200.0);
         assertThat(result.appliedDiscountAmount()).isZero();
+    }
+
+    // ── admin list read path ─────────────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("the admin list resolves target items for searching")
+    class AdminListItems {
+
+        @Test
+        @DisplayName("list() carries each target item's name and barcode so the page can search by them")
+        void listResolvesItemNamesAndBarcodes() {
+            PromotionService withMocks = new PromotionService(
+                    mockRepoReturning(promotionWithTarget(7L, 8L)),
+                    mockItemRepo(),
+                    mock(CategoryRepository.class),
+                    mock(SubCategoryRepository.class),
+                    mock(BranchRepository.class),
+                    mock(CustomerRepository.class),
+                    mock(SecurityUtils.class),
+                    mock(PromotionSnapshotCache.class),
+                    mock(PromotionGate.class),
+                    mock(com.chala.posapp.repository.PromotionCodeRepository.class),
+                    mock(com.chala.posapp.repository.CustomerSegmentRepository.class),
+                    mock(PromotionLifecycleService.class),
+                    mock(PromotionSimulationService.class),
+                    mock(com.chala.posapp.repository.StockBatchRepository.class)
+            );
+
+            List<PromotionResponse> responses = withMocks.list();
+
+            assertThat(responses).hasSize(1);
+            assertThat(responses.get(0).getItems()).hasSize(2);
+            // Id 7 resolves, id 8 is soft-deleted: the bare id survives, the search fields don't.
+            assertThat(responses.get(0).getItems().get(0).getId()).isEqualTo(7L);
+            assertThat(responses.get(0).getItems().get(0).getName()).isEqualTo("Water Bottle 500ml");
+            assertThat(responses.get(0).getItems().get(0).getBarcode()).isEqualTo("8901234567890");
+            assertThat(responses.get(0).getItems().get(1).getId()).isEqualTo(8L);
+            assertThat(responses.get(0).getItems().get(1).getName()).isNull();
+            assertThat(responses.get(0).getItems().get(1).getBarcode()).isNull();
+        }
+
+        @SuppressWarnings("unchecked")
+        private PromotionRepository mockRepoReturning(Promotion promotion) {
+            PromotionRepository repository = mock(PromotionRepository.class);
+            when(repository.findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc())
+                    .thenReturn(List.of(promotion));
+            return repository;
+        }
+
+        @SuppressWarnings("unchecked")
+        private ItemRepository mockItemRepo() {
+            ItemRepository repository = mock(ItemRepository.class);
+            Item waterBottle = Item.builder()
+                    .id(7L).name("Water Bottle 500ml").barcode("8901234567890")
+                    .itemType(ItemType.NORMAL).defaultUnit(MeasurementUnit.PCS)
+                    .sellingPrice(BigDecimal.valueOf(100))
+                    .build();
+            when(repository.findAllById(any())).thenReturn(List.of(waterBottle));
+            return repository;
+        }
+
+        private Promotion promotionWithTarget(Long... itemIds) {
+            Promotion promotion = Promotion.builder()
+                    .id(1L).name("Summer Drinks").scope(PromotionScope.ITEM)
+                    .discountType(DiscountType.PERCENT).discountValue(BigDecimal.valueOf(10))
+                    .active(true).allowBelowCost(true)
+                    .build();
+            for (Long itemId : itemIds) {
+                PromotionTarget target = PromotionTarget.builder().itemId(itemId).build();
+                target.setPromotion(promotion);
+                promotion.getTargets().add(target);
+            }
+            return promotion;
+        }
     }
 }
