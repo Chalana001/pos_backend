@@ -70,6 +70,7 @@ public class PromotionLifecycleService {
         settings.setApprovalThresholdPercent(dto.getApprovalThresholdPercent());
         settings.setApprovalThresholdAmount(dto.getApprovalThresholdAmount());
         settings.setCashierManualStacking(dto.isCashierManualStacking());
+        settings.setAllowBelowCostPromotions(dto.isAllowBelowCostPromotions());
         settings.setUpdatedBy(user == null ? null : user.getId());
         settings.setUpdatedAt(LocalDateTime.now());
         return toDto(settingsRepository.save(settings));
@@ -81,6 +82,7 @@ public class PromotionLifecycleService {
                 .approvalThresholdPercent(settings.getApprovalThresholdPercent())
                 .approvalThresholdAmount(settings.getApprovalThresholdAmount())
                 .cashierManualStacking(settings.isCashierManualStacking())
+                .allowBelowCostPromotions(settings.isAllowBelowCostPromotions())
                 .build();
     }
 

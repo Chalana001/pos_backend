@@ -102,7 +102,11 @@ public class PromotionService {
                 .active(request.isActive())
                 .priority(request.getPriority())
                 .marginFloorPercent(request.getMarginFloorPercent())
-                .allowBelowCost(request.isAllowBelowCost())
+                // OR, not request-only: when the owner has switched below-cost on for the shop,
+                // the campaign is persisted with the flag set so the engine, snapshot cache and
+                // offline bundle all keep their one pure source of truth - none of them reads
+                // promotion_settings, and none of them should.
+                .allowBelowCost(belowCostAllowed(request.isAllowBelowCost()))
                 .effectType(request.resolvedEffectType())
                 .buyQty(request.getBuyQty())
                 .getQty(request.getGetQty())
@@ -140,7 +144,8 @@ public class PromotionService {
         promotion.setBranchId(normalizeBranchId(request.getBranchId()));
         promotion.setPriority(request.getPriority());
         promotion.setMarginFloorPercent(request.getMarginFloorPercent());
-        promotion.setAllowBelowCost(request.isAllowBelowCost());
+        // Same OR as create: the shop switch lifts the guard at the till as well as at save.
+        promotion.setAllowBelowCost(belowCostAllowed(request.isAllowBelowCost()));
         promotion.setEffectType(request.resolvedEffectType());
         promotion.setBuyQty(request.getBuyQty());
         promotion.setGetQty(request.getGetQty());
@@ -1034,6 +1039,10 @@ public class PromotionService {
         int belowFloor = 0;
         double discountPercentSum = 0;
         double maxLineDiscount = 0;
+        // The badge must agree with the save button: when the shop allows below cost, a
+        // below-cost row is OK here and OK at save, so it reports OK rather than a refusal
+        // the save path will never make.
+        boolean shopAllowsBelowCost = lifecycleService.settings().isAllowBelowCostPromotions();
 
         for (PromotionItemLine line : lines) {
             Item item = line.getId() == null ? null : itemsById.get(line.getId());
@@ -1059,7 +1068,7 @@ public class PromotionService {
             if (line.getOfferPrice() != null && normalPrice > 0 && line.getOfferPrice().doubleValue() > normalPrice) {
                 status = "ABOVE_NORMAL_PRICE";
                 message = "Offer price is above the normal price";
-            } else if (verdict.belowCost()) {
+            } else if (verdict.belowCost() && !shopAllowsBelowCost && !request.isAllowBelowCost()) {
                 status = "BELOW_COST";
                 message = verdict.batchLabel() == null
                         ? String.format("Sells at %.2f against a cost of %.2f", verdict.price(), cost)
@@ -1227,6 +1236,8 @@ public class PromotionService {
                 .status(PromotionStatus.DRAFT)
                 .priority(source.getPriority())
                 .marginFloorPercent(source.getMarginFloorPercent())
+                // Copy copies: a campaign that was allowed to sell below cost stays allowed,
+                // whatever the shop switch says today - the source row already decided.
                 .allowBelowCost(source.isAllowBelowCost())
                 .effectType(source.getEffectType())
                 .buyQty(source.getBuyQty())
@@ -1280,6 +1291,15 @@ public class PromotionService {
     }
 
     /**
+     * The shop's standing answer to "may this campaign sell below cost?". The campaign's own
+     * allowBelowCost flag stays the per-campaign escape hatch; this is the owner's decision
+     * that the whole shop prices that way, so the two are OR-ed wherever the guard is checked.
+     */
+    private boolean belowCostAllowed(boolean campaignAllows) {
+        return campaignAllows || lifecycleService.settings().isAllowBelowCostPromotions();
+    }
+
+    /**
      * Checks the item list of an ITEM promotion, including any per-item prices on it.
      *
      * <p>Two refusals matter here and both are about a typo rather than a policy. An offer
@@ -1326,7 +1346,7 @@ public class PromotionService {
             }
 
             BigDecimal costPrice = item.getCostPrice();
-            if (!request.isAllowBelowCost() && costPrice != null && offerPrice < costPrice.doubleValue()) {
+            if (!belowCostAllowed(request.isAllowBelowCost()) && costPrice != null && offerPrice < costPrice.doubleValue()) {
                 throw new BadRequestException(String.format(
                         "Offer price %.2f is below the %.2f cost of %s. Allow below-cost pricing if this is deliberate.",
                         offerPrice, costPrice.doubleValue(), item.getName()));

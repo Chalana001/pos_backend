@@ -42,6 +42,16 @@ public class PromotionSettings extends TenantEntity {
     @Builder.Default
     private boolean cashierManualStacking = true;
 
+    /**
+     * The owner's standing answer to "may a campaign sell below cost here?". On, the guard is
+     * lifted for every campaign; off, only a campaign carrying its own allowBelowCost flag
+     * may. Deliberately per shop rather than per campaign: a shop that routinely re-prices
+     * stock below cost should not have to remember a checkbox on every sale campaign.
+     */
+    @Column(name = "allow_below_cost_promotions", nullable = false)
+    @Builder.Default
+    private boolean allowBelowCostPromotions = false;
+
     @Column(name = "updated_by")
     private Long updatedBy;
 

@@ -16,4 +16,6 @@ public class PromotionSettingsDto {
     private BigDecimal approvalThresholdPercent;
     private BigDecimal approvalThresholdAmount;
     private boolean cashierManualStacking;
+    /** True lifts the below-cost guard for every campaign in this shop. */
+    private boolean allowBelowCostPromotions;
 }

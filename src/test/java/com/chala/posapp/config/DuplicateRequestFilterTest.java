@@ -149,6 +149,29 @@ class DuplicateRequestFilterTest {
         assertEquals(2, calls.get());
     }
 
+    /**
+     * A POST that answers a question is not a write. Asking it twice with the same body can
+     * legitimately get two answers, because the answer depends on state that may have changed
+     * in between - the owner flips the below-cost switch and the price check must stop saying
+     * "below cost". Collapsing it hands back the pre-change answer.
+     */
+    @Test
+    void readOnlyComputingPostsAreNeverCollapsed() throws Exception {
+        DuplicateRequestFilter filter = filter();
+        AtomicInteger calls = new AtomicInteger();
+        FilterChain chain = countingChain(calls, () -> {});
+
+        for (String path : new String[]{"/promotions/price-check", "/api/promotions/price-check",
+                "/promotions/preview", "/promotions/simulate", "/promotions/check", "/promotions/check-code"}) {
+            filter.doFilter(post(path, "{\"items\":[{\"id\":1,\"offerPrice\":125}]}"),
+                    new MockHttpServletResponse(), chain);
+            filter.doFilter(post(path, "{\"items\":[{\"id\":1,\"offerPrice\":125}]}"),
+                    new MockHttpServletResponse(), chain);
+        }
+
+        assertEquals(12, calls.get(), "a re-asked question must reach the controller every time");
+    }
+
     @Test
     void theRequestBodyStillReachesTheController() throws Exception {
         DuplicateRequestFilter filter = filter();

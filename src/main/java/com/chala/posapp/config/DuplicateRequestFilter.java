@@ -57,6 +57,16 @@ import java.util.concurrent.TimeUnit;
  * other than 2xx the key is dropped immediately, so a genuine retry after a real
  * error still reaches the controller.
  *
+ * <p><b>Read-only POSTs are never collapsed.</b> Some endpoints are POSTs because
+ * they carry a structured body, not because they change anything: the promotion
+ * price check, preview, simulation and pre-save check all answer a question. The
+ * filter's premise - an identical body within the window is the same action - is
+ * false for them, because the answer depends on server state that may have moved
+ * between the two calls. Flipping the shop's below-cost switch and re-pricing sent
+ * the identical body, was matched as a duplicate and handed the pre-flip refusal,
+ * so the builder kept showing "below cost" on a campaign the owner had just made
+ * legal. Those paths are exempt below.
+ *
  * <p><b>Two windows.</b> A client that sends an explicit {@code Idempotency-Key}
  * header gets a long window ({@code explicit-key-window-seconds}) keyed on that
  * header, the caller is telling us "these two requests are the same action".
@@ -84,6 +94,22 @@ public class DuplicateRequestFilter extends OncePerRequestFilter {
     private static final Set<String> EXCLUDED_PATH_PREFIXES = Set.of(
             "/auth/login",
             "/api/auth/login"
+    );
+
+    /**
+     * POSTs that compute an answer rather than change state, keyed by the path they end with.
+     * An identical body is not evidence of the same action for these; it is two calls of the
+     * same question, and the second may follow a state change the first predates. The
+     * promotion compute endpoints ("would this price lose money?", "what would this campaign
+     * have cost?", "does this need approval?") are the ones this filter was silently
+     * corrupting whenever an operator changed a setting and re-asked.
+     */
+    private static final Set<String> READ_ONLY_POST_SUFFIXES = Set.of(
+            "/price-check",
+            "/preview",
+            "/simulate",
+            "/check",
+            "/check-code"
     );
 
     private static final String IDEMPOTENCY_HEADER = "Idempotency-Key";
@@ -239,6 +265,13 @@ public class DuplicateRequestFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         for (String excluded : EXCLUDED_PATH_PREFIXES) {
             if (path.startsWith(excluded)) {
+                return false;
+            }
+        }
+        // A POST that only answers a question must not be collapsed: the same body asked
+        // twice is two questions, and server state may have moved between them.
+        for (String suffix : READ_ONLY_POST_SUFFIXES) {
+            if (path.endsWith(suffix)) {
                 return false;
             }
         }
