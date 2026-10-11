@@ -7,6 +7,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Component;
@@ -46,11 +47,28 @@ public class RateLimitFilter extends OncePerRequestFilter {
     // Per-(IP + route-group) bucket map
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
 
+    /**
+     * Off only under the container test profile, where every MockMvc call shares one
+     * loopback IP and the suite's own logins exhaust the auth bucket. Production never
+     * sets this; the switch exists so tests disable the whole filter in one line rather
+     * than loosening the real limits to make the suite pass.
+     */
+    private final boolean enabled;
+
+    public RateLimitFilter(@Value("${app.security.rate-limit.enabled:true}") boolean enabled) {
+        this.enabled = enabled;
+    }
+
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain chain)
             throws ServletException, IOException {
+
+        if (!enabled) {
+            chain.doFilter(request, response);
+            return;
+        }
 
         String path = request.getRequestURI();
         String ip   = resolveIp(request);

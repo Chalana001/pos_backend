@@ -195,7 +195,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
 
-        assertTotals(order, 100.0, 0.0);
+        assertSaleTotals(order, 100.0, 0.0);
         assertEquals(100.0, order.path("tenderedAmount").asDouble(), 0.001);
         assertEquals(0.0, order.path("changeAmount").asDouble(), 0.001);
 
@@ -221,7 +221,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """.formatted(customerId)
         );
 
-        assertTotals(order, 40.0, 60.0);
+        assertSaleTotals(order, 40.0, 60.0);
         assertEquals("CREDIT", order.path("orderType").asText());
 
         OrderPayment payment = paymentFor(order.path("id").asLong());
@@ -256,7 +256,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
 
-        assertTotals(order, 100.0, 0.0);
+        assertSaleTotals(order, 100.0, 0.0);
         assertEquals(125.0, order.path("tenderedAmount").asDouble(), 0.001);
         assertEquals(25.0, order.path("changeAmount").asDouble(), 0.001);
 
@@ -281,7 +281,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
 
-        assertTotals(order, 100.0, 0.0);
+        assertSaleTotals(order, 100.0, 0.0);
 
         OrderPayment payment = paymentFor(order.path("id").asLong());
         assertEquals("CARD", payment.getPaymentMethod());
@@ -301,7 +301,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """
         );
 
-        assertTotals(order, 100.0, 0.0);
+        assertSaleTotals(order, 100.0, 0.0);
 
         OrderPayment payment = paymentFor(order.path("id").asLong());
         assertEquals("BANK", payment.getPaymentMethod());
@@ -405,7 +405,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """.formatted(fixture.mainBranch().getId(), customerId, itemId, batchId)
         );
 
-        assertTotals(order, 0.0, 100.0);
+        assertSaleTotals(order, 0.0, 100.0);
         assertEquals("CREDIT", order.path("orderType").asText());
 
         OrderPayment payment = paymentFor(order.path("id").asLong());
@@ -718,7 +718,11 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
         com.chala.posapp.entity.CreditPayment settlementPayment = creditPaymentRepository.findAll().getFirst();
         assertEquals("DIRECT-TRN-2002", settlementPayment.getBankReference());
 
-        JsonNode history = getJson("/credit/payments/" + customerId, tenantId, cashierToken);
+        // History is manager-and-above by design; a cashier who settles must not be able to
+        // trawl every customer's payment record. The settle calls above stay cashier because
+        // that is the till flow; this read is the audit view.
+        jsonRequest(HttpMethod.GET, "/credit/payments/" + customerId, tenantId, cashierToken, null, 403);
+        JsonNode history = getJson("/credit/payments/" + customerId, tenantId, adminToken);
         assertTrue(history.isArray());
         assertEquals(1, history.size());
         assertEquals("DIRECT-TRN-2002", history.get(0).path("bankReference").asText());
@@ -813,6 +817,16 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
         assertEquals(100.0, order.path("grandTotal").asDouble(), 0.001);
         assertEquals(paid, order.path("paidAmount").asDouble(), 0.001);
         assertEquals(due, order.path("dueAmount").asDouble(), 0.001);
+    }
+
+    /**
+     * The sale-time half of the totals: {@code salePaidAmount} and {@code saleDueAmount} are
+     * frozen at checkout (what the customer handed over at the till), while {@code paidAmount}
+     * and {@code dueAmount} keep moving as later settlements arrive. This is the initial-sale
+     * assertion; settlement responses must use {@link #assertTotals}, not this.
+     */
+    private void assertSaleTotals(JsonNode order, double paid, double due) {
+        assertTotals(order, paid, due);
         assertEquals(paid, order.path("salePaidAmount").asDouble(), 0.001);
         assertEquals(due, order.path("saleDueAmount").asDouble(), 0.001);
     }

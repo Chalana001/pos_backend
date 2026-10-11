@@ -88,10 +88,15 @@ migrate(url, "59");
     private static void seedLegacyOrders(String url) throws Exception {
         try (Connection connection = DriverManager.getConnection(url, "root", mysql.getPassword());
              Statement statement = connection.createStatement()) {
-            statement.execute("INSERT INTO branches (name, address, phone, active) VALUES ('Backfill branch', 'Colombo', '0110000000', 1)");
+            statement.execute("""
+                    INSERT INTO branches (code, name, address, phone, active)
+                    VALUES ('BACKFILL', 'Backfill branch', 'Colombo', '0110000000', 1)
+                    """);
             long branchId = lastInsertId(statement);
-            statement.execute("INSERT INTO users (branch_id, username, password, role, active, name) VALUES ("
-                    + branchId + ", 'backfill-cashier', 'x', 'CASHIER', 1, 'Backfill Cashier')");
+            statement.execute("""
+                    INSERT INTO users (branch_id, username, password_hash, role, enabled, created_at)
+                    VALUES (%d, 'backfill-cashier', 'x', 'CASHIER', 1, NOW(6))
+                    """.formatted(branchId));
             long cashierId = lastInsertId(statement);
 
             insertLegacyOrder(statement, branchId, cashierId, "LEGACY-CASH", 100, 80, 20, 80d, 20d, "CASH", "COMPLETED", null);
