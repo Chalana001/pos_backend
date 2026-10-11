@@ -1,5 +1,6 @@
 package com.chala.posapp.controller;
 
+import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.promotion.*;
 import com.chala.posapp.service.PromotionService;
 import jakarta.validation.Valid;
@@ -21,8 +22,13 @@ public class PromotionController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping
-    public ResponseEntity<List<PromotionResponse>> list() {
-        return ResponseEntity.ok(promotionService.list());
+    public ResponseEntity<PageResponse<PromotionResponse>> list(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long branchId
+    ) {
+        return ResponseEntity.ok(promotionService.list(page, size, search, branchId));
     }
 
     /**

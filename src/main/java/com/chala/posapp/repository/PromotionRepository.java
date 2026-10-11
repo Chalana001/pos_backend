@@ -1,6 +1,8 @@
 package com.chala.posapp.repository;
 
 import com.chala.posapp.entity.Promotion;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -21,6 +23,49 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
 
     @EntityGraph(attributePaths = "targets")
     List<Promotion> findByDeletedAtIsNullOrderByActiveDescStartAtDescIdDesc();
+
+    /**
+     * The admin board, one page at a time.
+     *
+     * <p>Search is name-first here; item name and barcode matches arrive as {@code targetIds}
+     * from {@link #searchTargetIds(String)} because targets hold bare item ids, not names.
+     * A null or empty id list must never reach the {@code IN ()} clause - Hibernate renders
+     * it as invalid SQL on some dialects - so callers pass {@code null} for "no item matched"
+     * and the query then answers on the campaign name alone.
+     */
+    @EntityGraph(attributePaths = "targets")
+    @Query("""
+        SELECT p
+        FROM Promotion p
+        WHERE p.deletedAt IS NULL
+          AND (:branchId IS NULL OR :branchId = 0 OR p.branchId = :branchId)
+          AND (:term IS NULL
+               OR LOWER(p.name) LIKE LOWER(CONCAT('%', :term, '%'))
+               OR (:targetIds IS NOT NULL AND p.id IN :targetIds))
+        """)
+    Page<Promotion> search(
+            @Param("term") String term,
+            @Param("branchId") Long branchId,
+            @Param("targetIds") List<Long> targetIds,
+            Pageable pageable);
+
+    /**
+     * Promotion ids whose target items match a search by name or barcode. Bare ids are all
+     * the board's main query needs; joining and returning items here would only widen the
+     * row and re-do work the page mapping already does.
+     */
+    @Query("""
+        SELECT DISTINCT p.id
+        FROM Promotion p
+        JOIN p.targets t
+        JOIN Item i ON i.id = t.itemId
+        WHERE p.deletedAt IS NULL
+          AND t.itemId IS NOT NULL
+          AND (LOWER(i.name) LIKE LOWER(CONCAT('%', :term, '%'))
+               OR LOWER(i.altName) LIKE LOWER(CONCAT('%', :term, '%'))
+               OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :term, '%')))
+        """)
+    List<Long> searchTargetIds(@Param("term") String term);
 
     @EntityGraph(attributePaths = "targets")
     List<Promotion> findByActiveTrueAndDeletedAtIsNullAndStartAtLessThanEqualAndEndAtGreaterThanEqualOrderByPriorityDescIdDesc(

@@ -1,5 +1,6 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.order.OrderItemRequest;
 import com.chala.posapp.dto.promotion.*;
 import com.chala.posapp.entity.*;
@@ -19,6 +20,10 @@ import com.chala.posapp.repository.*;
 import com.chala.posapp.util.QuantityConversionUtil;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,6 +71,57 @@ public class PromotionService {
         return promotions.stream()
                 .map(promotion -> mapResponse(promotion, itemsById, codeCounts))
                 .toList();
+    }
+
+    /**
+     * The admin board as one page, search and branch filter applied where they belong: in
+     * the query, not over the whole shop's campaign list afterwards.
+     *
+     * <p>The search is a name search joined to an item match. A campaign whose target item
+     * is named "Haal" must be findable by typing "Haal", but targets store only item ids,
+     * so the ids are resolved in one projection and handed to the page query as a set.
+     *
+     * <p>Size is capped at 100: the board is a working set of tens of campaigns, and an
+     * unbounded "all" is what this method exists to retire.
+     */
+    public PageResponse<PromotionResponse> list(int page, int size, String search, Long branchId) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        String term = search == null ? null : search.trim().toLowerCase();
+        if (term != null && term.isEmpty()) {
+            term = null;
+        }
+        Long safeBranchId = branchId == null || branchId <= 0 ? null : branchId;
+
+        // No item matched and the campaign name has not been ruled out yet: the ids stay
+        // null so the page query can still answer on name alone. An empty list would mean
+        // "matched only these zero ids" and would need special-casing in JPQL, which is
+        // exactly the kind of dialect-sensitive IN () trap this avoids.
+        List<Long> targetIds = null;
+        if (term != null) {
+            List<Long> ids = promotionRepository.searchTargetIds(term);
+            targetIds = ids.isEmpty() ? null : ids;
+        }
+
+        Pageable pageable = PageRequest.of(safePage, safeSize,
+                Sort.by(Sort.Direction.DESC, "active", "startAt", "id"));
+        Page<Promotion> result = promotionRepository.search(term, safeBranchId, targetIds, pageable);
+
+        List<Promotion> promotions = result.getContent();
+        Map<Long, Item> itemsById = itemsByIdFor(promotions);
+        Map<Long, Long> codeCounts = codeCountsFor(promotions);
+
+        return PageResponse.<PromotionResponse>builder()
+                .items(promotions.stream()
+                        .map(promotion -> mapResponse(promotion, itemsById, codeCounts))
+                        .toList())
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .first(result.isFirst())
+                .last(result.isLast())
+                .build();
     }
 
     /**
