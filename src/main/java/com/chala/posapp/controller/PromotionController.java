@@ -206,17 +206,20 @@ public class PromotionController {
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/history")
-    public ResponseEntity<List<PromotionHistoryResponse>> history(
+    public ResponseEntity<PageResponse<PromotionHistoryResponse>> history(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size,
+            @RequestParam(required = false) String search,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
-        return ResponseEntity.ok(promotionService.history(branchId, from, to));
+        return ResponseEntity.ok(promotionService.historyPage(page, size, search, branchId, from, to));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @GetMapping("/redemptions")
-    public ResponseEntity<List<PromotionRedemptionResponse>> redemptions(
+    public ResponseEntity<PageResponse<PromotionRedemptionResponse>> redemptions(
             @RequestParam(required = false) Long promotionId,
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

@@ -187,6 +187,23 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
     List<Promotion> findAllByOrderByStartAtDescIdDesc();
 
     /**
+     * The history page's own page: every promotion including retired ones, optionally narrowed
+     * by name or branch, newest campaign first. Same no-filter on {@code deletedAt} as the
+     * unbounded finder above, for the same reason - history exists to still show retired work.
+     */
+    @EntityGraph(attributePaths = "targets")
+    @Query("""
+        SELECT p
+        FROM Promotion p
+        WHERE (:branchId IS NULL OR :branchId = 0 OR p.branchId = :branchId)
+          AND (:term IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :term, '%')))
+        """)
+    Page<Promotion> historyPage(
+            @Param("term") String term,
+            @Param("branchId") Long branchId,
+            Pageable pageable);
+
+    /**
      * What each promotion actually gave away, counting item-level and bill-level discounts
      * together.
      *
@@ -283,4 +300,36 @@ public interface PromotionRepository extends JpaRepository<Promotion, Long> {
             @Param("toDate") LocalDateTime toDate,
             @Param("pageSize") int pageSize,
             @Param("pageOffset") int pageOffset);
+
+    /**
+     * The ledger's total row count for the same filters. Same two halves, same conditions,
+     * so the page metadata cannot disagree with the rows the page query returns.
+     */
+    @Query(value = """
+        SELECT COUNT(*) FROM (
+            SELECT oi.order_id
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE oi.promotion_id IS NOT NULL
+              AND o.status = 'COMPLETED'
+              AND (:promotionId = 0 OR oi.promotion_id = :promotionId)
+              AND (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.created_at BETWEEN :fromDate AND :toDate
+
+            UNION ALL
+
+            SELECT o.id
+            FROM orders o
+            WHERE o.bill_promotion_id IS NOT NULL
+              AND o.status = 'COMPLETED'
+              AND (:promotionId = 0 OR o.bill_promotion_id = :promotionId)
+              AND (:branchId = 0 OR o.branch_id = :branchId)
+              AND o.created_at BETWEEN :fromDate AND :toDate
+        ) redemptions
+        """, nativeQuery = true)
+    long promotionRedemptionsCount(
+            @Param("promotionId") Long promotionId,
+            @Param("branchId") Long branchId,
+            @Param("fromDate") LocalDateTime fromDate,
+            @Param("toDate") LocalDateTime toDate);
 }

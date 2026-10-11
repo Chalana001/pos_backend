@@ -949,9 +949,27 @@ public class PromotionService {
      * both halves.
      */
     public List<PromotionHistoryResponse> history(Long branchId, LocalDate from, LocalDate to) {
+        return historyPage(0, Integer.MAX_VALUE, null, branchId, from, to).getItems();
+    }
+
+    /**
+     * The history page, one page at a time. Campaign rows are the same ones the unbounded
+     * history returned; only the slice moved. Size is capped at 100, and retired campaigns
+     * stay in because this is the one surface whose job is to still show them.
+     */
+    public PageResponse<PromotionHistoryResponse> historyPage(
+            int page, int size, String search, Long branchId, LocalDate from, LocalDate to) {
+        int safePage = Math.max(0, page);
+        int safeSize = size == Integer.MAX_VALUE ? size : Math.min(Math.max(size, 1), 100);
+        String term = search == null ? null : search.trim().toLowerCase();
+        if (term != null && term.isEmpty()) {
+            term = null;
+        }
+        Long safeBranchId = branchId == null || branchId <= 0 ? null : branchId;
+
         LocalDateTime fromDate = (from == null ? LocalDate.now().minusYears(1) : from).atStartOfDay();
         LocalDateTime toDate = (to == null ? LocalDate.now() : to).atTime(LocalTime.MAX);
-        long branchFilter = branchId == null || branchId <= 0 ? 0L : branchId;
+        long branchFilter = safeBranchId == null ? 0L : safeBranchId;
 
         Map<Long, long[]> counts = new LinkedHashMap<>();
         Map<Long, double[]> money = new LinkedHashMap<>();
@@ -964,8 +982,10 @@ public class PromotionService {
             money.put(promotionId, new double[]{toDouble(row[2]), toDouble(row[3])});
         }
 
+        Page<Promotion> result = promotionRepository.historyPage(term, safeBranchId, PageRequest.of(
+                safePage, safeSize, Sort.by(Sort.Direction.DESC, "startAt", "id")));
         LocalDateTime now = LocalDateTime.now();
-        return promotionRepository.findAllByOrderByStartAtDescIdDesc().stream()
+        List<PromotionHistoryResponse> items = result.getContent().stream()
                 .map(promotion -> {
                     long[] applied = counts.get(promotion.getId());
                     double[] amounts = money.get(promotion.getId());
@@ -988,19 +1008,35 @@ public class PromotionService {
                             .build();
                 })
                 .toList();
+
+        return PageResponse.<PromotionHistoryResponse>builder()
+                .items(items)
+                .page(result.getNumber())
+                .size(result.getSize())
+                .totalElements(result.getTotalElements())
+                .totalPages(result.getTotalPages())
+                .first(result.isFirst())
+                .last(result.isLast())
+                .build();
     }
 
-    public List<PromotionRedemptionResponse> redemptions(
+    /**
+     * The redemption ledger, one page at a time with real totals. "Show 100 more" read a
+     * full page as "there is more" because the endpoint carried no count; this answers the
+     * count with the same filters, so the page footer can be a page footer.
+     */
+    public PageResponse<PromotionRedemptionResponse> redemptions(
             Long promotionId, Long branchId, LocalDate from, LocalDate to, int page, int size) {
         LocalDateTime fromDate = (from == null ? LocalDate.now().minusMonths(3) : from).atStartOfDay();
         LocalDateTime toDate = (to == null ? LocalDate.now() : to).atTime(LocalTime.MAX);
+        int safePage = Math.max(0, page);
         int pageSize = Math.min(Math.max(size, 1), 500);
-        int offset = Math.max(page, 0) * pageSize;
+        int offset = safePage * pageSize;
+        long promotionFilter = promotionId == null || promotionId <= 0 ? 0L : promotionId;
+        long branchFilter = branchId == null || branchId <= 0 ? 0L : branchId;
 
-        return promotionRepository.promotionRedemptionsRaw(
-                        promotionId == null || promotionId <= 0 ? 0L : promotionId,
-                        branchId == null || branchId <= 0 ? 0L : branchId,
-                        fromDate, toDate, pageSize, offset)
+        List<PromotionRedemptionResponse> items = promotionRepository.promotionRedemptionsRaw(
+                        promotionFilter, branchFilter, fromDate, toDate, pageSize, offset)
                 .stream()
                 .map(row -> PromotionRedemptionResponse.builder()
                         .orderId(toLong(row[0]))
@@ -1016,6 +1052,20 @@ public class PromotionService {
                         .orderTotal(roundMoney(toDouble(row[10])))
                         .build())
                 .toList();
+
+        long totalElements = promotionRepository.promotionRedemptionsCount(
+                promotionFilter, branchFilter, fromDate, toDate);
+        int totalPages = (int) Math.ceil(totalElements / (double) pageSize);
+
+        return PageResponse.<PromotionRedemptionResponse>builder()
+                .items(items)
+                .page(safePage)
+                .size(pageSize)
+                .totalElements(totalElements)
+                .totalPages(totalPages)
+                .first(safePage == 0)
+                .last(totalElements <= (safePage + 1L) * pageSize)
+                .build();
     }
 
     /**
