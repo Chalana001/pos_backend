@@ -42,6 +42,7 @@ class OrderPaymentBackfillMigrationTest {
             assertBackfillRow(statement, "LEGACY-CHEQUE", 100, 0, "CHEQUE", true, null);
             assertBackfillRow(statement, "LEGACY-NO-INITIAL-FACT", 0, 100, "CASH", true, null);
             assertBackfillRow(statement, "LEGACY-MUTATED", 30, 70, "CASH", true, null);
+            assertBackfillRow(statement, "LEGACY-CREDIT", 0, 100, "CREDIT", true, null);
 
             try (ResultSet canceled = statement.executeQuery("""
                     SELECT COUNT(*) FROM order_payments WHERE invoice_no = 'LEGACY-CANCELED'
@@ -67,8 +68,11 @@ class OrderPaymentBackfillMigrationTest {
                     FROM order_payments
                     """)) {
                 assertTrue(total.next());
-                assertEquals(8, total.getInt("total"));
-                assertEquals(7, total.getInt("backfilled"));
+                // 6 backfilled COMPLETED orders (CASH, BANK, CHEQUE, NO-INITIAL-FACT,
+                // MUTATED, CREDIT) + the 1 live row on LIVE-ALREADY-PAID. The CANCELED
+                // order produces no row, per the assertion above.
+                assertEquals(7, total.getInt("total"));
+                assertEquals(6, total.getInt("backfilled"));
             }
         }
     }
