@@ -66,6 +66,7 @@ class OrderPaymentBackfillMigrationTest {
                            SUM(legacy_backfilled = 1) AS backfilled
                     FROM order_payments
                     """)) {
+                assertTrue(total.next());
                 assertEquals(8, total.getInt("total"));
                 assertEquals(7, total.getInt("backfilled"));
             }
