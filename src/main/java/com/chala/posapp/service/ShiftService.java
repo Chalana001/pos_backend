@@ -4,6 +4,7 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
+import com.chala.posapp.dto.shift.ShiftPaymentSummaryResponse;
 import com.chala.posapp.dto.shift.ShiftResponse;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.AlreadyExistsException;
@@ -44,6 +45,8 @@ public class ShiftService {
     private final UserRepository userRepository;
     private final PurchaseRepository purchaseRepository;
     private final BankAccountRepository bankAccountRepository;
+    private final OrderPaymentRepository orderPaymentRepository;
+    private final PaymentMethodService paymentMethodService;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
@@ -362,7 +365,7 @@ public class ShiftService {
 
     public Page<OrderResponse> getShiftOrders(Long shiftId, int page, int size) {
         User user = securityUtils.getCurrentUser();
-        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        CashShift shift = getShiftForAdminManagerOrOwningCashier(shiftId, user);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return orderRepository.findShiftOrders(
                         shift.getBranchId(),
@@ -376,7 +379,7 @@ public class ShiftService {
 
     public Page<ExpenseResponse> getShiftExpenses(Long shiftId, int page, int size) {
         User user = securityUtils.getCurrentUser();
-        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        CashShift shift = getShiftForAdminManagerOrOwningCashier(shiftId, user);
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         return expenseRepository.findByShiftId(shift.getId(), pageable).map(this::mapExpenseSummary);
     }
@@ -388,10 +391,129 @@ public class ShiftService {
     // instead of leaving them invisible inside a single lump "Expenses" total.
     public Page<ShiftPurchaseSummaryResponse> getShiftPurchases(Long shiftId, int page, int size) {
         User user = securityUtils.getCurrentUser();
-        CashShift shift = getShiftForAdminOrManager(shiftId, user);
+        CashShift shift = getShiftForAdminManagerOrOwningCashier(shiftId, user);
         Pageable pageable = PageRequest.of(page, size);
         return purchaseRepository.findByCashShiftIdOrderByCreatedAtDesc(shift.getId(), pageable)
                 .map(this::mapPurchaseSummary);
+    }
+
+    /**
+     * Per-payment-method sales for the Close Shift dialog. The rows are the
+     * order_payments ledger grouped over the shift's window — the same rows the
+     * shift's cash/card/bank buckets were incremented from — so this can never
+     * disagree with the incremental totals. Display metadata (name, category,
+     * icon, cash-like flag) joins from the configured payment_methods table;
+     * codes with no configuration (legacy, deleted) still render, marked
+     * unknown, with a humanized name.
+     *
+     * Read access: admins/managers as usual, and the cashier who owns the shift —
+     * the close dialog is the cashier's own reconciliation, and the previous
+     * admin-only read left them closing blind.
+     */
+    @Transactional(readOnly = true)
+    public ShiftPaymentSummaryResponse getShiftPaymentSummary(Long shiftId) {
+        User user = securityUtils.getCurrentUser();
+        CashShift shift = getShiftForAdminManagerOrOwningCashier(shiftId, user);
+
+        List<OrderPaymentRepository.ShiftMethodTotalProjection> rows = orderPaymentRepository
+                .sumShiftTotalsByMethod(
+                        shift.getBranchId(),
+                        shift.getCashierUserId(),
+                        shift.getOpenedAt(),
+                        shift.getClosedAt());
+
+        double totalSales = rows.stream().mapToDouble(OrderPaymentRepository.ShiftMethodTotalProjection::getAmount).sum();
+        long totalTransactions = rows.stream().mapToLong(OrderPaymentRepository.ShiftMethodTotalProjection::getTransactionCount).sum();
+
+        List<ShiftPaymentSummaryResponse.MethodRow> methods = rows.stream()
+                .map(row -> {
+                    String code = row.getCode();
+                    PaymentMethod config = resolveConfig(code);
+                    return ShiftPaymentSummaryResponse.MethodRow.builder()
+                            .code(code)
+                            .displayName(displayNameFor(code, config))
+                            .category(categoryFor(code, config))
+                            .iconKey(config != null ? config.getIconKey() : null)
+                            .transactionCount(row.getTransactionCount())
+                            .amount(roundMoney(row.getAmount()))
+                            .percentage(totalSales > 0 ? roundMoney(row.getAmount() * 100.0 / totalSales) : 0.0)
+                            .includeInExpectedCash(config != null && config.isIncludeInExpectedCash())
+                            .unknown(config == null)
+                            .inactive(config != null && !config.isActive())
+                            .build();
+                })
+                .toList();
+
+        return ShiftPaymentSummaryResponse.builder()
+                .shiftId(shift.getId())
+                .totalSales(roundMoney(totalSales))
+                .totalTransactions(totalTransactions)
+                .methods(methods)
+                .cashCollections(shift.getCashCollections() == null ? 0.0 : shift.getCashCollections())
+                .build();
+    }
+
+    private PaymentMethod resolveConfig(String code) {
+        return paymentMethodService.findConfig(code).orElse(null);
+    }
+
+    private String displayNameFor(String code, PaymentMethod config) {
+        if (config != null) {
+            return config.getDisplayName();
+        }
+        if (code == null || code.isBlank()) {
+            return "Unknown";
+        }
+        String spaced = code.trim().replaceAll("[_\\-]+", " ").toLowerCase(java.util.Locale.ROOT);
+        if (spaced.isEmpty()) {
+            return code;
+        }
+        return Character.toUpperCase(spaced.charAt(0)) + spaced.substring(1);
+    }
+
+    private String categoryFor(String code, PaymentMethod config) {
+        if (config != null) {
+            return config.getCategory().name();
+        }
+        // Known legacy codes keep their historical category so they still group
+        // sensibly; anything else is ungrouped.
+        return switch (code == null ? "" : code) {
+            case "CASH" -> PaymentCategory.CASH.name();
+            case "CARD" -> PaymentCategory.CARD.name();
+            case "BANK" -> PaymentCategory.BANK_TRANSFER.name();
+            case "BANK_TRANSFER" -> PaymentCategory.BANK_TRANSFER.name();
+            case "CREDIT" -> PaymentCategory.CREDIT.name();
+            case "STORE_CREDIT" -> PaymentCategory.CREDIT.name();
+            case "CHEQUE" -> PaymentCategory.BANK_TRANSFER.name();
+            case "QR" -> PaymentCategory.MOBILE_DIGITAL.name();
+            default -> PaymentCategory.OTHER.name();
+        };
+    }
+
+    private double roundMoney(double amount) {
+        return java.math.BigDecimal.valueOf(amount).setScale(2, java.math.RoundingMode.HALF_UP).doubleValue();
+    }
+
+    /**
+     * The shift read guards used by the close dialog's sub-resources. Admins and
+     * managers keep their existing access; the cashier who owns the shift can read
+     * their own shift (and nothing else — another cashier's shift stays closed to
+     * them exactly as before).
+     */
+    private CashShift getShiftForAdminManagerOrOwningCashier(Long shiftId, User user) {
+        CashShift shift = cashShiftRepository.findById(shiftId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
+
+        boolean adminLike = securityUtils.isAdminLike(user) || user.getRole() == Role.MANAGER;
+        if (adminLike) {
+            ensureManagerBranchAccess(user, shift.getBranchId());
+            return shift;
+        }
+        if (shift.getStatus() != ShiftStatus.OPEN
+                || !java.util.Objects.equals(shift.getCashierUserId(), user.getId())) {
+            throw new BadRequestException("Not allowed");
+        }
+        return shift;
     }
 
     private CashShift getShiftForAdminOrManager(Long shiftId, User user) {
@@ -564,6 +686,12 @@ public class ShiftService {
                 .map(User::getUsername)
                 .orElse(null);
 
+        // The tender's own reference (e.g. bank slip / approval code), for the
+        // close dialog's per-sale detail. Null for methods without references.
+        String bankReference = orderPaymentRepository.findByOrderId(order.getId())
+                .map(OrderPayment::getBankReference)
+                .orElse(null);
+
         return OrderResponse.builder()
                 .id(order.getId())
                 .invoiceNo(order.getInvoiceNo())
@@ -578,6 +706,7 @@ public class ShiftService {
                 .customerName(customerName)
                 .orderType(order.getOrderType())
                 .paymentMethod(order.getPaymentMethod())
+                .bankReference(bankReference)
                 .saleMode(order.getSaleMode())
                 .tableId(order.getTableId())
                 .tableName(order.getTableName())

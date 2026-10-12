@@ -43,7 +43,10 @@ class PaymentMethodsIntegrationTest extends ApiIntegrationTestSupport {
 
         JsonNode active = getJson("/payment-methods/active", shop.tenantId(), shop.token());
         assertThat(active.isArray()).isTrue();
-        assertThat(active.size()).isGreaterThanOrEqualTo(4);
+        // Exactly the four default tenders: no STORE_CREDIT / CHEQUE / LEGACY —
+        // those are refund/purchase/backfill codes, not checkout methods an
+        // admin manages, and anything beyond these four is the admin's own.
+        assertThat(active.size()).isEqualTo(4);
 
         // The four sale tenders the till offered before this feature existed, with
         // the financial behaviour the old hardcoded rules encoded: only cash feeds

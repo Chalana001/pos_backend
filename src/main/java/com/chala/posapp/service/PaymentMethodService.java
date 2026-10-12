@@ -41,14 +41,19 @@ public class PaymentMethodService {
             String icon, int order) {
     }
 
+    /**
+     * The four default checkout tenders. Other codes seen in historical rows
+     * (STORE_CREDIT refunds, CHEQUE purchases, LEGACY backfills) are NOT
+     * methods: old transactions still render them through the unknown-code
+     * fallback, and anything else an admin wants is theirs to add in Settings.
+     * Idempotent: existing codes are skipped and admin edits are never
+     * overwritten.
+     */
     private static final List<DefaultMethod> DEFAULT_METHODS = List.of(
             new DefaultMethod("CASH", "Cash", PaymentCategory.CASH, ReferencePolicy.NONE, null, true, false, "Banknote", 1),
             new DefaultMethod("CARD", "Card Payment", PaymentCategory.CARD, ReferencePolicy.OPTIONAL, "Approval Code", false, false, "CreditCard", 2),
             new DefaultMethod("BANK", "Bank Transfer", PaymentCategory.BANK_TRANSFER, ReferencePolicy.REQUIRED, "Bank Reference", false, false, "Landmark", 3),
-            new DefaultMethod("CREDIT", "Credit", PaymentCategory.CREDIT, ReferencePolicy.NONE, null, false, true, "CheckCircle2", 4),
-            new DefaultMethod("STORE_CREDIT", "Store Credit", PaymentCategory.CREDIT, ReferencePolicy.NONE, null, false, false, "Wallet", 5),
-            new DefaultMethod("CHEQUE", "Cheque", PaymentCategory.BANK_TRANSFER, ReferencePolicy.OPTIONAL, "Cheque Number", false, false, "FileText", 6),
-            new DefaultMethod("LEGACY", "Legacy", PaymentCategory.OTHER, ReferencePolicy.NONE, null, false, false, "Wallet", 99));
+            new DefaultMethod("CREDIT", "Credit", PaymentCategory.CREDIT, ReferencePolicy.NONE, null, false, true, "CheckCircle2", 4));
 
     @Transactional
     protected void ensureDefaults() {
@@ -111,6 +116,21 @@ public class PaymentMethodService {
 
     public boolean isCashLike(String code) {
         return getByCode(code).isIncludeInExpectedCash();
+    }
+
+    /**
+     * Pure lookup for read paths: never seeds and never throws — an unknown or
+     * legacy code simply returns empty so callers can render it as-is. Read-only
+     * callers (reports, summaries) must use this; transactional writes keep
+     * {@link #getByCode}, which self-seeds a schema-only database.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<PaymentMethod> findConfig(String code) {
+        String normalized = normalizeCode(code);
+        if (normalized.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return paymentMethodRepository.findByCodeIgnoreCase(normalized);
     }
 
     @Transactional

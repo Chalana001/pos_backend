@@ -1,15 +1,11 @@
--- Seed the payment methods that already exist in the codebase as hardcoded
--- strings, so the new management module works immediately after deploy. The
--- seed is derived from the real methods in use, not invented:
---   CASH, CARD, BANK, CREDIT   -> sale tenders (PaymentMethodUtil)
---   STORE_CREDIT               -> order-return refund method (OrderReturnService)
---   CHEQUE                     -> purchase / supplier / customer payment method
---   LEGACY                     -> backfilled historical order_payments (V59)
--- Idempotent: WHERE NOT EXISTS per code means re-running never duplicates and
--- never overwrites an admin's edits to name, flags, icon or active status.
--- Defaults chosen to preserve current behaviour: only CASH counts toward
--- expected drawer cash; only CREDIT allows deferred payment; BANK requires a
--- reference (matches the old chk_order_payments_bank_reference rule).
+-- Seed only the four checkout tenders the shop admin manages by default:
+-- CASH, CARD, BANK, CREDIT. Other codes found in historical rows
+-- (STORE_CREDIT refunds, CHEQUE purchases, LEGACY backfills) are NOT seeded
+-- as methods: they stay readable on old transactions, rendered by the
+-- frontend's unknown-method fallback, and admins add anything else they want
+-- (QR, wallets) from Settings. Idempotent: WHERE NOT EXISTS per code, and a
+-- method an admin has since configured under one of the legacy codes is
+-- never overwritten by reseeding.
 INSERT INTO payment_methods
     (code, display_name, category, reference_policy, reference_label,
      include_in_expected_cash, allows_credit, icon_key, active, is_system,
@@ -30,14 +26,13 @@ FROM (
     UNION ALL
     SELECT 'CREDIT', 'Credit', 'CREDIT', 'NONE', NULL,
            b'0', b'1', 'CheckCircle2', 4
-    UNION ALL
-    SELECT 'STORE_CREDIT', 'Store Credit', 'CREDIT', 'NONE', NULL,
-           b'0', b'0', 'Wallet', 5
-    UNION ALL
-    SELECT 'CHEQUE', 'Cheque', 'BANK_TRANSFER', 'OPTIONAL', 'Cheque Number',
-           b'0', b'0', 'FileText', 6
-    UNION ALL
-    SELECT 'LEGACY', 'Legacy', 'OTHER', 'NONE', NULL,
-           b'0', b'0', 'Wallet', 99
 ) seed
 WHERE NOT EXISTS (SELECT 1 FROM payment_methods pm WHERE pm.code = seed.code);
+
+-- V63.1 (same migration, later step): remove the extra codes this seed
+-- originally created before the four-only contract. Only rows that are still
+-- pristine system seeds (is_system = 1, never edited) are deleted so an admin
+-- who deliberately configured one of these codes keeps their configuration.
+DELETE pm FROM payment_methods pm
+WHERE pm.code IN ('STORE_CREDIT', 'CHEQUE', 'LEGACY')
+  AND pm.is_system = b'1';

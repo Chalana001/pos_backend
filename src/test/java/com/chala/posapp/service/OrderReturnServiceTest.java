@@ -85,8 +85,9 @@ class OrderReturnServiceTest {
         PromotionRedemptionService promotionRedemptionService = mock(PromotionRedemptionService.class);
         loyaltyService = mock(LoyaltyService.class);
         PaymentMethodService paymentMethodService = mock(PaymentMethodService.class);
-        // Mirror the seeded methods: the code resolves to a config whose credit flag
-        // matches the real seed (only CREDIT defers; STORE_CREDIT does not).
+        // Refund methods resolve like the real service: configured codes get a
+        // config whose credit flag matches the seed (only CREDIT defers);
+        // STORE_CREDIT is refund-only and never reaches this stub.
         when(paymentMethodService.resolveActiveForUse(anyString())).thenAnswer(call -> {
             String code = call.getArgument(0, String.class).trim().toUpperCase();
             return PaymentMethod.builder()
