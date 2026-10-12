@@ -32,7 +32,8 @@ class OrderPaymentBackfillMigrationTest {
         migrate(url, "58");
         seedLegacyOrders(url);
         migrate(url, "59");
-migrate(url, "59");
+        // Second run must be a no-op: the legacy_backfilled flag is the idempotence guard.
+        migrate(url, "59");
 
         try (Connection connection = DriverManager.getConnection(url, "root", mysql.getPassword());
              Statement statement = connection.createStatement()) {
@@ -106,8 +107,11 @@ migrate(url, "59");
             insertLegacyOrder(statement, branchId, cashierId, "LEGACY-MUTATED", 100, 30, 70, 30d, 70d, "CASH", "COMPLETED", null);
             insertLegacyOrder(statement, branchId, cashierId, "LEGACY-CREDIT", 100, 0, 100, 0d, 100d, "CREDIT", "COMPLETED", null);
             insertLegacyOrder(statement, branchId, cashierId, "LEGACY-CANCELED", 100, 0, 100, 0d, 100d, "CASH", "CANCELED", null);
-            insertOrderPayment(statement, branchId, cashierId, "LIVE-ALREADY-PAID");
+            // The live row needs its order to exist first: the payment's order_id is looked
+            // up by invoice number, and before this reorder the order did not exist yet, so
+            // the subquery answered NULL and MySQL rejected the insert.
             insertLegacyOrder(statement, branchId, cashierId, "LIVE-ALREADY-PAID", 100, 100, 0, 100d, 0d, "CASH", "COMPLETED", null);
+            insertOrderPayment(statement, branchId, cashierId, "LIVE-ALREADY-PAID");
         }
     }
 

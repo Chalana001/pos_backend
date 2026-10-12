@@ -522,6 +522,21 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
     }
     @Test
     void offlineImportNormalizesLowercaseCash() throws Exception {
+        // An offline sale's cash must land in the drawer of the cashier who made it, and the
+        // import refuses to run without an open shift for them. The till flow opens one
+        // before selling; this test imports, so it opens one first.
+        postJson(
+                "/shifts/open",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "openingCash": 1000,
+                  "note": "Lowercase cash drawer"
+                }
+                """
+        );
+
         String clientSaleId = uniqueKey("offline-cash-lower");
         JsonNode imported = postJson(
                 "/orders/offline-import",
@@ -560,6 +575,20 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
 
     @Test
     void offlineImportRejectsPartialPayment() throws Exception {
+        // Partial-payment validation happens after the shift guard, so the shift has to be
+        // open for the request to reach the branch of the flow the message belongs to.
+        postJson(
+                "/shifts/open",
+                tenantId,
+                cashierToken,
+                """
+                {
+                  "openingCash": 1000,
+                  "note": "Partial payment drawer"
+                }
+                """
+        );
+
         long orderCountBefore = orderRepository.count();
         JsonNode error = jsonRequest(
                 HttpMethod.POST,
