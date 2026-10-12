@@ -42,6 +42,7 @@ public class OrderReturnService {
     private final ReportCacheInvalidator        reportCacheInvalidator;
     private final PromotionRedemptionService    promotionRedemptionService;
     private final LoyaltyService                loyaltyService;
+    private final PaymentMethodService          paymentMethodService;
 
     // ---------------------------------------------------------------
     // Helpers, mirrors OrderService pattern exactly
@@ -94,12 +95,14 @@ public class OrderReturnService {
         Map<Long, OrderItem> orderItemMap = allOrderItems.stream()
                 .collect(Collectors.toMap(OrderItem::getId, oi -> oi));
 
-        // Validate refund method
+        // Validate refund method against the tenant's configured methods. Credit
+        // tenders (CREDIT) are not valid refund destinations; STORE_CREDIT stays
+        // available because it is seeded as a non-allowsCredit method.
         String refundMethod = request.getRefundMethod().trim().toUpperCase();
-        List<String> validMethods = List.of("CASH", "BANK", "CARD", "STORE_CREDIT");
-        if (!validMethods.contains(refundMethod)) {
+        PaymentMethod refundConfig = paymentMethodService.resolveActiveForUse(refundMethod);
+        if (refundConfig.isAllowsCredit() && !"STORE_CREDIT".equals(refundMethod)) {
             throw new BadRequestException(
-                    "Invalid refund method: " + refundMethod + ". Must be one of: " + validMethods);
+                    "Invalid refund method: " + refundMethod + ". A deferred-payment method cannot refund a sale.");
         }
 
         // STORE_CREDIT is a promise this system can only keep on a credit sale: there is no customer

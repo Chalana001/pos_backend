@@ -383,6 +383,11 @@ public final class ModuleCatalog {
                     ADMIN, "UserCog",
                     List.of(any("/users"), any("/users/**")),
                     List.of("/users")),
+            child("SETTINGS_PAYMENTS", "SETTINGS", "Payment methods",
+                    "Create and configure the payment methods offered at checkout.",
+                    ADMIN, "Wallet",
+                    List.of(any("/payment-methods"), any("/payment-methods/**")),
+                    List.of("/settings/payment-methods")),
 
             // A behaviour flag, not a screen, which is why both lists are empty.
             //

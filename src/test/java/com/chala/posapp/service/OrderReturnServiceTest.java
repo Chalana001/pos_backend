@@ -13,6 +13,9 @@ import com.chala.posapp.entity.OrderReturn;
 import com.chala.posapp.entity.OrderReturnItem;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
+import com.chala.posapp.entity.PaymentCategory;
+import com.chala.posapp.entity.PaymentMethod;
+import com.chala.posapp.entity.ReferencePolicy;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.stock.StockBatch;
 import com.chala.posapp.exception.BadRequestException;
@@ -32,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -80,13 +84,28 @@ class OrderReturnServiceTest {
         ReportCacheInvalidator reportCacheInvalidator = mock(ReportCacheInvalidator.class);
         PromotionRedemptionService promotionRedemptionService = mock(PromotionRedemptionService.class);
         loyaltyService = mock(LoyaltyService.class);
+        PaymentMethodService paymentMethodService = mock(PaymentMethodService.class);
+        // Mirror the seeded methods: the code resolves to a config whose credit flag
+        // matches the real seed (only CREDIT defers; STORE_CREDIT does not).
+        when(paymentMethodService.resolveActiveForUse(anyString())).thenAnswer(call -> {
+            String code = call.getArgument(0, String.class).trim().toUpperCase();
+            return PaymentMethod.builder()
+                    .code(code)
+                    .displayName(code)
+                    .category(PaymentCategory.OTHER)
+                    .referencePolicy(ReferencePolicy.NONE)
+                    .includeInExpectedCash("CASH".equals(code))
+                    .allowsCredit("CREDIT".equals(code))
+                    .active(true)
+                    .build();
+        });
 
         service = new OrderReturnService(
                 orderRepository, orderItemRepository, orderItemStockUsageRepository,
                 orderReturnRepository, orderReturnItemRepository, securityUtils,
                 customerRepository, stockBatchRepository, itemRepository, cashShiftRepository,
                 warrantyRepository, userRepository, reportCacheInvalidator,
-                promotionRedemptionService, loyaltyService);
+                promotionRedemptionService, loyaltyService, paymentMethodService);
 
         User user = User.builder().id(1L).build();
         when(securityUtils.getCurrentUser()).thenReturn(user);
