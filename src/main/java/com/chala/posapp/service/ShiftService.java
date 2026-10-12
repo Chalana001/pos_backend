@@ -434,6 +434,7 @@ public class ShiftService {
                             .displayName(displayNameFor(code, config))
                             .category(categoryFor(code, config))
                             .iconKey(config != null ? config.getIconKey() : null)
+                            .referenceLabel(config != null ? config.getReferenceLabel() : null)
                             .transactionCount(row.getTransactionCount())
                             .amount(roundMoney(row.getAmount()))
                             .percentage(totalSales > 0 ? roundMoney(row.getAmount() * 100.0 / totalSales) : 0.0)

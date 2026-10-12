@@ -41,6 +41,8 @@ public class ShiftPaymentSummaryResponse {
         /** Configured category, or a best-effort category for unknown codes. */
         private String category;
         private String iconKey;
+        /** Configured reference label (e.g. "Bank Reference") for drill-down rows. */
+        private String referenceLabel;
         private long transactionCount;
         private double amount;
         /** amount / totalSales, 0 when there are no sales. */
