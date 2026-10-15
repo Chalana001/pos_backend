@@ -4,6 +4,7 @@ import com.chala.posapp.entity.ShiftStatus;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -28,6 +29,7 @@ public class ShiftResponse {
     private Double expectedCash;
     private Double countedCash;
     private Double cashDifference;
+    private List<CashDenominationCount> denominationCounts;
     private double cashSales;
 
     /** Non-cash tender and cash credit-collection buckets (V60); informational,

@@ -5,9 +5,12 @@ import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
 import com.chala.posapp.dto.shift.ShiftPaymentSummaryResponse;
+import com.chala.posapp.dto.shift.ShiftCashCountSettingsRequest;
+import com.chala.posapp.dto.shift.ShiftCashCountSettingsResponse;
 import com.chala.posapp.dto.shift.ShiftResponse;
 import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.service.ShiftService;
+import com.chala.posapp.service.ShiftCashCountSettingsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,6 +28,21 @@ import java.util.List;
 public class ShiftController {
 
     private final ShiftService shiftService;
+    private final ShiftCashCountSettingsService shiftCashCountSettingsService;
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/cash-count-settings")
+    public ResponseEntity<ShiftCashCountSettingsResponse> getCashCountSettings() {
+        return ResponseEntity.ok(shiftCashCountSettingsService.getSettings());
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PutMapping("/cash-count-settings")
+    public ResponseEntity<ShiftCashCountSettingsResponse> updateCashCountSettings(
+            @Valid @RequestBody ShiftCashCountSettingsRequest request
+    ) {
+        return ResponseEntity.ok(shiftCashCountSettingsService.updateSettings(request));
+    }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/open")

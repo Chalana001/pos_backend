@@ -3,6 +3,7 @@ package com.chala.posapp.service;
 import com.chala.posapp.dto.*;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
+import com.chala.posapp.dto.shift.CashDenominationCount;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
 import com.chala.posapp.dto.shift.ShiftPaymentSummaryResponse;
 import com.chala.posapp.dto.shift.ShiftResponse;
@@ -13,6 +14,9 @@ import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.SecurityUtils;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,6 +31,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,6 +53,8 @@ public class ShiftService {
     private final BankAccountRepository bankAccountRepository;
     private final OrderPaymentRepository orderPaymentRepository;
     private final PaymentMethodService paymentMethodService;
+    private final ShiftCashCountSettingsService shiftCashCountSettingsService;
+    private final ObjectMapper objectMapper;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
@@ -252,9 +260,9 @@ public class ShiftService {
                 - shift.getTotalExpenses()
                 - shift.getTotalCashDrops();
 
+        double counted = applyCountedCash(shift, request);
         shift.setExpectedCash(expected);
-        shift.setCountedCash(request.getCountedCash());
-        shift.setCashDifference(request.getCountedCash() - expected);
+        shift.setCashDifference(counted - expected);
         shift.setStatus(ShiftStatus.CLOSED);
         shift.setCloseNote(request.getNote());
         shift.setClosedAt(LocalDateTime.now());
@@ -278,9 +286,9 @@ public class ShiftService {
                 - shift.getTotalExpenses()
                 - shift.getTotalCashDrops();
 
+        double counted = applyCountedCash(shift, request);
         shift.setExpectedCash(expected);
-        shift.setCountedCash(request.getCountedCash());
-        shift.setCashDifference(request.getCountedCash() - expected);
+        shift.setCashDifference(counted - expected);
         shift.setStatus(ShiftStatus.CLOSED);
         shift.setCloseNote(request.getNote());
         shift.setClosedAt(LocalDateTime.now());
@@ -636,6 +644,56 @@ public class ShiftService {
         return value == null ? 0.0 : value;
     }
 
+    private double applyCountedCash(CashShift shift, CloseShiftRequest request) {
+        List<CashDenominationCount> counts = request.getDenominationCounts();
+        if (counts == null) {
+            shift.setCountedCashBreakdown(null);
+            shift.setCountedCash(request.getCountedCash());
+            return request.getCountedCash();
+        }
+
+        var settings = shiftCashCountSettingsService.getSettings();
+        if (!settings.isEnabled()) {
+            throw new BadRequestException("Denomination counting is not enabled for this shop");
+        }
+        if (counts.isEmpty()) {
+            throw new BadRequestException("Enter denomination quantities or use manual cash count");
+        }
+
+        Set<Integer> allowed = new HashSet<>(settings.getDenominations());
+        Set<Integer> seen = new HashSet<>();
+        long total = 0;
+        for (CashDenominationCount count : counts) {
+            if (count == null || !allowed.contains(count.getDenomination())) {
+                throw new BadRequestException("A submitted cash denomination is not configured for this shop");
+            }
+            if (!seen.add(count.getDenomination())) {
+                throw new BadRequestException("A cash denomination was submitted more than once");
+            }
+            if (count.getQuantity() < 0 || count.getQuantity() > 1_000_000) {
+                throw new BadRequestException("Denomination quantities must be between 0 and 1,000,000");
+            }
+            total = Math.addExact(total, Math.multiplyExact((long) count.getDenomination(), count.getQuantity()));
+        }
+
+        try {
+            shift.setCountedCashBreakdown(objectMapper.writeValueAsString(counts));
+        } catch (JsonProcessingException exception) {
+            throw new BadRequestException("Could not save the denomination breakdown");
+        }
+        shift.setCountedCash((double) total);
+        return total;
+    }
+
+    private List<CashDenominationCount> readDenominationCounts(String breakdown) {
+        if (breakdown == null || breakdown.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(breakdown, new TypeReference<>() {});
+        } catch (JsonProcessingException exception) {
+            return List.of();
+        }
+    }
+
     private ShiftResponse map(CashShift s) {
         ShiftResponse response = ShiftResponse.builder()
                 .id(s.getId())
@@ -651,6 +709,7 @@ public class ShiftService {
                 .cashCollections(orZero(s.getCashCollections()))
                 .expectedCash(s.getExpectedCash())
                 .countedCash(s.getCountedCash())
+                .denominationCounts(readDenominationCounts(s.getCountedCashBreakdown()))
                 .cashDifference(s.getCashDifference())
                 .openNote(s.getOpenNote())
                 .closeNote(s.getCloseNote())
