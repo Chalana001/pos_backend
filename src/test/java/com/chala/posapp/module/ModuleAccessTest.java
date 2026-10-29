@@ -150,6 +150,22 @@ class ModuleAccessTest {
             assertThat(resolver.resolve("/purchases/42", "GET")).contains("PURCHASES");
             assertThat(resolver.resolve("/purchases/42/cancel", "POST")).contains("PURCHASES");
         }
+
+        @Test
+        @DisplayName("category management owns the writes while the category reads stay exempt")
+        void categoryManagementGatesOnlyWrites() {
+            assertThat(resolver.resolve("/categories", "POST")).contains("ITEMS_CATEGORIES");
+            assertThat(resolver.resolve("/categories/42", "PUT")).contains("ITEMS_CATEGORIES");
+            assertThat(resolver.resolve("/categories/42", "DELETE")).contains("ITEMS_CATEGORIES");
+            assertThat(resolver.resolve("/categories/sub-categories/7", "DELETE")).contains("ITEMS_CATEGORIES");
+
+            // The item form reads the category tree on every open, so a shop without this
+            // module must still be able to render it; only the writes are switchable. That
+            // includes the usage read the management screen itself makes.
+            assertThat(resolver.isModuleExempt("/categories", "GET")).isTrue();
+            assertThat(resolver.isModuleExempt("/categories/usage", "GET")).isTrue();
+            assertThat(resolver.isModuleExempt("/categories", "POST")).isFalse();
+        }
     }
 
     @Nested

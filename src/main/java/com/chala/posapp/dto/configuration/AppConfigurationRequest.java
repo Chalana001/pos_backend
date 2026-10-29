@@ -76,4 +76,10 @@ public class AppConfigurationRequest {
     @Min(0)
     @Max(50)
     private Integer quickSaleHeldBillsMax;
+
+    // Stock expiry alert window in calendar months. 0 restores the default (2);
+    // the service restricts the stored value to the supported set.
+    @Min(0)
+    @Max(12)
+    private Integer expiryAlertMonths;
 }

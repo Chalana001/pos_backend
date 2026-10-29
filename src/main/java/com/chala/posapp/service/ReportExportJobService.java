@@ -4,6 +4,7 @@ import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.ReportExportJobRequest;
 import com.chala.posapp.dto.report.ReportExportJobResponse;
 import com.chala.posapp.dto.report.DemandForecastResponse;
+import com.chala.posapp.dto.report.ExpiredStockResponse;
 import com.chala.posapp.entity.*;
 import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.exception.ResourceNotFoundException;
@@ -45,6 +46,11 @@ public class ReportExportJobService {
     private final TransactionTemplate transactionTemplate;
     private final ReportExportMetrics metrics;
     private final ForecastAccuracyService forecastAccuracyService;
+    private final NewReportService newReportService;
+
+    // Exports re-run the report with a generous page size rather than "all rows":
+    // the existing EXPORT_LIMIT convention caps workbook size for every type.
+    private static final int EXPORT_PAGE_SIZE = 5000;
 
     @Value("${app.report-exports.max-attempts:3}") private int maxAttempts;
     @Value("${app.report-exports.retry-delay-seconds:60}") private long retryDelaySeconds;
@@ -182,6 +188,17 @@ public class ReportExportJobService {
                         request.subCategoryId(), request.supplierId(), request.confidence(), Boolean.TRUE.equals(request.actionableOnly()));
                 bytes = reportService.exportDemandForecast(forecast);
                 forecastAccuracyService.capture(job, request.branchId(), forecastDays, forecast);
+            } else if ("EXPIRED_STOCK".equalsIgnoreCase(request.reportType())) {
+                // Same service path and filters as the on-screen report; the
+                // alert window is re-read from AppConfiguration, not baked in.
+                ExpiredStockResponse expired = newReportService.expiredStock(
+                        request.branchId(), request.expiryStatus(), request.expiryFrom(), request.expiryTo(),
+                        request.categoryId(), request.subCategoryId(), request.supplierId(), null, null,
+                        Boolean.TRUE.equals(request.includeZeroQuantity()),
+                        request.sortBy() == null ? "expiryDate" : request.sortBy(),
+                        request.sortDirection() == null ? "asc" : request.sortDirection(),
+                        0, EXPORT_PAGE_SIZE);
+                bytes = reportService.exportExpiredStock(expired);
             } else {
                 bytes = reportService.exportPerformanceReport(request.reportType(), request.branchId(), request.from(), request.to(),
                         request.itemType(), request.orderType(), request.sortBy(), request.sortDirection(),
@@ -233,7 +250,7 @@ public class ReportExportJobService {
     public void validateRequest(ReportExportJobRequest request) {
         if (request == null || request.reportType() == null) throw new BadRequestException("reportType is required");
         String type = request.reportType().trim().toUpperCase();
-        if (!type.matches("SALES|PRODUCT|CUSTOMER|SUPPLIER|DEMAND_FORECAST")) throw new BadRequestException("Invalid export reportType: " + request.reportType());
+        if (!type.matches("SALES|PRODUCT|CUSTOMER|SUPPLIER|DEMAND_FORECAST|EXPIRED_STOCK")) throw new BadRequestException("Invalid export reportType: " + request.reportType());
         if (request.from() != null && request.to() != null && request.from().isAfter(request.to())) throw new BadRequestException("from must be on or before to");
         if (request.emailTo() != null && !request.emailTo().isBlank() && !request.emailTo().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) throw new BadRequestException("Invalid emailTo");
         if ("DEMAND_FORECAST".equals(type)) {

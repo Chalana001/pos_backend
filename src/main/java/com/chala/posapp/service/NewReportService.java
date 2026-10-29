@@ -14,6 +14,7 @@ import com.chala.posapp.exception.BadRequestException;
 import com.chala.posapp.repository.*;
 import com.chala.posapp.util.CacheKeyUtils;
 import com.chala.posapp.util.DateRangeUtils;
+import com.chala.posapp.util.ExpiryRules;
 import com.chala.posapp.util.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,7 @@ public class NewReportService {
     private final UserRepository          userRepository;
     private final SecurityUtils           securityUtils;
     private final PromotionRepository     promotionRepository;
+    private final AppConfigurationService appConfigurationService;
 
     private Long resolveBranchId(User user, Long requested) {
         if (user.getRole() == Role.ADMIN || user.getRole() == Role.SUPER_ADMIN) return requested;
@@ -426,6 +428,124 @@ public class NewReportService {
         return PageResponse.<StockMovementResponse>builder()
                 .items(items).page(page).size(size)
                 .totalElements(total).totalPages(totalPages).build();
+    }
+
+    /**
+     * Batch-level expired / expiring stock report. The alert window comes from
+     * the branch's AppConfiguration so it always agrees with the Stock
+     * Inventory expiry filter (ExpiryRules is the shared boundary definition).
+     */
+    public ExpiredStockResponse expiredStock(
+            Long requestedBranchId, String expiryStatus, LocalDate expiryFrom, LocalDate expiryTo,
+            Long categoryId, Long subCategoryId, Long supplierId, Long itemId, String search,
+            boolean includeZeroQuantity, String sortBy, String sortDirection, int page, int size) {
+        if (targetCoverDaysInvalid(page, size)) throw new BadRequestException("page and size must be zero or positive");
+        String normalizedSortBy = normalizeExpirySortBy(sortBy);
+        String normalizedDirection = "DESC".equalsIgnoreCase(sortDirection) ? "DESC" : "ASC";
+        String normalizedStatus = ExpiryRules.normalizeFilter(expiryStatus);
+        Long branchId = resolveBranchId(securityUtils.getCurrentUser(), requestedBranchId);
+        Long normalizedBranchId = branchId == null ? 0L : branchId;
+
+        int alertMonths = appConfigurationService.getExpiryAlertMonths(branchId);
+        LocalDate today = LocalDate.now();
+        LocalDateTime todayStart = today.atStartOfDay();
+        LocalDateTime cutoff = ExpiryRules.cutoffDate(alertMonths, today).atTime(java.time.LocalTime.MAX);
+        LocalDateTime fromBound = expiryFrom != null ? expiryFrom.atStartOfDay() : null;
+        LocalDateTime toBound = expiryTo != null ? expiryTo.atTime(java.time.LocalTime.MAX) : null;
+        String normalizedSearch = search == null || search.isBlank() ? null : search.trim();
+        int includeZero = includeZeroQuantity ? 1 : 0;
+        long normalizedCategory = categoryId == null ? 0L : categoryId;
+        long normalizedSubCategory = subCategoryId == null ? 0L : subCategoryId;
+        long normalizedSupplier = supplierId == null ? 0L : supplierId;
+        long normalizedItem = itemId == null ? 0L : itemId;
+
+        List<Object[]> rows = reportRepository.expiredStockRaw(
+                normalizedBranchId, normalizedStatus, todayStart, cutoff, fromBound, toBound,
+                normalizedCategory, normalizedSubCategory, normalizedSupplier, normalizedItem,
+                normalizedSearch, includeZero, normalizedSortBy, normalizedDirection, size, page * size);
+        long total = reportRepository.countExpiredStock(
+                normalizedBranchId, normalizedStatus, todayStart, cutoff, fromBound, toBound,
+                normalizedCategory, normalizedSubCategory, normalizedSupplier, normalizedItem,
+                normalizedSearch, includeZero);
+        Object[] totals = reportRepository.expiredStockTotals(normalizedBranchId, todayStart, cutoff, includeZero)
+                .stream().findFirst().orElse(null);
+
+        List<ExpiredStockResponse.BatchRow> items = rows.stream().map(r -> {
+            LocalDateTime expireDate = toLdt(r[10]);
+            Long daysPast = null;
+            Long daysTo = null;
+            if (expireDate != null) {
+                java.time.LocalDate expireDay = expireDate.toLocalDate();
+                if (expireDay.isBefore(today)) daysPast = java.time.temporal.ChronoUnit.DAYS.between(expireDay, today);
+                else daysTo = java.time.temporal.ChronoUnit.DAYS.between(today, expireDay);
+            }
+            String batchCode = toStr(r[1]);
+            String grnNo = null;
+            if (batchCode != null && batchCode.startsWith("GRN-")) {
+                // GRN-<grnNo>-<itemId>-<index>: grnNo is the segment after the first dash.
+                int first = batchCode.indexOf('-');
+                int second = batchCode.indexOf('-', first + 1);
+                if (second > first) grnNo = batchCode.substring(first + 1, second);
+            }
+            Integer rawQuantity = r[11] == null ? 0 : ((Number) r[11]).intValue();
+            // The query already applied milli-unit scaling, so this is the
+            // display quantity and the value is display qty × cost.
+            double displayQuantity = ((Number) r[11]).doubleValue();
+            java.math.BigDecimal cost = r[12] == null ? java.math.BigDecimal.ZERO : (java.math.BigDecimal) r[12];
+            java.math.BigDecimal value = cost.multiply(java.math.BigDecimal.valueOf(displayQuantity))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            return ExpiredStockResponse.BatchRow.builder()
+                    .batchId(toLong(r[0])).batchCode(batchCode)
+                    .itemId(toLong(r[2])).barcode(toStr(r[3])).itemName(toStr(r[4])).altName(toStr(r[5]))
+                    .unit(toStr(r[6])).branchId(toLong(r[7])).branchName(toStr(r[8])).supplierName(toStr(r[9]))
+                    .grnNo(grnNo).expireDate(expireDate).daysPastExpiry(daysPast).daysToExpiry(daysTo)
+                    .quantity(rawQuantity).displayQuantity(displayQuantity).costPrice(cost)
+                    .estimatedCostValue(value)
+                    .expiryStatus(ExpiryRules.statusOf(expireDate == null ? null : expireDate.toLocalDate(), today, alertMonths))
+                    .sourceType(toStr(r[13])).receivedAt(toLdt(r[14]))
+                    .build();
+        }).toList();
+
+        int totalPages = (int) Math.ceil((double) total / Math.max(1, size));
+        return ExpiredStockResponse.builder()
+                .expiryAlertMonths(alertMonths).today(today).cutoffDate(ExpiryRules.cutoffDate(alertMonths, today))
+                .summary(totals == null ? emptyExpirySummary() : mapExpiryTotals(totals))
+                .items(items).page(page).size(size).totalElements(total).totalPages(totalPages)
+                .first(page == 0).last(totalPages <= page + 1)
+                .build();
+    }
+
+    private boolean targetCoverDaysInvalid(int page, int size) {
+        return page < 0 || size < 1 || size > 200;
+    }
+
+    private String normalizeExpirySortBy(String sortBy) {
+        String value = sortBy == null ? "" : sortBy.trim().toLowerCase();
+        return switch (value) {
+            case "value", "quantity", "item" -> value;
+            default -> "expirydate";
+        };
+    }
+
+    private ExpiredStockResponse.Summary emptyExpirySummary() {
+        return ExpiredStockResponse.Summary.builder()
+                .affectedItems(0).expiredBatches(0).expiredQuantity(0)
+                .expiredCostValue(java.math.BigDecimal.ZERO)
+                .upcomingBatches(0).upcomingQuantity(0)
+                .upcomingCostValue(java.math.BigDecimal.ZERO)
+                .missingExpiryBatches(0).missingExpiryQuantity(0)
+                .build();
+    }
+
+    private ExpiredStockResponse.Summary mapExpiryTotals(Object[] t) {
+        return ExpiredStockResponse.Summary.builder()
+                .affectedItems(toLong(t[0]))
+                .expiredBatches(toLong(t[1])).expiredQuantity(toLong(t[2]))
+                .expiredCostValue(t[3] instanceof java.math.BigDecimal bd ? bd : java.math.BigDecimal.valueOf(toDouble(t[3])))
+                .upcomingBatches(toLong(t[4])).upcomingQuantity(toLong(t[5]))
+                .upcomingCostValue(t[6] instanceof java.math.BigDecimal bd ? bd : java.math.BigDecimal.valueOf(toDouble(t[6])))
+                .missingExpiryBatches(toLong(t[7])).missingExpiryQuantity(toLong(t[8]))
+                .build();
     }
 
     public StockHealthResponse stockHealth(Long requestedBranchId, int targetCoverDays) {

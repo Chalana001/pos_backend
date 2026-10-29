@@ -110,4 +110,17 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
      */
     @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
     List<Item> findWithCategoryByIdIn(Collection<Long> ids);
+
+    /**
+     * Item counts per sub-category, in one grouped query.
+     *
+     * <p>The category management screen badges every row with its linked-item count and blocks
+     * deletes that are still in use; per-row {@code countBySubCategoryId} calls would be N+1.
+     * Soft-deleted items are excluded automatically by the {@code @SQLRestriction} on Item.
+     */
+    @Query("SELECT i.subCategory.id, COUNT(i) FROM Item i GROUP BY i.subCategory.id")
+    List<Object[]> countItemsPerSubCategory();
+
+    /** Single-category delete guard: refuse while any live item still points here. */
+    long countBySubCategoryId(Long subCategoryId);
 }

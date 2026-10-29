@@ -2,6 +2,7 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.CategoryDto;
 import com.chala.posapp.dto.CategoryRequest;
+import com.chala.posapp.dto.CategoryUsageDto;
 import com.chala.posapp.dto.SubCategoryDto;
 import com.chala.posapp.dto.SubCategoryRequest;
 import com.chala.posapp.service.CategoryService;
@@ -63,5 +64,39 @@ public class CategoryController {
     public ResponseEntity<SubCategoryDto> createSubCategory(@RequestBody SubCategoryRequest request) {
         SubCategoryDto createdSubCategory = categoryService.createSubCategory(request);
         return ResponseEntity.ok(createdSubCategory);
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @GetMapping("/usage")
+    public ResponseEntity<List<CategoryUsageDto>> getCategoryUsage() {
+        return ResponseEntity.ok(categoryService.getCategoryUsage());
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PutMapping("/{categoryId}")
+    public ResponseEntity<CategoryDto> updateCategory(@PathVariable("categoryId") Long categoryId,
+                                                      @RequestBody CategoryRequest request) {
+        return ResponseEntity.ok(categoryService.updateCategory(categoryId, request));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @DeleteMapping("/{categoryId}")
+    public ResponseEntity<Void> deleteCategory(@PathVariable("categoryId") Long categoryId) {
+        categoryService.deleteCategory(categoryId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PutMapping("/sub-categories/{subCategoryId}")
+    public ResponseEntity<SubCategoryDto> updateSubCategory(@PathVariable("subCategoryId") Long subCategoryId,
+                                                            @RequestBody CategoryRequest request) {
+        return ResponseEntity.ok(categoryService.updateSubCategory(subCategoryId, request));
+    }
+
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @DeleteMapping("/sub-categories/{subCategoryId}")
+    public ResponseEntity<Void> deleteSubCategory(@PathVariable("subCategoryId") Long subCategoryId) {
+        categoryService.deleteSubCategory(subCategoryId);
+        return ResponseEntity.noContent().build();
     }
 }

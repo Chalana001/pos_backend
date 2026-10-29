@@ -6,6 +6,7 @@ import com.chala.posapp.dto.report.CreditAgingResponse;
 import com.chala.posapp.dto.report.CreditDueResponse;
 import com.chala.posapp.dto.report.CustomerPerformanceResponse;
 import com.chala.posapp.dto.report.DemandForecastResponse;
+import com.chala.posapp.dto.report.ExpiredStockResponse;
 import com.chala.posapp.dto.report.ProfitReportResponse;
 import com.chala.posapp.dto.report.ProfitSummaryResponse;
 import com.chala.posapp.dto.report.OwnerCommandCenterResponse;
@@ -888,6 +889,25 @@ public class ReportService {
 
     private Object safe(Object value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * Excel export for the batch-level expiry report. Shares the exact
+     * response object the on-screen report renders, so the exported rows and
+     * the displayed rows cannot disagree.
+     */
+    public byte[] exportExpiredStock(ExpiredStockResponse report) {
+        return buildWorkbook("Stock Expiry",
+                List.of("Item ID", "Barcode", "Item", "Batch Code", "Branch", "Status",
+                        "Expiry Date", "Days Past Expiry", "Days To Expiry", "Quantity",
+                        "Unit Cost", "Cost Value", "Supplier", "GRN No", "Received At"),
+                report.getItems().stream().map(row -> List.of(
+                        safe(row.getItemId()), safe(row.getBarcode()), safe(row.getItemName()),
+                        safe(row.getBatchCode()), safe(row.getBranchName()), safe(row.getExpiryStatus()),
+                        safe(row.getExpireDate()), safe(row.getDaysPastExpiry()), safe(row.getDaysToExpiry()),
+                        row.getDisplayQuantity(), safe(row.getCostPrice()), safe(row.getEstimatedCostValue()),
+                        safe(row.getSupplierName()), safe(row.getGrnNo()), safe(row.getReceivedAt())
+                )).toList());
     }
 
     // DUP-06 FIX: Centralised Object[] row extraction helpers, eliminate the

@@ -32,6 +32,7 @@ public class StockController {
             @RequestParam(name = "stockStatus", required = false, defaultValue = "ALL") String stockStatus,
             @RequestParam(name = "categoryId", required = false) Long categoryId,
             @RequestParam(name = "subCategoryId", required = false) Long subCategoryId,
+            @RequestParam(name = "expiryStatus", required = false, defaultValue = "ALL") String expiryStatus,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "10") int size
     ) {
@@ -41,6 +42,7 @@ public class StockController {
                 stockStatus,
                 categoryId,
                 subCategoryId,
+                expiryStatus,
                 page,
                 size
         ));
@@ -53,14 +55,16 @@ public class StockController {
             @RequestParam(name = "search", required = false, defaultValue = "") String search,
             @RequestParam(name = "stockStatus", required = false, defaultValue = "ALL") String stockStatus,
             @RequestParam(name = "categoryId", required = false) Long categoryId,
-            @RequestParam(name = "subCategoryId", required = false) Long subCategoryId
+            @RequestParam(name = "subCategoryId", required = false) Long subCategoryId,
+            @RequestParam(name = "expiryStatus", required = false, defaultValue = "ALL") String expiryStatus
     ) {
         return ResponseEntity.ok(stockService.getStockValue(
                 branchId,
                 search,
                 stockStatus,
                 categoryId,
-                subCategoryId
+                subCategoryId,
+                expiryStatus
         ));
     }
 
