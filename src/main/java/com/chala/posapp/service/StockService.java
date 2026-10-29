@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.chala.posapp.util.QuantityConversionUtil;
+import com.chala.posapp.util.ExpiryRules;
 import com.chala.posapp.util.SecurityUtils;
 
 import java.math.BigDecimal;
@@ -43,6 +44,7 @@ public class StockService {
     private final SupplierRepository supplierRepository;
     private final SecurityUtils securityUtils;
     private final GrnItemRepository grnItemRepository;
+    private final AppConfigurationService appConfigurationService;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
@@ -54,6 +56,7 @@ public class StockService {
             String stockStatus,
             Long categoryId,
             Long subCategoryId,
+            String expiryStatus,
             int page,
             int size
     ) {
@@ -63,7 +66,23 @@ public class StockService {
         String normalizedStatus = stockStatus == null || stockStatus.isBlank()
                 ? "ALL"
                 : stockStatus.trim().toUpperCase();
-        return stockBatchRepository.getStockSummary(filterBranchId, search, normalizedStatus, categoryId, subCategoryId, pageable)
+        LocalDateTime expiryToday = LocalDate.now().atStartOfDay();
+        LocalDateTime expiryCutoff = ExpiryRules.cutoffDate(
+                appConfigurationService.getExpiryAlertMonths(filterBranchId),
+                LocalDate.now()
+        ).atTime(LocalTime.MAX);
+        String normalizedExpiryStatus = ExpiryRules.normalizeFilter(expiryStatus);
+        return stockBatchRepository.getStockSummary(
+                        filterBranchId,
+                        search,
+                        normalizedStatus,
+                        categoryId,
+                        subCategoryId,
+                        normalizedExpiryStatus,
+                        expiryToday,
+                        expiryCutoff,
+                        pageable
+                )
                 .map(row -> {
                     ItemType type = row.getItemType();
 
@@ -87,19 +106,28 @@ public class StockService {
             String search,
             String stockStatus,
             Long categoryId,
-            Long subCategoryId
+            Long subCategoryId,
+            String expiryStatus
     ) {
         Long allowedBranchId = securityUtils.enforceBranchAccess(branchId);
         Long filterBranchId = allowedBranchId != null && allowedBranchId > 0 ? allowedBranchId : null;
         String normalizedStatus = stockStatus == null || stockStatus.isBlank()
                 ? "ALL"
                 : stockStatus.trim().toUpperCase();
+        LocalDateTime expiryToday = LocalDate.now().atStartOfDay();
+        LocalDateTime expiryCutoff = ExpiryRules.cutoffDate(
+                appConfigurationService.getExpiryAlertMonths(filterBranchId),
+                LocalDate.now()
+        ).atTime(LocalTime.MAX);
         BigDecimal stockValue = stockBatchRepository.getStockValue(
                 filterBranchId,
                 search,
                 normalizedStatus,
                 categoryId,
-                subCategoryId
+                subCategoryId,
+                ExpiryRules.normalizeFilter(expiryStatus),
+                expiryToday,
+                expiryCutoff
         );
         return new StockValueResponse(stockValue != null ? stockValue : BigDecimal.ZERO);
     }

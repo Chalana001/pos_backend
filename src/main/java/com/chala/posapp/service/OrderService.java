@@ -86,6 +86,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderReturnRepository orderReturnRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
+    private final PaymentMethodService paymentMethodService;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser() / securityUtils.isAdminLike(). Use SecurityUtils instead
 
@@ -509,20 +510,28 @@ public class OrderService {
         double requestedPaidAmount = request.getPaidAmount();
         Customer customer = null;
         OrderType effectiveOrderType = request.getOrderType();
-        // The till method is validated up front so an unsupported method (CHEQUE,
-        // anything unknown) is rejected before stock, promotions or credit limits
-        // are touched. Everything below still commits or rolls back as one unit.
-        String tenderMethod = PaymentMethodUtil.requireSaleMethod(request.getPaymentMethod(),
-                request.getPaidAmount() > 0 || request.getTenderedAmount() != null
+        // The till method is resolved against the tenant's configured payment
+        // methods so a newly added method works and a deactivated one is rejected,
+        // before stock, promotions or credit limits are touched. Behaviour is read
+        // from the method's flags (cash-like, reference policy, credit), never
+        // from its display name. Everything below still commits as one unit.
+        String requestedMethod = request.getPaymentMethod() == null || request.getPaymentMethod().isBlank()
+                ? (request.getPaidAmount() > 0 || request.getTenderedAmount() != null
                         ? PaymentMethodUtil.CASH
-                        : PaymentMethodUtil.CREDIT);
-        boolean cashPayment = PaymentMethodUtil.CASH.equals(tenderMethod);
-        if (PaymentMethodUtil.BANK.equals(tenderMethod)
-                && trimToNull(request.getBankReference()) == null) {
-            throw new BadRequestException("Bank reference is required for BANK payments");
+                        : PaymentMethodUtil.CREDIT)
+                : request.getPaymentMethod();
+        PaymentMethod tenderConfig = paymentMethodService.resolveActiveForUse(requestedMethod);
+        String tenderMethod = tenderConfig.getCode();
+        // "cashPayment" means a cash-LIKE method (drawer tender/change semantics);
+        // the flag, not the literal "CASH", decides.
+        boolean cashPayment = tenderConfig.isIncludeInExpectedCash();
+        String reference = trimToNull(request.getBankReference());
+        if (tenderConfig.getReferencePolicy() == ReferencePolicy.REQUIRED && reference == null) {
+            String label = tenderConfig.getReferenceLabel() == null ? "Reference" : tenderConfig.getReferenceLabel();
+            throw new BadRequestException(label + " is required for " + tenderConfig.getDisplayName() + " payments");
         }
         if (request.getTenderedAmount() != null && !cashPayment) {
-            throw new BadRequestException("Tendered cash amount is only allowed for CASH payments");
+            throw new BadRequestException("Tendered cash amount is only allowed for cash payments");
         }
         double tenderedAmount = cashPayment
                 ? request.getTenderedAmount() == null
@@ -532,20 +541,20 @@ public class OrderService {
         double paidAmount = cashPayment
                 ? tenderedAmount
                 : Math.max(0, roundRupee(request.getPaidAmount()));
-        if (PaymentMethodUtil.CREDIT.equals(tenderMethod)) {
+        if (tenderConfig.isAllowsCredit()) {
             paidAmount = 0.0;
             if (request.getPaidAmount() > 0) {
-                throw new BadRequestException("CREDIT payments cannot include a paid amount");
+                throw new BadRequestException(tenderMethod + " payments cannot include a paid amount");
             }
         }
-        if (PaymentMethodUtil.CREDIT.equals(tenderMethod)
+        if (tenderConfig.isAllowsCredit()
                 && request.getCustomerId() == null) {
-            throw new BadRequestException("Customer is required for CREDIT sales");
+            throw new BadRequestException("Customer is required for " + tenderMethod + " sales");
         }
-        double changeAmount = PaymentMethodUtil.CASH.equals(tenderMethod)
+        double changeAmount = cashPayment
                 ? roundMoney(Math.max(0, tenderedAmount - grandTotal))
                 : 0.0;
-        double paidTowardSale = PaymentMethodUtil.CASH.equals(tenderMethod)
+        double paidTowardSale = cashPayment
                 ? roundMoney(Math.min(tenderedAmount, grandTotal))
                 : roundMoney(Math.min(paidAmount, grandTotal));
         double dueAmount = roundMoney(grandTotal - paidTowardSale);
@@ -554,7 +563,7 @@ public class OrderService {
                     "Paid amount %.2f exceeds grand total %.2f for %s payment",
                     paidAmount, grandTotal, tenderMethod));
         }
-        if (!cashPayment && !PaymentMethodUtil.CREDIT.equals(tenderMethod)
+        if (!cashPayment && !tenderConfig.isAllowsCredit()
                 && paidTowardSale < grandTotal) {
             throw new BadRequestException(String.format(
                     "%s payments must cover the full grand total. Paid %.2f of %.2f",
@@ -650,11 +659,10 @@ public class OrderService {
                 .cashierUserId(savedOrder.getCashierUserId())
                 .amount(paidTowardSale)
                 .paymentMethod(tenderMethod)
-                .tenderedAmount(PaymentMethodUtil.CASH.equals(tenderMethod) ? tenderedAmount : null)
-                .changeAmount(PaymentMethodUtil.CASH.equals(tenderMethod) ? changeAmount : null)
+                .tenderedAmount(cashPayment ? tenderedAmount : null)
+                .changeAmount(cashPayment ? changeAmount : null)
                 .shortfallAmount(dueAmount > 0 ? roundMoney(dueAmount) : null)
-                .bankReference(PaymentMethodUtil.BANK.equals(tenderMethod)
-                        ? trimToNull(request.getBankReference()) : null)
+                .bankReference(reference)
                 .note(trimToNull(request.getNote()))
                 .build());
 
@@ -871,11 +879,20 @@ public class OrderService {
             throw new BadRequestException("Payment amount exceeds this order due amount: " + orderDue);
         }
 
-        // Later settlement is not an initial payment: CHEQUE and CREDIT are rejected,
-        String method = PaymentMethodUtil.requireSettlementMethod(
-                request.getPaymentMethod(), PaymentMethodUtil.CASH);
-        if (PaymentMethodUtil.BANK.equals(method) && trimToNull(request.getBankReference()) == null) {
-            throw new BadRequestException("Bank reference is required for BANK payments");
+        // Later settlement is not an initial payment: a deferred-payment (credit)
+        // method cannot settle a balance. Resolve against configured methods so a
+        // deactivated method is rejected and a new one works.
+        PaymentMethod settleConfig = paymentMethodService.resolveActiveForUse(
+                request.getPaymentMethod() == null || request.getPaymentMethod().isBlank()
+                        ? PaymentMethodUtil.CASH : request.getPaymentMethod());
+        if (settleConfig.isAllowsCredit()) {
+            throw new BadRequestException("A deferred-payment method cannot settle a credit balance");
+        }
+        String method = settleConfig.getCode();
+        String settleReference = trimToNull(request.getBankReference());
+        if (settleConfig.getReferencePolicy() == ReferencePolicy.REQUIRED && settleReference == null) {
+            String label = settleConfig.getReferenceLabel() == null ? "Reference" : settleConfig.getReferenceLabel();
+            throw new BadRequestException(label + " is required for " + settleConfig.getDisplayName() + " payments");
         }
 
         Customer customer = customerRepository.findById(order.getCustomerId())
@@ -904,8 +921,7 @@ public class OrderService {
                 .cashierUserId(user.getId())
                 .amount(paymentAmount)
                 .paymentMethod(method)
-                .bankReference(PaymentMethodUtil.BANK.equals(method)
-                        ? trimToNull(request.getBankReference()) : null)
+                .bankReference(settleReference)
                 .note(note)
                 .build());
 
@@ -917,7 +933,7 @@ public class OrderService {
         // never touched the drawer and are skipped. No open shift for the paying
         // user at the order's branch: the collection is still recorded (the ledger
         // row above is authoritative), it just has no shift to attach to.
-        if (PaymentMethodUtil.CASH.equals(method) && user.getBranchId() != null
+        if (settleConfig.isIncludeInExpectedCash() && user.getBranchId() != null
                 && user.getBranchId().equals(order.getBranchId())) {
             cashShiftRepository.findByBranchIdAndCashierUserIdAndStatus(
                             order.getBranchId(), user.getId(), ShiftStatus.OPEN)
@@ -1621,20 +1637,33 @@ public class OrderService {
     }
 
     /**
-     * One amount lands in exactly one tender bucket. CASH feeds Expected Cash; CARD
-     * and BANK are recorded for visibility only — the drawer never held that money.
-     * A negative amount reverses the same bucket, clamped at zero so a reversal can
-     * never drive a bucket below empty.
+     * One amount lands in exactly one tender bucket. A cash-like method
+     * (includeInExpectedCash) feeds Expected Cash; CARD and BANK are recorded for
+     * visibility only — the drawer never held that money. The cash-like flag, not
+     * the literal "CASH", decides, so a configured cash-like method behaves like
+     * cash. A negative amount reverses the same bucket, clamped at zero so a
+     * reversal can never drive a bucket below empty.
      */
     private void applyTenderToShift(CashShift shift, String paymentMethod, double amount) {
         if (PaymentMethodUtil.CARD.equals(paymentMethod)) {
             shift.setCardSales(shiftBounded(shift.getCardSales(), amount));
         } else if (PaymentMethodUtil.BANK.equals(paymentMethod)) {
             shift.setBankSales(shiftBounded(shift.getBankSales(), amount));
-        } else {
-            // CASH, and any backfilled legacy method we cannot classify: the drawer's
-            // own bucket. Offline imports are CASH-only by contract.
+        } else if (isCashLike(paymentMethod)) {
             shift.setCashSales(shiftBounded(shift.getCashSales(), amount));
+        }
+        // Any other configured non-cash method: the drawer never held it, and there
+        // is no dedicated shift bucket yet. It is intentionally excluded from
+        // Expected Cash (includeInExpectedCash = false) and from card/bank totals.
+    }
+
+    private boolean isCashLike(String paymentMethod) {
+        try {
+            return paymentMethodService.isCashLike(paymentMethod);
+        } catch (RuntimeException ex) {
+            // Unknown / legacy method: treat as cash, the historical default for the
+            // drawer's own bucket (offline imports are CASH-only by contract).
+            return true;
         }
     }
 

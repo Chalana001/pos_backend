@@ -123,6 +123,9 @@ abstract class ApiIntegrationTestSupport {
     protected BranchRepository branchRepository;
 
     @Autowired
+    protected com.chala.posapp.repository.OrderPaymentRepository orderPaymentRepository;
+
+    @Autowired
     protected UserRepository userRepository;
 
     @Autowired

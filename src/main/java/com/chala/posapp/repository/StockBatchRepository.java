@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -137,6 +138,15 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "OR (:stockStatus = 'OUT_OF_STOCK' AND COALESCE(SUM(sb.quantity), 0) <= 0) " +
             "OR (:stockStatus = 'REORDER' AND COALESCE(SUM(sb.quantity), 0) > 0 AND COALESCE(SUM(sb.quantity), 0) <= sb.item.reorderLevel) " +
             "OR (:stockStatus = 'IN_STOCK' AND COALESCE(SUM(sb.quantity), 0) > sb.item.reorderLevel)) " +
+            "AND (:expiryStatus IS NULL OR :expiryStatus = 'ALL' " +
+            "OR (:expiryStatus = 'EXPIRED' AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) IS NOT NULL " +
+            "AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) < :expiryToday) " +
+            "OR (:expiryStatus = 'EXPIRING_SOON' AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) >= :expiryToday " +
+            "AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) <= :expiryCutoff) " +
+            "OR (:expiryStatus = 'NOT_EXPIRED' AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) IS NOT NULL " +
+            "AND MIN(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN sb.expireDate END) > :expiryCutoff) " +
+            "OR (:expiryStatus = 'MISSING_EXPIRY' AND SUM(CASE WHEN sb.quantity > 0 THEN 1 ELSE 0 END) > 0 " +
+            "AND SUM(CASE WHEN sb.quantity > 0 AND sb.expireDate IS NOT NULL THEN 1 ELSE 0 END) = 0)) " +
             "ORDER BY CASE WHEN COALESCE(SUM(sb.quantity), 0) > 0 THEN 0 ELSE 1 END, sb.item.id DESC",
             countQuery = "SELECT COUNT(DISTINCT i.id) FROM Item i " +
                     "LEFT JOIN i.subCategory sc " +
@@ -156,13 +166,26 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
                     "OR (:stockStatus = 'OUT_OF_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= 0) " +
                     "OR (:stockStatus = 'REORDER' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > 0 " +
                     "AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= i.reorderLevel) " +
-                    "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > i.reorderLevel))")
+                    "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = i.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > i.reorderLevel)) " +
+                    "AND (:expiryStatus IS NULL OR :expiryStatus = 'ALL' " +
+                    "OR (:expiryStatus = 'EXPIRED' AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) IS NOT NULL " +
+                    "AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) < :expiryToday) " +
+                    "OR (:expiryStatus = 'EXPIRING_SOON' AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) IS NOT NULL " +
+                    "AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) >= :expiryToday " +
+                    "AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) <= :expiryCutoff) " +
+                    "OR (:expiryStatus = 'NOT_EXPIRED' AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) IS NOT NULL " +
+                    "AND (SELECT MIN(sbx2.expireDate) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) > :expiryCutoff) " +
+                    "OR (:expiryStatus = 'MISSING_EXPIRY' AND (SELECT COUNT(sbx2) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0) > 0 " +
+                    "AND (SELECT COUNT(sbx2) FROM StockBatch sbx2 WHERE sbx2.item.id = i.id AND (:branchId IS NULL OR sbx2.branch.id = :branchId) AND sbx2.quantity > 0 AND sbx2.expireDate IS NOT NULL) = 0))")
     Page<StockResponseWithItems> getStockSummary(
             @Param("branchId") Long branchId,
             @Param("search") String search,
             @Param("stockStatus") String stockStatus,
             @Param("categoryId") Long categoryId,
             @Param("subCategoryId") Long subCategoryId,
+            @Param("expiryStatus") String expiryStatus,
+            @Param("expiryToday") LocalDateTime expiryToday,
+            @Param("expiryCutoff") LocalDateTime expiryCutoff,
             Pageable pageable);
 
     @Query("SELECT COALESCE(SUM(" +
@@ -189,13 +212,26 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
             "OR (:stockStatus = 'OUT_OF_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= 0) " +
             "OR (:stockStatus = 'REORDER' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > 0 " +
             "AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) <= sb.item.reorderLevel) " +
-            "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > sb.item.reorderLevel))")
+            "OR (:stockStatus = 'IN_STOCK' AND (SELECT COALESCE(SUM(sb2.quantity), 0) FROM StockBatch sb2 WHERE sb2.item.id = sb.item.id AND (:branchId IS NULL OR sb2.branch.id = :branchId)) > sb.item.reorderLevel)) " +
+            "AND (:expiryStatus IS NULL OR :expiryStatus = 'ALL' " +
+            "OR (:expiryStatus = 'EXPIRED' AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) IS NOT NULL " +
+            "AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) < :expiryToday) " +
+            "OR (:expiryStatus = 'EXPIRING_SOON' AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) IS NOT NULL " +
+            "AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) >= :expiryToday " +
+            "AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) <= :expiryCutoff) " +
+            "OR (:expiryStatus = 'NOT_EXPIRED' AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) IS NOT NULL " +
+            "AND (SELECT MIN(sb3.expireDate) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) > :expiryCutoff) " +
+            "OR (:expiryStatus = 'MISSING_EXPIRY' AND (SELECT COUNT(sb3) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0) > 0 " +
+            "AND (SELECT COUNT(sb3) FROM StockBatch sb3 WHERE sb3.item.id = sb.item.id AND (:branchId IS NULL OR sb3.branch.id = :branchId) AND sb3.quantity > 0 AND sb3.expireDate IS NOT NULL) = 0)) ")
     BigDecimal getStockValue(
             @Param("branchId") Long branchId,
             @Param("search") String search,
             @Param("stockStatus") String stockStatus,
             @Param("categoryId") Long categoryId,
-            @Param("subCategoryId") Long subCategoryId);
+            @Param("subCategoryId") Long subCategoryId,
+            @Param("expiryStatus") String expiryStatus,
+            @Param("expiryToday") LocalDateTime expiryToday,
+            @Param("expiryCutoff") LocalDateTime expiryCutoff);
 
     List<StockBatch> findByBranchIdAndItemId(Long branchId, Long id);
 

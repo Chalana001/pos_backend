@@ -99,6 +99,147 @@ public interface ReportRepository extends JpaRepository<Order, Long> {
     List<Object[]> stockHealthRaw(@Param("branchId") Long branchId,
                                   @Param("salesFrom") LocalDateTime salesFrom);
 
+    // Batch-level expiry report. expire_date is written at midnight of the
+    // expiry day, so "< :today" means before today and a same-day batch is
+    // still EXPIRING_SOON, matching ExpiryRules. Quantities and values use the
+    // same milli-unit scaling as the stock summary: NORMAL/WEIGHT/VOLUME items
+    // divide by 1000, everything else is 1:1. The three queries below share
+    // the same WHERE shape; keep them in sync when a filter is added.
+    @Query(value = """
+        SELECT sb.id, sb.batch_code, sb.item_id, i.barcode, i.name, i.alt_name, i.default_unit,
+          sb.branch_id, b.name, s.name,
+          sb.expire_date,
+          CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END,
+          sb.cost_price, sb.source_type, sb.received_at
+        FROM stock_batches sb
+        JOIN items i ON i.id = sb.item_id
+        JOIN branches b ON b.id = sb.branch_id
+        LEFT JOIN suppliers s ON s.id = sb.supplier_id
+        WHERE (:branchId = 0 OR sb.branch_id = :branchId)
+          AND (:expiryStatus = 'ALL'
+               OR (:expiryStatus = 'EXPIRED' AND sb.expire_date IS NOT NULL AND sb.expire_date < :today)
+               OR (:expiryStatus = 'EXPIRING_SOON' AND sb.expire_date IS NOT NULL
+                   AND sb.expire_date >= :today AND sb.expire_date <= :cutoff)
+               OR (:expiryStatus = 'NOT_EXPIRED' AND sb.expire_date IS NOT NULL AND sb.expire_date > :cutoff)
+               OR (:expiryStatus = 'MISSING_EXPIRY' AND sb.expire_date IS NULL))
+          AND ((:expiryFrom IS NULL AND :expiryTo IS NULL) OR (sb.expire_date IS NOT NULL
+               AND (:expiryFrom IS NULL OR sb.expire_date >= :expiryFrom)
+               AND (:expiryTo IS NULL OR sb.expire_date <= :expiryTo)))
+          AND (:categoryId = 0 OR i.sub_category_id IN (
+                SELECT sc.id FROM sub_categories sc WHERE sc.category_id = :categoryId))
+          AND (:subCategoryId = 0 OR i.sub_category_id = :subCategoryId)
+          AND (:supplierId = 0 OR sb.supplier_id = :supplierId)
+          AND (:itemId = 0 OR sb.item_id = :itemId)
+          AND (:search IS NULL OR :search = ''
+               OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.alt_name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%')))
+          AND (:includeZero = 1 OR sb.quantity > 0)
+        ORDER BY
+          CASE WHEN :sortBy = 'expiryDate' AND :sortDirection = 'ASC' THEN sb.expire_date END ASC,
+          CASE WHEN :sortBy = 'expiryDate' AND :sortDirection = 'DESC' THEN sb.expire_date END DESC,
+          CASE WHEN :sortBy = 'value' AND :sortDirection = 'ASC' THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END * sb.cost_price END ASC,
+          CASE WHEN :sortBy = 'value' AND :sortDirection = 'DESC' THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END * sb.cost_price END DESC,
+          CASE WHEN :sortBy = 'quantity' AND :sortDirection = 'ASC' THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END END ASC,
+          CASE WHEN :sortBy = 'quantity' AND :sortDirection = 'DESC' THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END END DESC,
+          CASE WHEN :sortBy = 'item' AND :sortDirection = 'ASC' THEN i.name END ASC,
+          CASE WHEN :sortBy = 'item' AND :sortDirection = 'DESC' THEN i.name END DESC,
+          sb.expire_date ASC, sb.id ASC
+        LIMIT :limitValue OFFSET :offsetValue
+        """, nativeQuery = true)
+    List<Object[]> expiredStockRaw(
+            @Param("branchId") Long branchId,
+            @Param("expiryStatus") String expiryStatus,
+            @Param("today") LocalDateTime today,
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("expiryFrom") LocalDateTime expiryFrom,
+            @Param("expiryTo") LocalDateTime expiryTo,
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId,
+            @Param("supplierId") Long supplierId,
+            @Param("itemId") Long itemId,
+            @Param("search") String search,
+            @Param("includeZero") int includeZero,
+            @Param("sortBy") String sortBy,
+            @Param("sortDirection") String sortDirection,
+            @Param("limitValue") int limitValue,
+            @Param("offsetValue") int offsetValue);
+
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM stock_batches sb
+        JOIN items i ON i.id = sb.item_id
+        WHERE (:branchId = 0 OR sb.branch_id = :branchId)
+          AND (:expiryStatus = 'ALL'
+               OR (:expiryStatus = 'EXPIRED' AND sb.expire_date IS NOT NULL AND sb.expire_date < :today)
+               OR (:expiryStatus = 'EXPIRING_SOON' AND sb.expire_date IS NOT NULL
+                   AND sb.expire_date >= :today AND sb.expire_date <= :cutoff)
+               OR (:expiryStatus = 'NOT_EXPIRED' AND sb.expire_date IS NOT NULL AND sb.expire_date > :cutoff)
+               OR (:expiryStatus = 'MISSING_EXPIRY' AND sb.expire_date IS NULL))
+          AND ((:expiryFrom IS NULL AND :expiryTo IS NULL) OR (sb.expire_date IS NOT NULL
+               AND (:expiryFrom IS NULL OR sb.expire_date >= :expiryFrom)
+               AND (:expiryTo IS NULL OR sb.expire_date <= :expiryTo)))
+          AND (:categoryId = 0 OR i.sub_category_id IN (
+                SELECT sc.id FROM sub_categories sc WHERE sc.category_id = :categoryId))
+          AND (:subCategoryId = 0 OR i.sub_category_id = :subCategoryId)
+          AND (:supplierId = 0 OR sb.supplier_id = :supplierId)
+          AND (:itemId = 0 OR sb.item_id = :itemId)
+          AND (:search IS NULL OR :search = ''
+               OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.alt_name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%')))
+          AND (:includeZero = 1 OR sb.quantity > 0)
+        """, nativeQuery = true)
+    long countExpiredStock(
+            @Param("branchId") Long branchId,
+            @Param("expiryStatus") String expiryStatus,
+            @Param("today") LocalDateTime today,
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("expiryFrom") LocalDateTime expiryFrom,
+            @Param("expiryTo") LocalDateTime expiryTo,
+            @Param("categoryId") Long categoryId,
+            @Param("subCategoryId") Long subCategoryId,
+            @Param("supplierId") Long supplierId,
+            @Param("itemId") Long itemId,
+            @Param("search") String search,
+            @Param("includeZero") int includeZero);
+
+    // Totals are grouped over the same filtered batch set, so each batch is
+    // counted exactly once regardless of pagination. Category/sub-category/
+    // search filters are intentionally NOT applied here: the summary tiles
+    // answer "how bad is expiry in this branch overall", not "in the current
+    // filtered slice"; branch and zero-quantity scope still match the rows.
+    @Query(value = """
+        SELECT COUNT(DISTINCT sb.item_id),
+          COUNT(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date < :today THEN 1 END),
+          COALESCE(SUM(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date < :today THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date < :today THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END * sb.cost_price ELSE 0 END), 0),
+          COUNT(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date >= :today AND sb.expire_date <= :cutoff THEN 1 END),
+          COALESCE(SUM(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date >= :today AND sb.expire_date <= :cutoff THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END ELSE 0 END), 0),
+          COALESCE(SUM(CASE WHEN sb.expire_date IS NOT NULL AND sb.expire_date >= :today AND sb.expire_date <= :cutoff THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END * sb.cost_price ELSE 0 END), 0),
+          COUNT(CASE WHEN sb.expire_date IS NULL THEN 1 END),
+          COALESCE(SUM(CASE WHEN sb.expire_date IS NULL THEN
+            CASE WHEN i.item_type IN ('NORMAL','WEIGHT','VOLUME') THEN sb.quantity / 1000.0 ELSE sb.quantity END ELSE 0 END), 0)
+        FROM stock_batches sb
+        JOIN items i ON i.id = sb.item_id
+        WHERE (:branchId = 0 OR sb.branch_id = :branchId)
+          AND (:includeZero = 1 OR sb.quantity > 0)
+          AND i.item_type != 'SERVICE'
+        """, nativeQuery = true)
+    List<Object[]> expiredStockTotals(
+            @Param("branchId") Long branchId,
+            @Param("today") LocalDateTime today,
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("includeZero") int includeZero);
+
     @Query(value = """
         SELECT i.id, i.barcode, i.name, i.default_unit, i.item_type,
           COALESCE((SELECT SUM(sb.quantity) FROM stock_batches sb WHERE sb.item_id = i.id AND (:branchId = 0 OR sb.branch_id = :branchId)), 0),

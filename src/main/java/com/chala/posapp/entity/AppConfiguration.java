@@ -98,6 +98,14 @@ public class AppConfiguration extends TenantEntity {
     @Builder.Default
     private Integer quickSaleHeldBillsMax = 2;
 
+    // Stock expiry alert window (tenant V65): how many calendar months ahead a
+    // positive-quantity batch counts as EXPIRING_SOON. Shared by the Stock
+    // Inventory expiry filter and /reports/v2/expired-stock. Null falls back to
+    // the service default (2). Branch decision, not a plan gate.
+    @Column(name = "expiry_alert_months", columnDefinition = "int null")
+    @Builder.Default
+    private Integer expiryAlertMonths = 2;
+
     // Scale-barcode decoding (tenant V51, moved here from barcode_label_settings):
     // the digit layout the branch's own weighing scale prints, so that
     // ItemService.getByBarcode can pull an embedded weight or price out of a

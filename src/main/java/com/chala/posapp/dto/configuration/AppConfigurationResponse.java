@@ -42,4 +42,6 @@ public class AppConfigurationResponse {
     private boolean quickSaleHeldBillsEnabled;
     // Null means unlimited.
     private Integer quickSaleHeldBillsMax;
+    // Stock expiry alert window in calendar months; never null in a response.
+    private Integer expiryAlertMonths;
 }

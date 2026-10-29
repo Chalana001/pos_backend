@@ -339,7 +339,7 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
                 """.formatted(fixture.mainBranch().getId(), itemId, batchId),
                 400
         );
-        assertTrue(error.path("message").asText().contains("Bank reference is required"));
+        assertTrue(error.path("message").asText().contains("Bank Reference is required for Bank Transfer payments"));
         assertEquals(orderCountBefore, orderRepository.count());
     }
 

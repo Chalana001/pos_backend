@@ -55,6 +55,9 @@ public class CashShift extends TenantEntity {
     private Double expectedCash;
     private Double cashDifference;
 
+    @Column(name = "counted_cash_breakdown", columnDefinition = "LONGTEXT")
+    private String countedCashBreakdown;
+
     private String openNote;
     private String closeNote;
 

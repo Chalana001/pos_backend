@@ -128,6 +128,30 @@ public class NewReportController {
         return ResponseEntity.ok(reportService.stockHealth(branchId, targetCoverDays));
     }
 
+    // Batch-level expired / expiring stock report. The alert window comes from
+    // the branch's AppConfiguration (same source as the Stock Inventory filter).
+    @GetMapping("/expired-stock")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    public ResponseEntity<ExpiredStockResponse> expiredStock(
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) String expiryStatus,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate expiryFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate expiryTo,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long subCategoryId,
+            @RequestParam(required = false) Long supplierId,
+            @RequestParam(required = false) Long itemId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "false") boolean includeZeroQuantity,
+            @RequestParam(required = false, defaultValue = "expiryDate") String sortBy,
+            @RequestParam(required = false, defaultValue = "asc") String sortDirection,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
+        return ResponseEntity.ok(reportService.expiredStock(
+                branchId, expiryStatus, expiryFrom, expiryTo, categoryId, subCategoryId,
+                supplierId, itemId, search, includeZeroQuantity, sortBy, sortDirection, page, size));
+    }
+
     @GetMapping("/demand-forecast")
     @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
     public ResponseEntity<DemandForecastResponse> demandForecast(

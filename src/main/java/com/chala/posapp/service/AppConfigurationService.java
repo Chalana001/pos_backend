@@ -19,6 +19,7 @@ import com.chala.posapp.repository.AppConfigurationRepository;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.util.ExpiryRules;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -224,6 +225,13 @@ public class AppConfigurationService {
             }
             configuration.setQuickSaleHeldBillsMax(max == 0 ? null : max);
         }
+        if (request.getExpiryAlertMonths() != null) {
+            int months = request.getExpiryAlertMonths();
+            if (months != 0 && months != 1 && months != 2 && months != 3 && months != 6 && months != 12) {
+                throw new BadRequestException("Expiry alert window must be 1, 2, 3, 6, or 12 months (0 restores the default)");
+            }
+            configuration.setExpiryAlertMonths(months == 0 ? null : months);
+        }
         applyScaleBarcodeRequest(configuration, request);
     }
 
@@ -380,6 +388,16 @@ public class AppConfigurationService {
         return user.getBranchId();
     }
 
+    /**
+     * Effective expiry alert window (calendar months) for a branch: the
+     * branch's own row, or the global default row when it has none, normalized
+     * so callers never see null/non-positive. Shared by the Stock Inventory
+     * expiry filter and the expired-stock report.
+     */
+    public int getExpiryAlertMonths(Long branchId) {
+        return ExpiryRules.normalizeAlertMonths(getOrDefault(branchId).getExpiryAlertMonths());
+    }
+
     private void ensureBranchExists(Long branchId) {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
@@ -426,6 +444,8 @@ public class AppConfigurationService {
                 .scaleBarcodePrefix(source.getScaleBarcodePrefix())
                 .quickSaleHeldBillsEnabled(source.isQuickSaleHeldBillsEnabled())
                 .quickSaleHeldBillsMax(source.getQuickSaleHeldBillsMax())
+                .expiryAlertMonths(source.getExpiryAlertMonths() != null
+                        ? source.getExpiryAlertMonths() : ExpiryRules.DEFAULT_ALERT_MONTHS)
                 .scaleBarcodePrefixLength(source.getScaleBarcodePrefixLength())
                 .scaleBarcodeItemCodeLength(source.getScaleBarcodeItemCodeLength())
                 .scaleBarcodeValueLength(source.getScaleBarcodeValueLength())
@@ -463,6 +483,7 @@ public class AppConfigurationService {
                 .managerWarrantyAllowed(configuration.isManagerWarrantyAllowed())
                 .quickSaleHeldBillsEnabled(configuration.isQuickSaleHeldBillsEnabled())
                 .quickSaleHeldBillsMax(configuration.getQuickSaleHeldBillsMax())
+                .expiryAlertMonths(ExpiryRules.normalizeAlertMonths(configuration.getExpiryAlertMonths()))
                 .cashierWarrantyAllowed(configuration.isCashierWarrantyAllowed())
                 .scaleBarcodeEnabled(configuration.isScaleBarcodeEnabled())
                 .scaleBarcodePresetKey(configuration.getScaleBarcodePresetKey())

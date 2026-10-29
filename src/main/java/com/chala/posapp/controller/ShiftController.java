@@ -4,9 +4,13 @@ import com.chala.posapp.dto.*;
 import com.chala.posapp.dto.order.OrderResponse;
 import com.chala.posapp.dto.shift.CloseShiftRequest;
 import com.chala.posapp.dto.shift.OpenShiftRequest;
+import com.chala.posapp.dto.shift.ShiftPaymentSummaryResponse;
+import com.chala.posapp.dto.shift.ShiftCashCountSettingsRequest;
+import com.chala.posapp.dto.shift.ShiftCashCountSettingsResponse;
 import com.chala.posapp.dto.shift.ShiftResponse;
 import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.service.ShiftService;
+import com.chala.posapp.service.ShiftCashCountSettingsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -24,6 +28,21 @@ import java.util.List;
 public class ShiftController {
 
     private final ShiftService shiftService;
+    private final ShiftCashCountSettingsService shiftCashCountSettingsService;
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/cash-count-settings")
+    public ResponseEntity<ShiftCashCountSettingsResponse> getCashCountSettings() {
+        return ResponseEntity.ok(shiftCashCountSettingsService.getSettings());
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
+    @PutMapping("/cash-count-settings")
+    public ResponseEntity<ShiftCashCountSettingsResponse> updateCashCountSettings(
+            @Valid @RequestBody ShiftCashCountSettingsRequest request
+    ) {
+        return ResponseEntity.ok(shiftCashCountSettingsService.updateSettings(request));
+    }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @PostMapping("/open")
@@ -52,7 +71,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getShift(shiftId));
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{shiftId}/orders")
     public ResponseEntity<Page<OrderResponse>> getShiftOrders(
             @PathVariable(name = "shiftId") Long shiftId,
@@ -62,7 +81,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getShiftOrders(shiftId, page, size));
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{shiftId}/expenses")
     public ResponseEntity<Page<ExpenseResponse>> getShiftExpenses(
             @PathVariable(name = "shiftId") Long shiftId,
@@ -72,7 +91,7 @@ public class ShiftController {
         return ResponseEntity.ok(shiftService.getShiftExpenses(shiftId, page, size));
     }
 
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
     @GetMapping("/{shiftId}/purchases")
     public ResponseEntity<Page<ShiftPurchaseSummaryResponse>> getShiftPurchases(
             @PathVariable(name = "shiftId") Long shiftId,
@@ -80,6 +99,14 @@ public class ShiftController {
             @RequestParam(name = "size", defaultValue = "10") int size
     ) {
         return ResponseEntity.ok(shiftService.getShiftPurchases(shiftId, page, size));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/{shiftId}/payment-summary")
+    public ResponseEntity<ShiftPaymentSummaryResponse> getShiftPaymentSummary(
+            @PathVariable(name = "shiftId") Long shiftId
+    ) {
+        return ResponseEntity.ok(shiftService.getShiftPaymentSummary(shiftId));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")

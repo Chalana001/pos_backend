@@ -42,6 +42,7 @@ public class OrderReturnService {
     private final ReportCacheInvalidator        reportCacheInvalidator;
     private final PromotionRedemptionService    promotionRedemptionService;
     private final LoyaltyService                loyaltyService;
+    private final PaymentMethodService          paymentMethodService;
 
     // ---------------------------------------------------------------
     // Helpers, mirrors OrderService pattern exactly
@@ -94,12 +95,21 @@ public class OrderReturnService {
         Map<Long, OrderItem> orderItemMap = allOrderItems.stream()
                 .collect(Collectors.toMap(OrderItem::getId, oi -> oi));
 
-        // Validate refund method
+        // Validate refund method. Refund destinations are a wider set than the
+        // checkout tenders: the tenant's configured methods (cash, card, bank,
+        // anything an admin added) plus STORE_CREDIT, which is a refund-only
+        // code and is intentionally NOT seeded as a checkout method. Credit
+        // tenders (allowsCredit) are not valid refund destinations.
         String refundMethod = request.getRefundMethod().trim().toUpperCase();
-        List<String> validMethods = List.of("CASH", "BANK", "CARD", "STORE_CREDIT");
-        if (!validMethods.contains(refundMethod)) {
-            throw new BadRequestException(
-                    "Invalid refund method: " + refundMethod + ". Must be one of: " + validMethods);
+        if ("STORE_CREDIT".equals(refundMethod)) {
+            // Handled below by the credit-sale guard; no configuration row exists
+            // for this refund-only code by design.
+        } else {
+            PaymentMethod refundConfig = paymentMethodService.resolveActiveForUse(refundMethod);
+            if (refundConfig.isAllowsCredit()) {
+                throw new BadRequestException(
+                        "Invalid refund method: " + refundMethod + ". A deferred-payment method cannot refund a sale.");
+            }
         }
 
         // STORE_CREDIT is a promise this system can only keep on a credit sale: there is no customer

@@ -18,5 +18,9 @@ public record ReportExportJobRequest(
         Long subCategoryId,
         Long supplierId,
         String confidence,
-        Boolean actionableOnly
+        Boolean actionableOnly,
+        String expiryStatus,
+        LocalDate expiryFrom,
+        LocalDate expiryTo,
+        Boolean includeZeroQuantity
 ) {}
