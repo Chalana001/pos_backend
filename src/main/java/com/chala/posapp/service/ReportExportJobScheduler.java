@@ -5,11 +5,16 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.hibernate.SessionFactory;
 import org.springframework.orm.jpa.EntityManagerHolder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.util.concurrent.Semaphore;
 
 
 @Component
@@ -22,12 +27,33 @@ public class ReportExportJobScheduler {
     private final ForecastAccuracyService forecastAccuracyService;
     private final EntityManagerFactory entityManagerFactory;
 
+    @Value("${app.report-exports.max-concurrent-tenants:4}")
+    private int maxConcurrentTenants;
+
+    private volatile boolean applicationReady;
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void onApplicationReady() {
+        applicationReady = true;
+    }
+
     @Scheduled(fixedDelayString = "${app.report-exports.poll-delay-ms:5000}")
     public void processQueue() {
+        if (!applicationReady) return;
+
+        int workerLimit = Math.max(1, maxConcurrentTenants);
+        Semaphore permits = new Semaphore(workerLimit);
         var workers = tenantDatabaseRegistry.getActiveTenantIds().stream()
                 .map(tenantId -> Thread.ofVirtual().start(() -> {
                     try {
-                        processTenantNow(tenantId);
+                        permits.acquire();
+                        try {
+                            processTenantNow(tenantId);
+                        } finally {
+                            permits.release();
+                        }
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
                     } catch (Exception error) {
                         log.error("Failed to process report export queue for tenant {}", tenantId, error);
                     }
@@ -62,6 +88,8 @@ public class ReportExportJobScheduler {
 
     @Scheduled(cron = "${app.report-exports.cleanup-cron:0 30 2 * * *}")
     public void cleanupExpiredExports() {
+        if (!applicationReady) return;
+
         tenantDatabaseRegistry.getActiveTenantIds().forEach(tenantId -> {
             try {
                 EntityManager entityManager = entityManagerFactory.unwrap(SessionFactory.class)
