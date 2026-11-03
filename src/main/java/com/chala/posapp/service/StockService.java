@@ -139,7 +139,7 @@ public class StockService {
         Item item = itemRepository.findById(itemId)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
 
-        List<StockBatch> activeBatches = stockBatchRepository.findAvailableBatchesForScope(filterBranchId, itemId);
+        List<StockBatch> activeBatches = stockBatchRepository.findNonZeroBatchesForScope(filterBranchId, itemId);
         if (activeBatches.isEmpty() && (filterBranchId != null || stockBatchRepository.getTotalQuantityByItemAndScope(null, itemId) == 0)) {
             throw new ResourceNotFoundException("No stock found for item");
         }

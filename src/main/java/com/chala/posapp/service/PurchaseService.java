@@ -21,6 +21,7 @@ import com.chala.posapp.entity.PurchaseStatus;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.ShiftStatus;
 import com.chala.posapp.entity.User;
+import com.chala.posapp.entity.stock.PurchaseStockOffset;
 import com.chala.posapp.entity.stock.StockAdjustment;
 import com.chala.posapp.entity.stock.StockAdjustmentType;
 import com.chala.posapp.entity.stock.StockBatch;
@@ -37,8 +38,10 @@ import com.chala.posapp.repository.GrnRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.PurchaseReturnRepository;
+import com.chala.posapp.repository.PurchaseStockOffsetRepository;
 import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.SupplierPaymentRepository;
 import com.chala.posapp.repository.SupplierRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -60,6 +63,9 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -88,6 +94,8 @@ public class PurchaseService {
     private final CashShiftRepository cashShiftRepository;
     private final StockAdjustmentRepository stockAdjustmentRepository;
     private final SupplierPaymentRepository supplierPaymentRepository;
+    private final PurchaseStockOffsetRepository purchaseStockOffsetRepository;
+    private final StockLedgerLockRepository stockLedgerLockRepository;
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
@@ -238,6 +246,14 @@ public class PurchaseService {
         Map<GrnItemRequest, PreparedPurchaseLine> preparedLineByRequest = preparedLines.stream()
                 .collect(Collectors.toMap(PreparedPurchaseLine::request, Function.identity()));
 
+        // Every ledger this bill will touch is locked before any stock is read
+        // or changed, in (branch, item) order. Checkout takes the same locks on
+        // the same rows before touching stock, so a purchase offset and a sale
+        // can never lose each other's update on one negative batch, and one
+        // fixed acquisition order keeps two multi-item purchases from
+        // deadlocking against each other.
+        lockStockLedgers(requestLedgerScopes(request));
+
         List<GrnResponse> grnResponseList = new ArrayList<>();
         BigDecimal netGrandTotal = BigDecimal.ZERO;
 
@@ -257,9 +273,14 @@ public class PurchaseService {
                     .note(invoiceNo)
                     .build();
             GRN savedGrn = grnRepository.save(grn);
+            // GRN owns the purchase FK, so the inverse collection here is never
+            // populated by the database within this transaction. Add the link
+            // in memory too: a supersede answers with the replacement's detail
+            // read back through this same persistence context, and without this
+            // it would say the new bill has no lines.
+            savedPurchase.getGrnList().add(savedGrn);
 
             BigDecimal grnTotal = BigDecimal.ZERO;
-            List<GrnItem> grnItems = new ArrayList<>();
             List<GrnItemResponse> itemResponses = new ArrayList<>();
             int index = 0;
 
@@ -283,30 +304,6 @@ public class PurchaseService {
                 int normalizedFreeQty = preparedLine.normalizedFreeQty();
                 int totalReceivedQty = preparedLine.totalReceivedQty();
 
-                if (Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
-                    zeroOutNegativeStock(item, branch, user);
-                }
-
-                LocalDateTime expiry = itemReq.getExpiryDate() != null
-                        ? itemReq.getExpiryDate().atStartOfDay()
-                        : null;
-
-                String batchCode = String.format("GRN-%s-%d-%d", grnNo, item.getId(), index);
-                StockBatch batch = StockBatch.builder()
-                        .branch(branch)
-                        .item(item)
-                        .supplier(supplier)
-                        .quantity(totalReceivedQty)
-                        .originalQuantity(totalReceivedQty)
-                        .costPrice(effectiveCostPrice)
-                        .sellingPrice(itemReq.getSellingPrice())
-                        .sourceType(StockBatchSourceType.PURCHASE)
-                        .batchCode(batchCode)
-                        .receivedAt(LocalDateTime.now())
-                        .expireDate(expiry)
-                        .build();
-                stockBatchRepository.save(batch);
-
                 BigDecimal displayQty = itemReq.getQty() == null
                         ? BigDecimal.ZERO
                         : itemReq.getQty().stripTrailingZeros();
@@ -314,6 +311,8 @@ public class PurchaseService {
                         ? BigDecimal.ZERO
                         : itemReq.getFreeQty().stripTrailingZeros();
 
+                // The GRN line is persisted before the stock offset so the
+                // purchase-offset rows recorded below can point at it.
                 GrnItem grnItem = GrnItem.builder()
                         .grn(savedGrn)
                         .item(item)
@@ -328,7 +327,46 @@ public class PurchaseService {
                         .sellingPrice(itemReq.getSellingPrice())
                         .amount(netLineTotal)
                         .build();
-                grnItems.add(grnItem);
+                grnItemRepository.save(grnItem);
+
+                int stockQuantityAfterNegativeOffset;
+                if (Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
+                    zeroOutNegativeStock(item, branch, savedPurchase, grnItem, user);
+                    stockQuantityAfterNegativeOffset = totalReceivedQty;
+                } else {
+                    stockQuantityAfterNegativeOffset = offsetNegativeStock(
+                            item, branch, totalReceivedQty, itemReq.getSellingPrice(),
+                            savedPurchase, savedGrn, grnItem);
+                }
+                if (stockQuantityAfterNegativeOffset != totalReceivedQty
+                        || Boolean.TRUE.equals(itemReq.getZeroNegativeStock())) {
+                    reportCacheInvalidator.stockChanged();
+                }
+
+                LocalDateTime expiry = itemReq.getExpiryDate() != null
+                        ? itemReq.getExpiryDate().atStartOfDay()
+                        : null;
+
+                String batchCode = String.format("GRN-%s-%d-%d", grnNo, item.getId(), index);
+                if (stockQuantityAfterNegativeOffset > 0) {
+                    StockBatch batch = StockBatch.builder()
+                            .branch(branch)
+                            .item(item)
+                            .supplier(supplier)
+                            .quantity(stockQuantityAfterNegativeOffset)
+                            // The batch must start as untouched at the size it actually
+                            // added. The GRN line below still records the supplier's full
+                            // received quantity, including units that offset legacy debt.
+                            .originalQuantity(stockQuantityAfterNegativeOffset)
+                            .costPrice(effectiveCostPrice)
+                            .sellingPrice(itemReq.getSellingPrice())
+                            .sourceType(StockBatchSourceType.PURCHASE)
+                            .batchCode(batchCode)
+                            .receivedAt(LocalDateTime.now())
+                            .expireDate(expiry)
+                            .build();
+                    stockBatchRepository.save(batch);
+                }
 
                 grnTotal = grnTotal.add(netLineTotal);
 
@@ -347,7 +385,6 @@ public class PurchaseService {
                         .build());
             }
 
-            grnItemRepository.saveAll(grnItems);
             savedGrn.setTotalAmount(grnTotal);
             grnRepository.save(savedGrn);
             netGrandTotal = netGrandTotal.add(grnTotal);
@@ -655,6 +692,31 @@ public class PurchaseService {
             }
         }
 
+        // An offset changed a batch this purchase does not own: the shop's
+        // legacy debt, not GRN stock, so the untouched-GRN scan above cannot
+        // see it. Every offset row recorded the quantity its batch was left
+        // holding. If the batch no longer holds the quantity its last offset
+        // recorded, the stock has moved on since — sold, returned or adjusted —
+        // and the offset cannot be reversed.
+        for (StockAdjustment adjustment : stockAdjustmentRepository
+                .findByPurchaseIdAndReversedByAdjustmentIdIsNullOrderByIdAsc(purchase.getId())) {
+            StockBatch batch = adjustment.getStockBatchId() == null
+                    ? null
+                    : stockBatchRepository.findById(adjustment.getStockBatchId()).orElse(null);
+            if (batch == null || batch.getQuantity() == null || batch.getQuantity() != 0) {
+                return "stock from this purchase has already been sold or adjusted";
+            }
+        }
+
+        for (Map.Entry<Long, List<PurchaseStockOffset>> entry : offsetsByBatch(purchase).entrySet()) {
+            StockBatch batch = stockBatchRepository.findById(entry.getKey()).orElse(null);
+            PurchaseStockOffset latest = entry.getValue().get(entry.getValue().size() - 1);
+            if (batch == null || batch.getQuantity() == null
+                    || !Objects.equals(batch.getQuantity(), latest.getBatchQuantityAfterOffset())) {
+                return "stock from this purchase has already been sold or adjusted";
+            }
+        }
+
         if (purchase.getCashSource() == CashSource.CASH_DRAWER && purchase.getCashShiftId() != null) {
             CashShift shift = cashShiftRepository.findById(purchase.getCashShiftId()).orElse(null);
             if (shift == null) {
@@ -685,6 +747,54 @@ public class PurchaseService {
      * reversing different things.
      */
     private void voidPurchase(Purchase purchase, String reason, User actor) {
+        // Reverse only the exact YES adjustments created by this purchase. Keep
+        // both the original correction and its compensating adjustment for audit.
+        List<StockAdjustment> adjustmentsToReverse = stockAdjustmentRepository
+                .findByPurchaseIdAndReversedByAdjustmentIdIsNullOrderByIdAsc(purchase.getId());
+        for (StockAdjustment original : adjustmentsToReverse) {
+            StockBatch adjustedBatch = stockBatchRepository.findById(original.getStockBatchId())
+                    .orElseThrow(() -> new BadRequestException(
+                            "Cannot cancel purchase because an adjusted stock batch no longer exists"));
+            adjustedBatch.setQuantity(adjustedBatch.getQuantity() - original.getQtyChange());
+            stockBatchRepository.save(adjustedBatch);
+
+            StockAdjustment reversal = StockAdjustment.builder()
+                    .branchId(original.getBranchId())
+                    .itemId(original.getItemId())
+                    .type(StockAdjustmentType.MANUAL)
+                    .qtyChange(-original.getQtyChange())
+                    .displayQtyChange(original.getDisplayQtyChange().negate())
+                    .qtyUnit(original.getQtyUnit())
+                    .reason("Purchase cancellation reversal of adjustment " + original.getId())
+                    .userId(actor == null ? original.getUserId() : actor.getId())
+                    .purchaseId(purchase.getId())
+                    .stockBatchId(original.getStockBatchId())
+                    .reversalOfAdjustmentId(original.getId())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            StockAdjustment savedReversal = stockAdjustmentRepository.save(reversal);
+            original.setReversedByAdjustmentId(savedReversal.getId());
+        }
+        stockAdjustmentRepository.saveAll(adjustmentsToReverse);
+
+        // Put back exactly what the offsets took. describeCancelBlock has
+        // already verified each batch still holds the quantity its last offset
+        // left behind, so removing the net movement restores the pre-purchase
+        // balance. The rows are marked reversed, not deleted: what a cancelled
+        // purchase did to the ledger stays readable.
+        Map<Long, List<PurchaseStockOffset>> offsetsByBatch = offsetsByBatch(purchase);
+        offsetsByBatch.forEach((batchId, rows) -> {
+            StockBatch batch = stockBatchRepository.findById(batchId)
+                    .orElseThrow(() -> new BadRequestException(
+                            "Cannot cancel purchase because an offset stock batch no longer exists"));
+            int netOffset = rows.stream().mapToInt(PurchaseStockOffset::getQuantityOffset).sum();
+            batch.setQuantity(batch.getQuantity() - netOffset);
+            stockBatchRepository.save(batch);
+            rows.forEach(offset -> offset.setReversedAt(LocalDateTime.now()));
+        });
+        purchaseStockOffsetRepository.saveAll(
+                offsetsByBatch.values().stream().flatMap(List::stream).toList());
+
         List<StockBatch> batchesToDelete = new ArrayList<>();
         for (GRN grn : purchase.getGrnList()) {
             batchesToDelete.addAll(stockBatchRepository.findByBranchIdAndBatchCodeStartingWith(
@@ -720,13 +830,17 @@ public class PurchaseService {
     public PurchaseResponse cancelPurchase(Long purchaseId, CancelPurchaseRequest request) {
         User user = securityUtils.getCurrentUser();
 
-        Purchase purchase = purchaseRepository.findById(purchaseId)
+        Purchase purchase = purchaseRepository.findByIdForUpdate(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
         ensurePurchaseAccess(user, purchase);
 
         if (normalizeStatus(purchase) == PurchaseStatus.CANCELED) {
             throw new AlreadyExistsException("Purchase already canceled");
         }
+
+        // The same locks checkout takes, acquired before the guards read any
+        // stock, so what the guards verify is exactly what the reversal undoes.
+        lockStockLedgers(purchaseLedgerScopes(purchase));
 
         String blocked = describeCancelBlock(purchase);
         if (blocked != null) {
@@ -768,13 +882,20 @@ public class PurchaseService {
     public PurchaseResponse replacePurchase(Long oldPurchaseId, CreatePurchaseRequest request) {
         User user = securityUtils.getCurrentUser();
 
-        Purchase original = purchaseRepository.findById(oldPurchaseId)
+        Purchase original = purchaseRepository.findByIdForUpdate(oldPurchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found"));
         ensurePurchaseAccess(user, original);
 
         if (normalizeStatus(original) == PurchaseStatus.CANCELED) {
             throw new AlreadyExistsException("Purchase already canceled");
         }
+
+        // One lock set for both bills: the void restores the original's ledgers
+        // and the replacement then offsets the same ones, and a single
+        // deterministic acquisition order covers the whole transaction.
+        List<LedgerScope> replacementScopes = new ArrayList<>(purchaseLedgerScopes(original));
+        replacementScopes.addAll(requestLedgerScopes(request));
+        lockStockLedgers(replacementScopes);
 
         String blocked = describeCancelBlock(original);
         if (blocked != null) {
@@ -893,7 +1014,193 @@ public class PurchaseService {
         cashShiftRepository.save(shift);
     }
 
-    private void zeroOutNegativeStock(Item item, Branch branch, User user) {
+    /** One branch/item stock ledger a purchase is about to read or change. */
+    private record LedgerScope(Long branchId, Long itemId) {
+    }
+
+    /**
+     * Lock every (branch, item) ledger the scopes name, in one deterministic
+     * order. Checkout locks the same rows the same way before touching stock,
+     * so a purchase offset and a sale cannot lose each other's update on one
+     * negative batch, and one fixed acquisition order keeps two multi-item
+     * purchases from deadlocking against each other.
+     */
+    private void lockStockLedgers(Collection<LedgerScope> scopes) {
+        scopes.stream()
+                .filter(scope -> scope.branchId() != null && scope.itemId() != null)
+                .distinct()
+                .sorted(Comparator.comparing(LedgerScope::branchId).thenComparing(LedgerScope::itemId))
+                .forEach(scope -> stockLedgerLockRepository.lock(scope.branchId(), scope.itemId()));
+    }
+
+    /** The ledgers a create request will touch. */
+    private List<LedgerScope> requestLedgerScopes(CreatePurchaseRequest request) {
+        List<LedgerScope> scopes = new ArrayList<>();
+        if (request.getBranches() == null) {
+            return scopes;
+        }
+        for (BranchPurchaseRequest branchReq : request.getBranches()) {
+            if (branchReq.getItems() == null) {
+                continue;
+            }
+            for (GrnItemRequest itemReq : branchReq.getItems()) {
+                scopes.add(new LedgerScope(branchReq.getBranchId(), itemReq.getItemId()));
+            }
+        }
+        return scopes;
+    }
+
+    /** The ledgers an existing purchase changed and would have restored on void. */
+    private List<LedgerScope> purchaseLedgerScopes(Purchase purchase) {
+        List<LedgerScope> scopes = new ArrayList<>();
+        for (GRN grn : purchase.getGrnList()) {
+            for (GrnItem grnItem : grnItemRepository.findByGrnId(grn.getId())) {
+                scopes.add(new LedgerScope(grn.getBranch().getId(), grnItem.getItem().getId()));
+            }
+        }
+        for (PurchaseStockOffset offset : purchaseStockOffsetRepository.findByPurchaseIdOrderByIdAsc(purchase.getId())) {
+            scopes.add(new LedgerScope(offset.getBranchId(), offset.getItemId()));
+        }
+        return scopes;
+    }
+
+    /** A purchase's live (not yet reversed) offset rows, grouped by batch. */
+    private Map<Long, List<PurchaseStockOffset>> offsetsByBatch(Purchase purchase) {
+        return purchaseStockOffsetRepository
+                .findByPurchaseIdAndReversedAtIsNullOrderByIdAsc(purchase.getId())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        PurchaseStockOffset::getNegativeBatchId, LinkedHashMap::new, Collectors.toList()));
+    }
+
+    /**
+     * Apply the received GRN quantity to legacy negative balances in two passes:
+     * same selling price first, then any remaining positive purchase quantity.
+     *
+     * <p>This is the purchase-time counterpart of tenant migration V66. It must
+     * not create a GRN batch for quantity that merely cancels a negative row;
+     * the supplier's full received quantity stays on the GRN line regardless.
+     * If the receipt cannot cover every negative row, the remaining liability
+     * is consolidated onto the oldest still-negative row and all other negative
+     * rows are zeroed, keeping the post-migration ledger shape.
+     *
+     * <p>Every negative batch this changes gets a {@link PurchaseStockOffset}
+     * row naming the purchase line, the movement and the resulting quantity, so
+     * cancellation can verify and undo exactly what this line did.
+     */
+    private int offsetNegativeStock(
+            Item item,
+            Branch branch,
+            int receivedQuantity,
+            BigDecimal receivedSellingPrice,
+            Purchase purchase,
+            GRN grn,
+            GrnItem grnItem
+    ) {
+        List<StockBatch> negativeBatches = stockBatchRepository
+                .findByBranchIdAndItemIdAndQuantityLessThan(branch.getId(), item.getId(), 0)
+                .stream()
+                .sorted(java.util.Comparator
+                        .comparing(StockBatch::getReceivedAt, java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()))
+                        .thenComparing(StockBatch::getId))
+                .toList();
+        Map<Long, Integer> workingQuantities = new java.util.LinkedHashMap<>();
+        for (StockBatch batch : negativeBatches) {
+            workingQuantities.put(batch.getId(), batch.getQuantity());
+        }
+
+        int remainingPurchase = applyNegativeOffsets(
+                negativeBatches, workingQuantities, receivedQuantity, true, receivedSellingPrice);
+        if (remainingPurchase > 0) {
+            remainingPurchase = applyNegativeOffsets(
+                    negativeBatches, workingQuantities, remainingPurchase, false, receivedSellingPrice);
+        }
+
+        int remainingNegativeTotal = workingQuantities.values().stream()
+                .filter(quantity -> quantity != null && quantity < 0)
+                .mapToInt(quantity -> -quantity)
+                .sum();
+        if (remainingNegativeTotal > 0) {
+            Long canonicalNegativeId = negativeBatches.stream()
+                    .filter(batch -> workingQuantities.get(batch.getId()) != null
+                            && workingQuantities.get(batch.getId()) < 0)
+                    .map(StockBatch::getId)
+                    .findFirst()
+                    .orElse(null);
+            for (StockBatch batch : negativeBatches) {
+                int quantity = batch.getId().equals(canonicalNegativeId)
+                        ? -remainingNegativeTotal
+                        : 0;
+                workingQuantities.put(batch.getId(), quantity);
+            }
+        }
+
+        for (StockBatch batch : negativeBatches) {
+            Integer workingQuantity = workingQuantities.get(batch.getId());
+            if (!Objects.equals(batch.getQuantity(), workingQuantity)) {
+                // One row per batch this line changed, netting the pairwise
+                // passes and the consolidation that moved leftover liability
+                // between negative rows. Cancellation restores a batch by
+                // removing this movement again.
+                purchaseStockOffsetRepository.save(PurchaseStockOffset.builder()
+                        .purchaseId(purchase.getId())
+                        .grnId(grn.getId())
+                        .grnItemId(grnItem.getId())
+                        .branchId(branch.getId())
+                        .itemId(item.getId())
+                        .negativeBatchId(batch.getId())
+                        .quantityOffset(workingQuantity - batch.getQuantity())
+                        .batchQuantityAfterOffset(workingQuantity)
+                        .build());
+                batch.setQuantity(workingQuantity);
+                stockBatchRepository.save(batch);
+            }
+        }
+
+        return remainingPurchase;
+    }
+
+    /**
+     * One reconciliation pass over the received quantity. It consumes only the
+     * new GRN quantity, never stock already sitting in a positive batch.
+     *
+     * <p>Negative rows are ordered by received_at then id so the result is
+     * repeatable. Two NULL selling prices do not match in pass 1; a nullable
+     * price may still participate in the any-price pass.
+     */
+    private int applyNegativeOffsets(
+            List<StockBatch> negativeBatches,
+            Map<Long, Integer> workingQuantities,
+            int remainingPurchase,
+            boolean samePriceOnly,
+            BigDecimal receivedSellingPrice
+    ) {
+        for (StockBatch negative : negativeBatches) {
+            if (remainingPurchase <= 0) {
+                break;
+            }
+
+            int negativeBalance = workingQuantities.get(negative.getId());
+            if (negativeBalance >= 0 || (samePriceOnly && !pricesMatch(negative, receivedSellingPrice))) {
+                continue;
+            }
+
+            int offset = Math.min(-negativeBalance, remainingPurchase);
+            workingQuantities.put(negative.getId(), negativeBalance + offset);
+            remainingPurchase -= offset;
+        }
+
+        return remainingPurchase;
+    }
+
+    private boolean pricesMatch(StockBatch batch, BigDecimal sellingPrice) {
+        return batch.getSellingPrice() != null
+                && sellingPrice != null
+                && batch.getSellingPrice().compareTo(sellingPrice) == 0;
+    }
+
+    private void zeroOutNegativeStock(
+            Item item, Branch branch, Purchase purchase, GrnItem grnItem, User user) {
         List<StockBatch> negativeBatches = stockBatchRepository
                 .findByBranchIdAndItemIdAndQuantityLessThan(branch.getId(), item.getId(), 0);
 
@@ -912,6 +1219,8 @@ public class PurchaseService {
                             ? QuantityConversionUtil.primaryDisplayUnit(item)
                             : item.getDefaultUnit())
                     .reason("Negative stock corrected before purchase")
+                    .purchaseId(purchase.getId())
+                    .stockBatchId(negativeBatch.getId())
                     .userId(user.getId())
                     .createdAt(LocalDateTime.now())
                     .build();

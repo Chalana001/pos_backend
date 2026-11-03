@@ -34,6 +34,7 @@ public class PurchaseReturnService {
     private final StockBatchRepository          stockBatchRepository;
     private final ItemRepository                itemRepository;
     private final UserRepository                userRepository;
+    private final StockLedgerLockRepository     stockLedgerLockRepository;
     private final ReportCacheInvalidator        reportCacheInvalidator;
 
     // ---------------------------------------------------------------
@@ -83,6 +84,15 @@ public class PurchaseReturnService {
 
         // 3. Build grnItemId -> GrnItem lookup
         List<GrnItem> allGrnItems = grnItemRepository.findByGrnId(grn.getId());
+
+        // Returns change the same GRN batches checkout and purchase cancellation use.
+        // Lock each item ledger once, in item-id order, before any availability read.
+        allGrnItems.stream()
+                .map(grnItem -> grnItem.getItem().getId())
+                .distinct()
+                .sorted()
+                .forEach(itemId -> stockLedgerLockRepository.lock(branchId, itemId));
+
         Map<Long, GrnItem> grnItemMap = allGrnItems.stream()
                 .collect(Collectors.toMap(GrnItem::getId, gi -> gi));
 

@@ -18,6 +18,7 @@ import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.audit.Audited;
 import com.chala.posapp.util.QuantityConversionUtil;
@@ -47,6 +48,7 @@ public class StockAdjustmentService {
     private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final StockLedgerLockRepository stockLedgerLockRepository;
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
@@ -108,6 +110,8 @@ public class StockAdjustmentService {
         if (request.getBatchId() == null) {
             throw new BadRequestException("Batch ID is required");
         }
+
+        stockLedgerLockRepository.lock(branch.getId(), item.getId());
 
         StockBatch batch = stockBatchRepository.findById(request.getBatchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));

@@ -105,8 +105,9 @@ class OrderReturnServiceTest {
                 orderRepository, orderItemRepository, orderItemStockUsageRepository,
                 orderReturnRepository, orderReturnItemRepository, securityUtils,
                 customerRepository, stockBatchRepository, itemRepository, cashShiftRepository,
-                warrantyRepository, userRepository, reportCacheInvalidator,
-                promotionRedemptionService, loyaltyService, paymentMethodService);
+                warrantyRepository, userRepository, mock(StockLedgerLockRepository.class),
+                reportCacheInvalidator, promotionRedemptionService, loyaltyService,
+                paymentMethodService);
 
         User user = User.builder().id(1L).build();
         when(securityUtils.getCurrentUser()).thenReturn(user);
@@ -135,6 +136,7 @@ class OrderReturnServiceTest {
                 .grandTotal(1000.0)
                 .build();
         when(orderRepository.findByInvoiceNo(INVOICE_NO)).thenReturn(Optional.of(order));
+        when(orderRepository.findByInvoiceNoForUpdate(INVOICE_NO)).thenReturn(Optional.of(order));
     }
 
     /**

@@ -3,7 +3,9 @@ package com.chala.posapp.repository;
 import com.chala.posapp.entity.Order;
 import com.chala.posapp.entity.OrderStatus;
 import com.chala.posapp.entity.OrderType;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +18,10 @@ import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByInvoiceNo(String invoiceNo);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.invoiceNo = :invoiceNo")
+    Optional<Order> findByInvoiceNoForUpdate(@Param("invoiceNo") String invoiceNo);
 
     /**
      * Completed sales in a window, newest first, for replaying a promotion against real carts.

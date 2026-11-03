@@ -21,6 +21,7 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.StockTransferItemRepository;
 import com.chala.posapp.repository.StockTransferRepository;
 import com.chala.posapp.repository.UserRepository;
@@ -52,6 +53,7 @@ public class StockTransferService {
     private final SecurityUtils securityUtils;
     private final BranchRepository branchRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final StockLedgerLockRepository stockLedgerLockRepository;
     private final UserRepository userRepository;
     private final ReportCacheInvalidator reportCacheInvalidator;
 
@@ -125,6 +127,8 @@ public class StockTransferService {
 
         String transferNo = transferNumberService.generateTransferNo(request.getFromBranchId());
         List<StockTransferItem> transferItems = new ArrayList<>();
+
+        lockTransferScopes(request.getFromBranchId(), request.getItems());
 
         for (StockTransferItemRequest reqItem : request.getItems()) {
             Item item = itemRepository.findById(reqItem.getItemId())
@@ -225,6 +229,7 @@ public class StockTransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Receiving branch not found"));
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
+        lockTransferItemScopes(items);
         for (StockTransferItem transferItem : items) {
             StockBatch sourceBatch = stockBatchRepository.findById(transferItem.getBatchId())
                     .orElseThrow(() -> new ResourceNotFoundException("Source batch not found"));
@@ -263,6 +268,7 @@ public class StockTransferService {
         }
 
         List<StockTransferItem> items = transferItemRepository.findByTransferId(transfer.getId());
+        lockTransferItemScopes(items);
         for (StockTransferItem transferItem : items) {
             restoreToSourceBatch(transferItem, transfer.getFromBranchId());
         }
@@ -456,6 +462,27 @@ public class StockTransferService {
 
     private String buildTransferredBatchCode(StockTransfer transfer, StockBatch sourceBatch, Long toBranchId) {
         return "TRN-" + transfer.getTransferNo() + "-SRC-" + sourceBatch.getId() + "-BR-" + toBranchId;
+    }
+
+    private void lockTransferScopes(Long fromBranchId, List<StockTransferItemRequest> items) {
+        items.stream()
+                .map(StockTransferItemRequest::getItemId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .sorted()
+                .forEach(itemId -> stockLedgerLockRepository.lock(fromBranchId, itemId));
+    }
+
+    private void lockTransferItemScopes(List<StockTransferItem> items) {
+        Map<Long, java.util.Set<Long>> scopes = new java.util.TreeMap<>();
+        for (StockTransferItem item : items) {
+            StockBatch batch = stockBatchRepository.findById(item.getBatchId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Stock batch not found"));
+            scopes.computeIfAbsent(batch.getBranch().getId(), ignored -> new java.util.TreeSet<>())
+                    .add(item.getItemId());
+        }
+        scopes.forEach((branchId, itemIds) ->
+                itemIds.forEach(itemId -> stockLedgerLockRepository.lock(branchId, itemId)));
     }
 
     private StockTransferResponse buildResponse(StockTransfer transfer, List<StockTransferItem> items) {

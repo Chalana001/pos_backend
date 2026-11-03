@@ -138,7 +138,7 @@ public class ItemService {
         syncRecipeIngredients(savedItem, request.getIngredients());
         syncProcessingOutputs(savedItem, request.getProcessingOutputs());
         createZeroStockBatchesIfRequired(savedItem);
-        return mapToResponse(savedItem, null, List.of());
+        return mapToResponse(savedItem, null, List.of(), ItemResponseOptions.plain());
     }
 
     @Transactional
@@ -210,7 +210,7 @@ public class ItemService {
                     syncRecipeIngredients(item, sourceRequest != null ? sourceRequest.getIngredients() : null);
                     syncProcessingOutputs(item, sourceRequest != null ? sourceRequest.getProcessingOutputs() : null);
                     createZeroStockBatchesIfRequired(item);
-                    return mapToResponse(item, null, List.of());
+                    return mapToResponse(item, null, List.of(), ItemResponseOptions.plain());
                 })
                 .toList();
     }
@@ -248,7 +248,7 @@ public class ItemService {
                 pageable
         );
 
-        return itemPage.map(item -> mapToResponse(item, null, List.of()));
+        return itemPage.map(item -> mapToResponse(item, null, List.of(), ItemResponseOptions.plain()));
     }
 
     private ItemType parseItemType(String value) {
@@ -276,7 +276,7 @@ public class ItemService {
     public ItemResponse getItem(Long id) {
         Item item = itemRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Item not found"));
-        return mapToResponse(item, null, List.of());
+        return mapToResponse(item, null, List.of(), ItemResponseOptions.plain());
     }
 
     public ItemResponse getByBarcode(String barcode, Long branchId) {
@@ -351,14 +351,17 @@ public class ItemService {
         ScaleBarcodeResolution scaleResolution = decoded == null ? null : resolveScaleBarcodeResolution(item, decoded);
 
         if (branchId == null || item.getItemType() == ItemType.RECIPE || item.getItemType() == ItemType.SERVICE) {
-            return mapToResponse(item, null, List.of(), branchId, scaleResolution);
+            return mapToResponse(item, null, List.of(),
+                    new ItemResponseOptions(branchId, null, false, scaleResolution));
         }
 
-        List<StockBatch> batches = branchId == 0L
-                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
-                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
+        Long scopeBranchId = branchId == 0L ? null : branchId;
+        List<StockBatch> batches = stockBatchRepository.findAvailableBatchesForScope(scopeBranchId, item.getId());
+        Integer totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeBranchId, item.getId());
+        boolean hasNegativeStock = stockBatchRepository.existsNegativeBatchForScope(scopeBranchId, item.getId());
 
-        return mapToResponse(item, availableQuantity(batches), batchesToResponse(item, batches), branchId, scaleResolution);
+        return mapToResponse(item, totalQty, batchesToResponse(item, batches),
+                new ItemResponseOptions(branchId, null, hasNegativeStock, scaleResolution));
     }
 
     /** Empty (no decode) whenever branchId is unset or the branch has scale-barcode decoding turned off. */
@@ -444,15 +447,17 @@ public class ItemService {
 
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
+                    boolean hasNegativeStock = false;
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
-                        batches = branchId == 0L
-                                ? stockBatchRepository.findAvailableBatchesForScope(null, item.getId())
-                                : stockBatchRepository.findAvailableBatchesForScope(branchId, item.getId());
-                        totalQty = availableQuantity(batches);
+                        Long scopeBranchId = branchId == 0L ? null : branchId;
+                        batches = stockBatchRepository.findAvailableBatchesForScope(scopeBranchId, item.getId());
+                        totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeBranchId, item.getId());
+                        hasNegativeStock = stockBatchRepository.existsNegativeBatchForScope(scopeBranchId, item.getId());
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches),
+                            new ItemResponseOptions(branchId, null, hasNegativeStock, null));
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -478,14 +483,17 @@ public class ItemService {
 
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
+                    boolean hasNegativeStock = false;
 
                     if (scopedBranchId != null) {
                         Long scopeId = scopedBranchId == 0L ? null : scopedBranchId;
                         batches = stockBatchRepository.findAvailableBatchesForScope(scopeId, item.getId());
                         totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeId, item.getId());
+                        hasNegativeStock = stockBatchRepository.existsNegativeBatchForScope(scopeId, item.getId());
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), scopedBranchId);
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches),
+                            new ItemResponseOptions(scopedBranchId, null, hasNegativeStock, null));
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -551,13 +559,15 @@ public class ItemService {
                     List<StockBatch> batches = List.of();
                     Integer totalQty = null;
                     boolean everStocked = true;
+                    boolean hasNegativeStock = false;
 
                     if (branchId != null && item.getItemType() != ItemType.RECIPE && item.getItemType() != ItemType.SERVICE) {
                         Long scopeBranchId = branchId == 0L ? null : branchId;
                         batches = stockBatchRepository.findAvailableBatchesForScope(scopeBranchId, item.getId());
-                        totalQty = availableQuantity(batches);
+                        totalQty = stockBatchRepository.getTotalQuantityByItemAndScope(scopeBranchId, item.getId());
                         everStocked = batches != null && !batches.isEmpty()
                                 || stockBatchRepository.existsBatchForScope(scopeBranchId, item.getId());
+                        hasNegativeStock = stockBatchRepository.existsNegativeBatchForScope(scopeBranchId, item.getId());
                     }
 
                     if (item.getItemType() != ItemType.SERVICE
@@ -566,7 +576,8 @@ public class ItemService {
                         return null;
                     }
 
-                    return mapToResponse(item, totalQty, batchesToResponse(item, batches), branchId);
+                    return mapToResponse(item, totalQty, batchesToResponse(item, batches),
+                            new ItemResponseOptions(branchId, null, hasNegativeStock, null));
                 })
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toList());
@@ -586,14 +597,15 @@ public class ItemService {
         List<Item> items = itemRepository.findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(searchTerm, searchTerm);
 
         return items.stream()
-                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
+                .map(item -> mapToResponse(item, null, List.of(),
+                    new ItemResponseOptions(branchId, findLabelExpiry(branchId, item.getId()), false, null)))
                 .collect(Collectors.toList());
     }
 
     public List<ItemResponse> listAll(Boolean activeOnly) {
         return itemRepository.findAll().stream()
                 .filter(item -> activeOnly == null || !activeOnly || item.isActive())
-                .map(item -> mapToResponse(item, null, List.of()))
+                .map(item -> mapToResponse(item, null, List.of(), ItemResponseOptions.plain()))
                 .toList();
     }
 
@@ -671,7 +683,7 @@ public class ItemService {
         if (request.getProcessingOutputs() != null || previousItemType != itemType || request.getStockProcessingEnabled() != null) {
             syncProcessingOutputs(savedItem, request.getProcessingOutputs());
         }
-        return mapToResponse(savedItem, null, List.of());
+        return mapToResponse(savedItem, null, List.of(), ItemResponseOptions.plain());
     }
 
     public ItemDeleteCheckResponse checkDelete(Long id) {
@@ -810,26 +822,27 @@ public class ItemService {
                 .sum();
     }
 
-    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches) {
-        return mapToResponse(item, availableBaseQty, batches, null);
-    }
-
-    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId) {
-        return mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
-    }
-
-    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches,
-                                        Long branchId, ScaleBarcodeResolution scaleResolution) {
-        ItemResponse response = mapToResponse(item, availableBaseQty, batches, branchId, (LocalDateTime) null);
-        if (scaleResolution != null) {
-            response.setScaleResolvedQuantity(scaleResolution.quantity());
-            response.setScaleResolvedUnit(scaleResolution.unit());
-            response.setScaleResolvedAmount(scaleResolution.amount());
+    /**
+     * The optional pieces an item response can carry. Call sites pass exactly
+     * what they have instead of stacking positional overloads.
+     */
+    private record ItemResponseOptions(
+            Long branchId,
+            LocalDateTime labelExpiry,
+            boolean hasNegativeStock,
+            ScaleBarcodeResolution scaleResolution
+    ) {
+        private static ItemResponseOptions plain() {
+            return new ItemResponseOptions(null, null, false, null);
         }
-        return response;
     }
 
-    private ItemResponse mapToResponse(Item item, Integer availableBaseQty, List<StockBatchResponse> batches, Long branchId, LocalDateTime labelExpiry) {
+    private ItemResponse mapToResponse(
+            Item item,
+            Integer availableBaseQty,
+            List<StockBatchResponse> batches,
+            ItemResponseOptions options
+    ) {
         SubCategory subCategory = item.getSubCategory();
         Category category = subCategory != null ? subCategory.getCategory() : null;
         List<Long> branchIds = item.getItemType() == ItemType.SERVICE
@@ -851,7 +864,7 @@ public class ItemService {
                 ? null
                 : QuantityConversionUtil.toDisplayQuantity(item, availableBaseQty);
 
-        return ItemResponse.builder()
+        ItemResponse response = ItemResponse.builder()
                 .id(item.getId())
                 .barcode(item.getBarcode())
                 .name(item.getName())
@@ -864,12 +877,13 @@ public class ItemService {
                 .sellingPrice(item.getSellingPrice())
                 .availableQty(availableQty)
                 .availableBaseQty(availableBaseQty)
+                .hasNegativeStock(options.hasNegativeStock())
                 .reorderLevel(QuantityConversionUtil.toDisplayQuantity(item.getItemType(), item.getDefaultUnit(), item.getReorderLevel()))
                 .reorderLevelBaseQty(item.getReorderLevel())
                 .itemType(item.getItemType())
                 .defaultUnit(item.getDefaultUnit())
                 .imageUrl(item.getImageUrl())
-                .kotEnabled(appConfigurationService.isKotEnabled(branchId) && item.isKotEnabled())
+                .kotEnabled(appConfigurationService.isKotEnabled(options.branchId()) && item.isKotEnabled())
                 .active(item.isActive())
                 .posVisible(item.isPosVisible())
                 .stockProcessingEnabled(item.isStockProcessingEnabled())
@@ -880,8 +894,15 @@ public class ItemService {
                 .ingredients(ingredients)
                 .processingOutputs(processingOutputs)
                 .batches(batches)
-                .labelExpiry(labelExpiry)
+                .labelExpiry(options.labelExpiry())
                 .build();
+
+        if (options.scaleResolution() != null) {
+            response.setScaleResolvedQuantity(options.scaleResolution().quantity());
+            response.setScaleResolvedUnit(options.scaleResolution().unit());
+            response.setScaleResolvedAmount(options.scaleResolution().amount());
+        }
+        return response;
     }
 
     private void syncServiceBranches(Item item, List<Long> branchIds) {
@@ -1260,7 +1281,8 @@ public class ItemService {
         Pageable pageable = PageRequest.of(0, limit, Sort.by(Sort.Direction.DESC, "id"));
 
         return itemRepository.findAll(pageable).stream()
-                .map(item -> mapToResponse(item, null, List.of(), branchId, findLabelExpiry(branchId, item.getId())))
+                .map(item -> mapToResponse(item, null, List.of(),
+                    new ItemResponseOptions(branchId, findLabelExpiry(branchId, item.getId()), false, null)))
                 .toList();
     }
 

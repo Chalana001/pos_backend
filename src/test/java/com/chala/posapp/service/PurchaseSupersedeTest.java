@@ -67,6 +67,7 @@ class PurchaseSupersedeTest {
     private PurchaseReturnRepository purchaseReturnRepository;
     private UserRepository userRepository;
     private CashShiftRepository cashShiftRepository;
+    private StockAdjustmentRepository stockAdjustmentRepository;
     private SecurityUtils securityUtils;
     private PurchaseService service;
 
@@ -83,6 +84,7 @@ class PurchaseSupersedeTest {
         purchaseReturnRepository = mock(PurchaseReturnRepository.class);
         userRepository = mock(UserRepository.class);
         cashShiftRepository = mock(CashShiftRepository.class);
+        stockAdjustmentRepository = mock(StockAdjustmentRepository.class);
         securityUtils = mock(SecurityUtils.class);
 
         service = new PurchaseService(
@@ -97,8 +99,10 @@ class PurchaseSupersedeTest {
                 mock(GrnNumberService.class),
                 securityUtils,
                 cashShiftRepository,
-                mock(StockAdjustmentRepository.class),
+                stockAdjustmentRepository,
                 supplierPaymentRepository,
+                mock(com.chala.posapp.repository.PurchaseStockOffsetRepository.class),
+                mock(com.chala.posapp.repository.StockLedgerLockRepository.class),
                 userRepository,
                 mock(ReportCacheInvalidator.class));
 
@@ -132,7 +136,10 @@ class PurchaseSupersedeTest {
                 .build();
         grn.setPurchase(purchase);
 
+        when(purchaseRepository.findByIdForUpdate(42L)).thenReturn(Optional.of(purchase));
         when(purchaseRepository.findById(42L)).thenReturn(Optional.of(purchase));
+        when(stockAdjustmentRepository.findByPurchaseIdAndReversedByAdjustmentIdIsNullOrderByIdAsc(42L))
+                .thenReturn(List.of());
         when(stockBatchRepository.findByBranchIdAndBatchCodeStartingWith(anyLong(), anyString()))
                 .thenReturn(List.of(untouchedBatch()));
         when(supplierPaymentRepository.existsByPurchaseId(42L)).thenReturn(false);

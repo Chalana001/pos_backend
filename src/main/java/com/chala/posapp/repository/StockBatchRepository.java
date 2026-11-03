@@ -70,8 +70,20 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
     @Query("SELECT sb FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId ORDER BY sb.receivedAt ASC, sb.id ASC")
     List<StockBatch> findBatchesForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
+    /**
+     * Stock profile batches: include both positive and negative balances, but
+     * omit zeroed historical batches.
+     */
+    @Query("SELECT sb FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
+            "AND sb.item.id = :itemId AND sb.quantity <> 0 ORDER BY sb.receivedAt ASC, sb.id ASC")
+    List<StockBatch> findNonZeroBatchesForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
     @Query("SELECT COUNT(sb) > 0 FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId")
     boolean existsBatchForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
+    @Query("SELECT COUNT(sb) > 0 FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) " +
+            "AND sb.item.id = :itemId AND sb.quantity < 0")
+    boolean existsNegativeBatchForScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
 
     @Query("SELECT COALESCE(SUM(sb.quantity), 0) FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId")
     Integer getTotalQuantityByItemAndScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
@@ -237,6 +249,35 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     @Query("SELECT sb FROM StockBatch sb WHERE sb.branch.id = :branchId AND sb.item.id = :itemId ORDER BY sb.receivedAt ASC, sb.id ASC")
     List<StockBatch> findBatchesForBranchItem(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
+    /**
+     * Returns the branch/item ledger rows under a write lock. Locking every
+     * existing row gives concurrent checkouts one serialization point even when
+     * the ledger currently has no negative row and an override batch is about to
+     * be created.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE sb.branch.id = :branchId AND sb.item.id = :itemId
+            ORDER BY sb.receivedAt ASC, sb.id ASC
+            """)
+    List<StockBatch> findBatchesForBranchItemForUpdate(
+            @Param("branchId") Long branchId,
+            @Param("itemId") Long itemId
+    );
+
+    @Query("""
+            SELECT sb FROM StockBatch sb
+            WHERE sb.branch.id = :branchId
+              AND sb.item.id = :itemId
+              AND sb.quantity < 0
+            ORDER BY sb.receivedAt ASC, sb.id ASC
+            """)
+    List<StockBatch> findNegativeBatchesForBranchItem(
+            @Param("branchId") Long branchId,
+            @Param("itemId") Long itemId
+    );
 
     List<StockBatch> findByItemId(Long id);
 

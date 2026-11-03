@@ -42,9 +42,9 @@ class OrderReturnStockRestoreTest {
                 mock(OrderReturnRepository.class), mock(OrderReturnItemRepository.class),
                 mock(SecurityUtils.class), mock(CustomerRepository.class), stockBatchRepository,
                 itemRepository, mock(CashShiftRepository.class), mock(WarrantyRepository.class),
-                mock(UserRepository.class), mock(ReportCacheInvalidator.class),
-                mock(PromotionRedemptionService.class), mock(LoyaltyService.class),
-                mock(PaymentMethodService.class));
+                mock(UserRepository.class), mock(StockLedgerLockRepository.class),
+                mock(ReportCacheInvalidator.class), mock(PromotionRedemptionService.class),
+                mock(LoyaltyService.class), mock(PaymentMethodService.class));
 
         soldLine = OrderItem.builder().id(10L).itemId(20L).qty(3000).build();
         firstUsage = OrderItemStockUsage.builder()

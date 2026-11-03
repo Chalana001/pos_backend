@@ -26,6 +26,7 @@ import com.chala.posapp.repository.OrderRepository;
 import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.StockAdjustmentRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.StockTransferItemRepository;
 import com.chala.posapp.repository.StockTransferRepository;
 import com.chala.posapp.repository.SubCategoryRepository;
@@ -142,6 +143,12 @@ abstract class ApiIntegrationTestSupport {
 
     @Autowired
     protected StockBatchRepository stockBatchRepository;
+
+    @Autowired
+    protected StockLedgerLockRepository stockLedgerLockRepository;
+
+    @Autowired
+    protected com.chala.posapp.repository.PurchaseStockOffsetRepository purchaseStockOffsetRepository;
 
     @Autowired
     protected PurchaseRepository purchaseRepository;

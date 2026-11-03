@@ -39,6 +39,7 @@ public class OrderReturnService {
     private final CashShiftRepository           cashShiftRepository;
     private final WarrantyRepository            warrantyRepository;
     private final UserRepository                userRepository;
+    private final StockLedgerLockRepository      stockLedgerLockRepository;
     private final ReportCacheInvalidator        reportCacheInvalidator;
     private final PromotionRedemptionService    promotionRedemptionService;
     private final LoyaltyService                loyaltyService;
@@ -80,7 +81,7 @@ public class OrderReturnService {
     public OrderReturnResponse processReturn(String invoiceNo, CreateReturnRequest request) {
 
         // 1. Load & validate order
-        Order order = orderRepository.findByInvoiceNo(invoiceNo)
+        Order order = orderRepository.findByInvoiceNoForUpdate(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + invoiceNo));
 
         if (order.getStatus() == OrderStatus.CANCELED) {
@@ -92,6 +93,7 @@ public class OrderReturnService {
 
         // Build orderItemId -> OrderItem lookup map
         List<OrderItem> allOrderItems = orderItemRepository.findByOrderId(order.getId());
+        lockReturnScopes(allOrderItems, order.getBranchId());
         Map<Long, OrderItem> orderItemMap = allOrderItems.stream()
                 .collect(Collectors.toMap(OrderItem::getId, oi -> oi));
 
@@ -512,6 +514,20 @@ public class OrderReturnService {
     // apportion() works off the ratio, so a partial return still restores exactly its
     // share of each ingredient.
     // ---------------------------------------------------------------
+
+    private void lockReturnScopes(List<OrderItem> allOrderItems, Long branchId) {
+        Set<Long> itemIds = new TreeSet<>();
+        for (OrderItem orderItem : allOrderItems) {
+            itemIds.add(orderItem.getItemId());
+            for (OrderItemStockUsage usage
+                    : orderItemStockUsageRepository.findByOrderItemId(orderItem.getId())) {
+                itemIds.add(usage.getItemId());
+            }
+        }
+        itemIds.stream()
+                .filter(Objects::nonNull)
+                .forEach(itemId -> stockLedgerLockRepository.lock(branchId, itemId));
+    }
 
     private int alreadyRestoredQtyForItem(Long orderItemId) {
         return orderItemStockUsageRepository.sumRestoredQtyByOrderItemId(orderItemId);

@@ -30,6 +30,13 @@ public class ItemResponse {
     private BigDecimal sellingPrice;
     private BigDecimal availableQty;
     private Integer availableBaseQty;
+
+    /**
+     * True when the selected branch/item ledger contains at least one negative
+     * stock batch, even if other positive batches make the net total zero or
+     * positive. Purchase search uses this rather than availableQty {@code < 0}.
+     */
+    private boolean hasNegativeStock;
     private BigDecimal reorderLevel;
     private Integer reorderLevelBaseQty;
     private ItemType itemType;

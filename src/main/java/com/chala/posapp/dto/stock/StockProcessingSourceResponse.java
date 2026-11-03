@@ -22,5 +22,6 @@ public class StockProcessingSourceResponse {
     private MeasurementUnit defaultUnit;
     private BigDecimal availableQty;
     private Integer availableBaseQty;
+    private boolean hasNegativeStock;
     private List<StockBatchResponse> batches;
 }

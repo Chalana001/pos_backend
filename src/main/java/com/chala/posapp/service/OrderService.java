@@ -65,6 +65,7 @@ public class OrderService {
     private final CustomerRepository customerRepository;
     private final CashShiftRepository cashShiftRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final StockLedgerLockRepository stockLedgerLockRepository;
     private final BranchRepository branchRepository;
     private final BranchServiceItemRepository branchServiceItemRepository;
     private final RecipeIngredientRepository recipeIngredientRepository;
@@ -338,6 +339,7 @@ public class OrderService {
         Map<Long, StockBatch> batchesToUpdate = new LinkedHashMap<>();
         StockOverrideContext stockOverrideContext =
                 buildStockOverrideContext(request, user, offlineOrderMetadata != null);
+        prepareBranchItemLedgers(request.getItems(), branchId);
 
         // A promotion's minBillAmount is judged against the whole cart at list price, so the
         // subtotal has to exist before the first line is priced. The items are batch-loaded
@@ -787,7 +789,7 @@ public class OrderService {
     public OrderResponse cancelOrder(String invoiceNo, CancelOrderRequest request) {
         User user = securityUtils.getCurrentUser();
 
-        Order order = orderRepository.findByInvoiceNo(invoiceNo)
+        Order order = orderRepository.findByInvoiceNoForUpdate(invoiceNo)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
         if (order.getStatus() == OrderStatus.CANCELED) {
@@ -795,6 +797,14 @@ public class OrderService {
         }
 
         ensureBranchAccess(user, order.getBranchId());
+
+        if (orderReturnRepository.countByOriginalOrderId(order.getId()) > 0) {
+            throw new BadRequestException(
+                    "Cannot cancel a sale that has already been returned; process the remaining balance through a return");
+        }
+
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        lockSaleCancellationScopes(items, order.getBranchId());
 
         if (order.getOrderType() == OrderType.CREDIT && order.getCustomerId() != null) {
             Customer customer = customerRepository.findById(order.getCustomerId())
@@ -822,7 +832,6 @@ public class OrderService {
         promotionRedemptionService.reverseForOrder(order.getId(), order.getId());
         loyaltyService.reverseForOrder(order.getId(), user.getId());
 
-        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         for (OrderItem orderItem : items) {
             List<OrderItemStockUsage> usages = orderItemStockUsageRepository.findByOrderItemId(orderItem.getId());
             if (!usages.isEmpty()) {
@@ -1176,6 +1185,44 @@ public class OrderService {
         );
     }
 
+    /**
+     * Locks every branch/item ledger touched by this cart before stock availability
+     * is read or changed. The legacy stock row is the stable per-branch/item anchor:
+     * it exists independently of whether a negative batch currently exists, so two
+     * concurrent first-time overrides cannot both create a negative row.
+     *
+     * The rows are created before the transaction's first stock read and locked in
+     * item-id order to avoid checkout-to-checkout deadlocks on multi-item carts.
+     */
+    private void lockSaleCancellationScopes(List<OrderItem> items, Long branchId) {
+        Set<Long> itemIds = new TreeSet<>();
+        for (OrderItem item : items) {
+            itemIds.add(item.getItemId());
+            for (OrderItemStockUsage usage : orderItemStockUsageRepository.findByOrderItemId(item.getId())) {
+                itemIds.add(usage.getItemId());
+            }
+        }
+        itemIds.stream()
+                .filter(Objects::nonNull)
+                .forEach(itemId -> stockLedgerLockRepository.lock(branchId, itemId));
+    }
+
+    private void prepareBranchItemLedgers(List<OrderItemRequest> itemRequests, Long branchId) {
+        List<Long> itemIds = itemRequests.stream()
+                .map(OrderItemRequest::getItemId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .sorted()
+                .toList();
+        if (itemIds.isEmpty()) {
+            return;
+        }
+
+        for (Long itemId : itemIds) {
+            stockLedgerLockRepository.lock(branchId, itemId);
+        }
+    }
+
     private InventoryConsumptionResult consumeInventoryItem(
             Long branchId,
             Item saleItem,
@@ -1191,6 +1238,11 @@ public class OrderService {
         }
 
         if (explicitBatchId != null) {
+            // 0 and negative IDs can never name a row. Answer with a validation
+            // error before the lookup instead of a generic "batch not found".
+            if (explicitBatchId <= 0) {
+                throw new BadRequestException("Invalid batch ID: " + explicitBatchId);
+            }
             StockBatch batch = stockBatchRepository.findById(explicitBatchId)
                     .orElseThrow(() -> new ResourceNotFoundException("Batch not found ID: " + explicitBatchId));
 
@@ -1200,23 +1252,49 @@ public class OrderService {
             if (!batch.getBranch().getId().equals(branchId)) {
                 throw new BadRequestException("Batch does not belong to this branch");
             }
+            if (batch.getQuantity() == null || batch.getQuantity() <= 0) {
+                throw new BadRequestException("Selected batch has no available stock");
+            }
 
             int availableQty = positiveQuantity(batch);
-            if (availableQty < normalizedQty && !stockOverrideContext.allowed) {
+            int selectedUsedQty = Math.min(availableQty, normalizedQty);
+            int shortageQty = normalizedQty - selectedUsedQty;
+            if (shortageQty > 0 && !stockOverrideContext.allowed) {
                 throwStockShortage(saleItem, item, batch, normalizedQty, availableQty, stockOverrideContext);
             }
-            decrementBatch(batch, normalizedQty, stockOverrideContext.allowed);
-            batchesToUpdate.put(batch.getId(), batch);
 
-            double lineCost = QuantityConversionUtil.calculateActualAmount(item, batch.getCostPrice(), normalizedQty).doubleValue();
-            List<StockOverrideDraft> overrides = availableQty < normalizedQty
-                    ? List.of(buildOverrideDraft(saleItem, item, batch.getId(), normalizedQty, availableQty, stockOverrideContext))
-                    : List.of();
+            if (selectedUsedQty > 0) {
+                decrementBatch(batch, selectedUsedQty, false);
+                batchesToUpdate.put(batch.getId(), batch);
+            }
+
+            List<StockUsageDraft> usages = new ArrayList<>();
+            double lineCost = 0.0;
+            if (selectedUsedQty > 0) {
+                usages.add(new StockUsageDraft(item.getId(), batch.getId(), selectedUsedQty));
+                lineCost += QuantityConversionUtil.calculateActualAmount(
+                        item, batch.getCostPrice(), selectedUsedQty).doubleValue();
+            }
+
+            List<StockOverrideDraft> overrides = new ArrayList<>();
+            if (shortageQty > 0) {
+                StockBatch negativeBatch = resolveNegativeOverrideBatch(branchId, item);
+                decrementBatch(negativeBatch, shortageQty, true);
+                batchesToUpdate.put(negativeBatch.getId(), negativeBatch);
+                usages.add(new StockUsageDraft(item.getId(), negativeBatch.getId(), shortageQty));
+                lineCost += QuantityConversionUtil.calculateActualAmount(
+                        item, negativeBatch.getCostPrice(), shortageQty).doubleValue();
+                overrides.add(buildOverrideDraft(
+                        saleItem, item, negativeBatch.getId(), normalizedQty, availableQty, stockOverrideContext));
+            }
+
             return new InventoryConsumptionResult(
                     batch.getId(),
-                    batch.getCostPrice().doubleValue(),
+                    normalizedQty == 0 ? 0.0 : BigDecimal.valueOf(lineCost)
+                            .divide(BigDecimal.valueOf(normalizedQty), 6, RoundingMode.HALF_UP)
+                            .doubleValue(),
                     lineCost,
-                    List.of(new StockUsageDraft(item.getId(), batch.getId(), normalizedQty)),
+                    usages,
                     overrides
             );
         }
@@ -1261,7 +1339,7 @@ public class OrderService {
                 throwStockShortage(saleItem, item, lastUsedBatch, normalizedQty, availableBefore, stockOverrideContext);
             }
 
-            StockBatch overrideBatch = resolveOverrideBatch(branchId, item, lastUsedBatch);
+            StockBatch overrideBatch = resolveNegativeOverrideBatch(branchId, item);
             decrementBatch(overrideBatch, remainingQty, true);
             batchesToUpdate.put(overrideBatch.getId(), overrideBatch);
 
@@ -1340,19 +1418,29 @@ public class OrderService {
         return Math.max(0, batch.getQuantity());
     }
 
-    private StockBatch resolveOverrideBatch(Long branchId, Item item, StockBatch lastUsedBatch) {
-        if (lastUsedBatch != null) {
-            return lastUsedBatch;
-        }
-
-        List<StockBatch> allBatches = stockBatchRepository.findBatchesForBranchItem(branchId, item.getId());
-        if (!allBatches.isEmpty()) {
-            return allBatches.get(0);
+    /**
+     * Return the single canonical negative row for this branch/item, or create
+     * one. Existing rows are reused without changing their source, prices,
+     * metadata or original quantity. When legacy data already has several
+     * negative rows, the oldest by received_at then id is chosen; the others are
+     * neither zeroed nor rewritten here.
+     */
+    private StockBatch resolveNegativeOverrideBatch(Long branchId, Item item) {
+        List<StockBatch> negativeBatches = stockBatchRepository
+                .findNegativeBatchesForBranchItem(branchId, item.getId())
+                .stream()
+                .sorted(Comparator
+                        .comparing(StockBatch::getReceivedAt,
+                                Comparator.nullsFirst(Comparator.naturalOrder()))
+                        .thenComparing(StockBatch::getId))
+                .toList();
+        if (!negativeBatches.isEmpty()) {
+            return negativeBatches.get(0);
         }
 
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-        return stockBatchRepository.save(StockBatch.builder()
+        return stockBatchRepository.saveAndFlush(StockBatch.builder()
                 .branch(branch)
                 .item(item)
                 .quantity(0)
@@ -1360,7 +1448,8 @@ public class OrderService {
                 .costPrice(item.getCostPrice())
                 .sellingPrice(item.getSellingPrice())
                 .sourceType(StockBatchSourceType.OVERRIDE)
-                .batchCode("OVERRIDE-" + branchId + "-" + item.getId() + "-" + UUID.randomUUID().toString().substring(0, 8))
+                .batchCode("OVERRIDE-" + branchId + "-" + item.getId() + "-"
+                        + UUID.randomUUID().toString().substring(0, 8))
                 .build());
     }
 
@@ -1544,7 +1633,12 @@ public class OrderService {
                 throw new BadRequestException("Original batch does not match the stock usage item");
             }
 
-            batch.setQuantity(batch.getQuantity() + usage.getQuantity());
+            int restoreQty = Math.max(0, usage.getQuantity() - usage.getRestoredQuantity());
+            if (restoreQty <= 0) {
+                continue;
+            }
+            batch.setQuantity(batch.getQuantity() + restoreQty);
+            usage.setRestoredQuantity(usage.getQuantity());
             batchesToSave.put(batch.getId(), batch);
         }
 

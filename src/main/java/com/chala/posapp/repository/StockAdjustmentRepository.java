@@ -17,6 +17,10 @@ public interface StockAdjustmentRepository extends JpaRepository<StockAdjustment
 
     List<StockAdjustment> findByBranchIdAndItemIdOrderByCreatedAtDesc(Long branchId, Long itemId);
 
+    List<StockAdjustment> findByPurchaseIdOrderByIdAsc(Long purchaseId);
+
+    List<StockAdjustment> findByPurchaseIdAndReversedByAdjustmentIdIsNullOrderByIdAsc(Long purchaseId);
+
     @Query("""
             SELECT sa
             FROM StockAdjustment sa

@@ -58,6 +58,18 @@ public class StockAdjustment extends TenantEntity {
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "purchase_id")
+    private Long purchaseId;
+
+    @Column(name = "stock_batch_id")
+    private Long stockBatchId;
+
+    @Column(name = "reversal_of_adjustment_id")
+    private Long reversalOfAdjustmentId;
+
+    @Column(name = "reversed_by_adjustment_id")
+    private Long reversedByAdjustmentId;
+
     @PrePersist
     void onCreate() {
         createdAt = LocalDateTime.now();

@@ -26,6 +26,7 @@ import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
 import com.chala.posapp.repository.ItemRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.StockProcessingOutputLinkRepository;
 import com.chala.posapp.repository.StockProcessingOutputRepository;
 import com.chala.posapp.repository.StockProcessingRepository;
@@ -60,6 +61,7 @@ public class StockProcessingService {
     private final StockProcessingOutputRepository stockProcessingOutputRepository;
     private final StockProcessingOutputLinkRepository stockProcessingOutputLinkRepository;
     private final StockBatchRepository stockBatchRepository;
+    private final StockLedgerLockRepository stockLedgerLockRepository;
     private final ItemRepository itemRepository;
     private final BranchRepository branchRepository;
     private final SecurityUtils securityUtils;
@@ -78,13 +80,10 @@ public class StockProcessingService {
 
         return sources.stream()
                 .map(item -> {
-                    List<StockBatch> batches = allowedBranchId == null || allowedBranchId == 0L
-                            ? stockBatchRepository.findBatchesForScope(null, item.getId())
-                            : stockBatchRepository.findBatchesForScope(allowedBranchId, item.getId());
-                    int availableBaseQty = batches.stream()
-                            .filter(batch -> batch.getQuantity() != null && batch.getQuantity() > 0)
-                            .mapToInt(StockBatch::getQuantity)
-                            .sum();
+                    Long scopeBranchId = allowedBranchId == null || allowedBranchId == 0L ? null : allowedBranchId;
+                    List<StockBatch> batches = stockBatchRepository.findBatchesForScope(scopeBranchId, item.getId());
+                    int availableBaseQty = stockBatchRepository.getTotalQuantityByItemAndScope(
+                            scopeBranchId, item.getId());
                     return StockProcessingSourceResponse.builder()
                             .id(item.getId())
                             .barcode(item.getBarcode())
@@ -93,6 +92,8 @@ public class StockProcessingService {
                             .defaultUnit(item.getDefaultUnit())
                             .availableBaseQty(availableBaseQty)
                             .availableQty(QuantityConversionUtil.toDisplayQuantity(item, availableBaseQty))
+                            .hasNegativeStock(batches.stream()
+                                    .anyMatch(batch -> batch.getQuantity() != null && batch.getQuantity() < 0))
                             .batches(mapBatches(item, batches))
                             .build();
                 })
@@ -151,6 +152,17 @@ public class StockProcessingService {
         Item sourceItem = itemRepository.findById(request.getSourceItemId())
                 .orElseThrow(() -> new ResourceNotFoundException("Source item not found"));
         validateSourceItem(sourceItem);
+
+        List<Long> processingItemIds = new ArrayList<>();
+        processingItemIds.add(sourceItem.getId());
+        request.getOutputs().stream()
+                .map(CreateStockProcessingOutputRequest::getOutputItemId)
+                .filter(java.util.Objects::nonNull)
+                .forEach(processingItemIds::add);
+        processingItemIds.stream()
+                .distinct()
+                .sorted()
+                .forEach(itemId -> stockLedgerLockRepository.lock(branchId, itemId));
 
         StockBatch sourceBatch = stockBatchRepository.findById(request.getSourceBatchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Source batch not found"));
@@ -363,9 +375,15 @@ public class StockProcessingService {
             throw new BadRequestException("Stock processing already canceled");
         }
 
-        reportCacheInvalidator.stockChanged();
+        stockLedgerLockRepository.lock(processing.getBranch().getId(), processing.getSourceItem().getId());
 
         List<StockProcessingOutput> outputs = stockProcessingOutputRepository.findByProcessingIdOrderByIdAsc(processing.getId());
+        outputs.stream()
+                .filter(output -> !output.isWaste() && output.getCreatedBatchId() != null)
+                .map(output -> output.getOutputItem().getId())
+                .distinct()
+                .sorted()
+                .forEach(itemId -> stockLedgerLockRepository.lock(processing.getBranch().getId(), itemId));
         List<StockBatch> batchesToDelete = new ArrayList<>();
         for (StockProcessingOutput output : outputs) {
             if (output.isWaste() || output.getCreatedBatchId() == null) {
@@ -397,6 +415,7 @@ public class StockProcessingService {
         processing.setCanceledByUserId(user.getId());
         processing.setCanceledAt(LocalDateTime.now());
         StockProcessing saved = stockProcessingRepository.save(processing);
+        reportCacheInvalidator.stockChanged();
 
         return mapResponse(
                 saved,

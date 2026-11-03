@@ -24,6 +24,7 @@ import com.chala.posapp.repository.PurchaseRepository;
 import com.chala.posapp.repository.PurchaseReturnItemRepository;
 import com.chala.posapp.repository.PurchaseReturnRepository;
 import com.chala.posapp.repository.StockBatchRepository;
+import com.chala.posapp.repository.StockLedgerLockRepository;
 import com.chala.posapp.repository.SupplierRepository;
 import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.util.SecurityUtils;
@@ -89,7 +90,8 @@ class PurchaseReturnServiceTest {
                 purchaseRepository, grnRepository, grnItemRepository,
                 purchaseReturnRepository, purchaseReturnItemRepository,
                 securityUtils, supplierRepository, stockBatchRepository,
-                itemRepository, userRepository, reportCacheInvalidator);
+                itemRepository, userRepository, mock(StockLedgerLockRepository.class),
+                reportCacheInvalidator);
 
         supplier = new Supplier();
         supplier.setId(5L);

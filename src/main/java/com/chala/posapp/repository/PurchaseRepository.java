@@ -5,13 +5,19 @@ import com.chala.posapp.entity.PurchaseStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import jakarta.persistence.LockModeType;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Purchase p WHERE p.id = :id")
+    java.util.Optional<Purchase> findByIdForUpdate(@Param("id") Long id);
+
     boolean existsBySupplierId(Long supplierId);
 
     Page<Purchase> findAllByOrderByIdDesc(Pageable pageable);
