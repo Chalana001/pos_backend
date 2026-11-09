@@ -1,5 +1,7 @@
 package com.chala.posapp.repository;
 
+import com.chala.posapp.dto.item.IngredientItemData;
+import com.chala.posapp.dto.item.ProcessingOutputItemData;
 import com.chala.posapp.entity.Item;
 import com.chala.posapp.entity.ItemType;
 import org.springframework.data.domain.Page;
@@ -28,10 +30,50 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
 
     List<Item> findByNameContainingIgnoreCaseOrBarcodeContainingIgnoreCase(String name, String barcode);
 
+    /**
+     * Loads the complete tenant-global item candidate set used by the future POS catalogue.
+     * The legacy empty-name POS search uses the derived name/barcode LIKE query with no item
+     * type, active, POS visibility, or branch predicate; this method intentionally does the
+     * same at the repository boundary. The entity graph initializes only the category chain
+     * read by ItemService.mapToResponse, while @SQLRestriction on Item preserves soft-delete
+     * visibility without loading any stock, recipe, or processing collections.
+     */
+    @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
+    @Query("SELECT i FROM Item i")
+    List<Item> findAllPosCatalogueCandidates();
+
     @Query("SELECT i FROM Item i WHERE LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) " +
             "OR (i.altName IS NOT NULL AND LOWER(i.altName) LIKE LOWER(CONCAT('%', :search, '%'))) " +
             "OR LOWER(i.barcode) LIKE LOWER(CONCAT('%', :search, '%'))")
     List<Item> searchForPurchase(@Param("search") String search);
+
+    @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
+    @Query("""
+            SELECT i FROM Item i
+            LEFT JOIN i.subCategory sc
+            LEFT JOIN sc.category c
+            WHERE i.id > :cursor
+              AND c.id = :categoryId
+            ORDER BY i.id ASC
+            """)
+    List<Item> findPromotionCandidatesByCategoryAfterId(
+            @Param("categoryId") Long categoryId,
+            @Param("cursor") Long cursor,
+            org.springframework.data.domain.Pageable pageable);
+
+    @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
+    @Query("""
+            SELECT i FROM Item i
+            LEFT JOIN i.subCategory sc
+            LEFT JOIN sc.category c
+            WHERE i.id > :cursor
+              AND sc.id = :subCategoryId
+            ORDER BY i.id ASC
+            """)
+    List<Item> findPromotionCandidatesBySubCategoryAfterId(
+            @Param("subCategoryId") Long subCategoryId,
+            @Param("cursor") Long cursor,
+            org.springframework.data.domain.Pageable pageable);
 
     // PERF-08 FIX: FULLTEXT search for POS product lookup (search length >= 3).
     // Requires V11 migration: ALTER TABLE items ADD FULLTEXT INDEX ft_items_name_barcode (name, barcode, alt_name).
@@ -110,6 +152,51 @@ public interface ItemRepository extends JpaRepository<Item, Long> {
      */
     @EntityGraph(attributePaths = {"subCategory", "subCategory.category"})
     List<Item> findWithCategoryByIdIn(Collection<Long> ids);
+
+    /**
+     * The item fields recipe ingredient mapping and quantity conversion
+     * actually read — the bulk ingredient-item lookup of
+     * {@code RecipeIngredientReader}. One statement for any number of
+     * ingredient ids instead of one per ingredient.
+     *
+     * <p>Field set verified against source, not guessed:
+     * {@code mapIngredientResponse} reads id, barcode, name and defaultUnit;
+     * {@code QuantityConversionUtil.toDisplayQuantity} reads itemType and
+     * defaultUnit (its {@code (Item, Integer)} overload delegates verbatim
+     * to the {@code (ItemType, MeasurementUnit, Integer)} overload). No
+     * other Item field participates.
+     *
+     * <p>A JPQL query on Item, so {@code @SQLRestriction("deleted_at IS NULL")}
+     * applies exactly as it does to the legacy {@code findAllById} lookup:
+     * soft-deleted ingredient items are invisible here too and therefore read
+     * as missing, with the same downstream exception.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.item.IngredientItemData(i.id, i.barcode, i.name, i.itemType, i.defaultUnit)
+            FROM Item i
+            WHERE i.id IN (:ids)
+            """)
+    List<IngredientItemData> findIngredientDataByIdIn(@Param("ids") Collection<Long> ids);
+
+    /**
+     * Fields consumed by ItemService.mapProcessingOutputResponses: current
+     * output metadata, item conversion fields, and selling-price fallback.
+     * The Item @SQLRestriction hides soft-deleted output rows just as it does
+     * for the legacy findAllById lookup.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.item.ProcessingOutputItemData(
+                i.id,
+                i.barcode,
+                i.name,
+                i.itemType,
+                i.defaultUnit,
+                i.sellingPrice
+            )
+            FROM Item i
+            WHERE i.id IN (:ids)
+            """)
+    List<ProcessingOutputItemData> findProcessingOutputItemDataByIdIn(@Param("ids") Collection<Long> ids);
 
     /**
      * Item counts per sub-category, in one grouped query.

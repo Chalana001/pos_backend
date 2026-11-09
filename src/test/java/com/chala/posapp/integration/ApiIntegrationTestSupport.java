@@ -100,11 +100,19 @@ abstract class ApiIntegrationTestSupport {
                 "SELECT table_name FROM information_schema.tables "
                         + "WHERE table_schema = 'pos_db' AND table_name <> 'flyway_schema_history'",
                 String.class);
-        resetJdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=0");
-        for (String table : tables) {
-            resetJdbcTemplate.execute("TRUNCATE TABLE pos_db.`" + table + "`");
-        }
-        resetJdbcTemplate.execute("SET FOREIGN_KEY_CHECKS=1");
+        resetJdbcTemplate.execute((org.springframework.jdbc.core.ConnectionCallback<Void>) connection -> {
+            try (java.sql.Statement statement = connection.createStatement()) {
+                statement.execute("SET FOREIGN_KEY_CHECKS=0");
+                try {
+                    for (String table : tables) {
+                        statement.execute("TRUNCATE TABLE pos_db.`" + table + "`");
+                    }
+                } finally {
+                    statement.execute("SET FOREIGN_KEY_CHECKS=1");
+                }
+            }
+            return null;
+        });
     }
 
     protected final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -317,6 +325,10 @@ abstract class ApiIntegrationTestSupport {
 
     protected JsonNode getJson(String path, String tenantId, String token) throws Exception {
         return jsonRequest(HttpMethod.GET, path, tenantId, token, null, 200);
+    }
+
+    protected JsonNode getJsonExpectingStatus(String path, String tenantId, String token, int expectedStatus) throws Exception {
+        return jsonRequest(HttpMethod.GET, path, tenantId, token, null, expectedStatus);
     }
 
     protected JsonNode postJson(String path, String tenantId, String token, Object body) throws Exception {

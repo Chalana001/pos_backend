@@ -1,5 +1,7 @@
 package com.chala.posapp.repository;
 
+import com.chala.posapp.dto.stock.ItemStockAggregate;
+import com.chala.posapp.dto.stock.ItemStockBatch;
 import com.chala.posapp.dto.stock.LowStockResponse;
 import com.chala.posapp.dto.stock.StockResponseWithItems;
 import com.chala.posapp.entity.stock.StockBatch;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -87,6 +90,112 @@ public interface StockBatchRepository extends JpaRepository<StockBatch, Long> {
 
     @Query("SELECT COALESCE(SUM(sb.quantity), 0) FROM StockBatch sb WHERE (:branchId IS NULL OR sb.branch.id = :branchId) AND sb.item.id = :itemId")
     Integer getTotalQuantityByItemAndScope(@Param("branchId") Long branchId, @Param("itemId") Long itemId);
+
+    // ------------------------------------------------------------------
+    // Bulk stock aggregation. The predicates mirror the per-item methods
+    // above exactly: every stock_batches row is applicable (the legacy stock
+    // reads carry no deleted/cancelled/status/source-type filter, and the
+    // entity has no such columns), so the aggregate is a plain GROUP BY on
+    // item_id. The repository deliberately does not interpret branch
+    // semantics — the concrete-branch variant filters to one branch and the
+    // all-branch variant omits the branch predicate, which is the same row
+    // population the legacy (:branchId IS NULL OR …) scope returns when
+    // ItemService passes null for branchId = 0. Passing null as :branchId
+    // matches no rows; a null scope is the caller's "skip the stock block"
+    // case and must never become all-branch aggregation here.
+    //
+    // Empty itemIds is safe but not free: Hibernate renders the empty IN
+    // list as a query matching no rows (no invalid IN () SQL), so the call
+    // returns an empty list after one execution. The project convention for
+    // IN-list queries is a service-level empty guard (see
+    // PromotionGate.limitStates around PromotionRepository.limitStateRaw);
+    // later callers of these methods should guard the same way.
+    // ------------------------------------------------------------------
+
+    /**
+     * Net quantity, batch count and negative-batch count per item for one
+     * concrete branch. Items without batch rows produce no row at all — the
+     * caller reads the absence of a row as "never stocked" (net 0, count 0,
+     * flag false), the same answer the per-item methods give.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.stock.ItemStockAggregate(
+                sb.item.id,
+                SUM(sb.quantity),
+                COUNT(sb),
+                SUM(CASE WHEN sb.quantity < 0 THEN 1 ELSE 0 END))
+            FROM StockBatch sb
+            WHERE sb.branch.id = :branchId AND sb.item.id IN (:itemIds)
+            GROUP BY sb.item.id
+            """)
+    List<ItemStockAggregate> aggregateStockForBranch(@Param("itemIds") Collection<Long> itemIds, @Param("branchId") Long branchId);
+
+    /**
+     * The same aggregate across every branch — what {@code ItemService} calls
+     * the all-branch scope ({@code branchId = 0}). Grouped by item ID.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.stock.ItemStockAggregate(
+                sb.item.id,
+                SUM(sb.quantity),
+                COUNT(sb),
+                SUM(CASE WHEN sb.quantity < 0 THEN 1 ELSE 0 END))
+            FROM StockBatch sb
+            WHERE sb.item.id IN (:itemIds)
+            GROUP BY sb.item.id
+            """)
+    List<ItemStockAggregate> aggregateStockAcrossBranches(@Param("itemIds") Collection<Long> itemIds);
+
+    // ------------------------------------------------------------------
+    // Bulk positive-batch retrieval. The row population and the per-item
+    // order mirror findAvailableBatchesForScope exactly: quantity > 0 only
+    // (zero and negative rows excluded), PROCESSING-sourced batches first,
+    // then receivedAt ASC, then id ASC. The only addition is item_id as the
+    // leading ORDER BY key so one flat list can carry several items while
+    // each item's slice keeps the legacy order verbatim — the assembler
+    // groups by item id and must keep the returned order within each group.
+    //
+    // Like the aggregates above: a null :branchId matches no rows (the
+    // repository never promotes null to all-branch scope — ItemService skips
+    // the stock block for null and calls the all-branch variant for
+    // branchId = 0), and empty itemIds safely returns an empty list after
+    // one harmless query. Callers guard empty collections upstream per the
+    // project convention (PromotionGate.limitStates).
+    // ------------------------------------------------------------------
+
+    /**
+     * Positive batches of many items for one concrete branch, ordered per
+     * item exactly like {@link #findAvailableBatchesForScope}.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.stock.ItemStockBatch(
+                sb.item.id, sb.id, sb.sellingPrice, sb.quantity, sb.expireDate, sb.sourceType, sb.receivedAt)
+            FROM StockBatch sb
+            WHERE sb.branch.id = :branchId AND sb.item.id IN (:itemIds) AND sb.quantity > 0
+            ORDER BY sb.item.id ASC,
+                     CASE WHEN sb.sourceType = com.chala.posapp.entity.stock.StockBatchSourceType.PROCESSING THEN 0 ELSE 1 END,
+                     sb.receivedAt ASC,
+                     sb.id ASC
+            """)
+    List<ItemStockBatch> findAvailableBatchesForBranch(@Param("itemIds") Collection<Long> itemIds, @Param("branchId") Long branchId);
+
+    /**
+     * The same positive-batch rows across every branch — what
+     * {@code ItemService} calls the all-branch scope ({@code branchId = 0}).
+     * Ordering within each item matches
+     * {@link #findAvailableBatchesForScope} verbatim.
+     */
+    @Query("""
+            SELECT new com.chala.posapp.dto.stock.ItemStockBatch(
+                sb.item.id, sb.id, sb.sellingPrice, sb.quantity, sb.expireDate, sb.sourceType, sb.receivedAt)
+            FROM StockBatch sb
+            WHERE sb.item.id IN (:itemIds) AND sb.quantity > 0
+            ORDER BY sb.item.id ASC,
+                     CASE WHEN sb.sourceType = com.chala.posapp.entity.stock.StockBatchSourceType.PROCESSING THEN 0 ELSE 1 END,
+                     sb.receivedAt ASC,
+                     sb.id ASC
+            """)
+    List<ItemStockBatch> findAvailableBatchesAcrossBranches(@Param("itemIds") Collection<Long> itemIds);
 
     List<StockBatch> findAllByBranchId(Long branchId);
 

@@ -155,6 +155,39 @@ public class AppConfigurationService {
     }
 
     /**
+     * One-pass resolution of the configuration flags the item retrieval and
+     * mapping paths read per item today ({@code isItemTypeEnabled} /
+     * {@code isKotEnabled}). The branch → global → default fallback is the very
+     * same {@code getOrDefault}; the values are copied out as scalars so no
+     * JPA entity leaves this method and later snapshot reads hit no database.
+     */
+    public ItemRequestSnapshot.Configuration resolveConfigurationSnapshot(Long branchId) {
+        AppConfiguration configuration = getOrDefault(branchId);
+        return new ItemRequestSnapshot.Configuration(
+                configuration.isWeightItemsEnabled(),
+                configuration.isServicesEnabled(),
+                configuration.isRecipeItemsEnabled(),
+                configuration.isKotEnabled());
+    }
+
+    /**
+     * One-pass resolution of the tenant-plan values behind the item-type
+     * eligibility checks, through the existing master-database lookup
+     * ({@code currentPlanName}: same REQUIRES_NEW read-only transaction and
+     * MASTER context switch) and the same classification the
+     * {@code planSupports*} helpers apply. Resolving the plan once here avoids
+     * one master-database query per item.
+     */
+    public ItemRequestSnapshot.TenantPlan resolveTenantPlanSnapshot() {
+        String planName = currentPlanName();
+        return new ItemRequestSnapshot.TenantPlan(
+                planName,
+                planSupportsWeightItems(planName),
+                planSupportsServices(planName),
+                planSupportsRecipeItems(planName));
+    }
+
+    /**
      * The scale barcode layout in force for a branch: the branch's own row, or
      * the global default row when it has none, the same fallback every other
      * setting here uses. Disabled unless the plan and the branch both allow
@@ -502,17 +535,26 @@ public class AppConfigurationService {
     }
 
     private boolean planSupportsRecipeItems() {
-        String planName = currentPlanName();
+        return planSupportsRecipeItems(currentPlanName());
+    }
+
+    private boolean planSupportsRecipeItems(String planName) {
         return isLegacyOrUnknownPlan(planName) || isProPlan(planName);
     }
 
     private boolean planSupportsWeightItems() {
-        String planName = currentPlanName();
+        return planSupportsWeightItems(currentPlanName());
+    }
+
+    private boolean planSupportsWeightItems(String planName) {
         return isLegacyOrUnknownPlan(planName) || isStandardPlan(planName) || isProPlan(planName);
     }
 
     private boolean planSupportsServices() {
-        String planName = currentPlanName();
+        return planSupportsServices(currentPlanName());
+    }
+
+    private boolean planSupportsServices(String planName) {
         return isLegacyOrUnknownPlan(planName) || isStandardPlan(planName) || isProPlan(planName);
     }
 

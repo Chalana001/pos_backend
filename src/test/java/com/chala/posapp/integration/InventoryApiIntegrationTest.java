@@ -8,6 +8,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -21,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ActiveProfiles(profiles = {"tc"}, inheritProfiles = false)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Testcontainers(disabledWithoutDocker = true)
+@TestPropertySource(properties = {
+        "spring.jpa.properties.hibernate.session_factory.statement_inspector=com.chala.posapp.integration.SqlCaptureStatementInspector"
+})
 class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
 
     @Container
@@ -527,6 +531,104 @@ class InventoryApiIntegrationTest extends ApiIntegrationTestSupport {
                 adminToken
         );
         assertTrue(posSearchAfterDeactivate.isEmpty());
+    }
+
+    @Test
+    void promotionSearchUsesMysqlFulltextOnNameAndBarcodeAndCapsResultsAtFifty() throws Exception {
+        LegacyItemApiFixture.Dataset data = new LegacyItemApiFixture(this).seed("promotion-ft");
+        for (int index = 0; index < 55; index++) {
+            postJson("/items", data.tenantId(), data.adminToken(), """
+                    {
+                      "barcode": "%s",
+                      "name": "PromotionProbe %d",
+                      "subCategoryId": %d,
+                      "costPrice": 20,
+                      "sellingPrice": 30,
+                      "reorderLevel": 0
+                    }
+                    """.formatted(data.runTag() + "-PFT-" + index, index, data.subCategoryId()));
+        }
+        long altOnlyId = postJson("/items", data.tenantId(), data.adminToken(), """
+                {
+                  "barcode": "%s",
+                  "name": "Unrelated promotion item",
+                  "altName": "PromotionProbe alternate",
+                  "subCategoryId": %d,
+                  "costPrice": 20,
+                  "sellingPrice": 30,
+                  "reorderLevel": 0
+                }
+                """.formatted(data.runTag() + "-PFT-ALT", data.subCategoryId())).path("id").asLong();
+
+        // Promotion search preserves concrete-branch eligibility: ordinary items need branch stock history.
+        // Add stock by reading the newly-created candidates, avoiding assumptions about generated IDs.
+        itemRepository.findByNameContainingIgnoreCase("PromotionProbe").forEach(item ->
+                stockBatchRepository.save(com.chala.posapp.entity.stock.StockBatch.builder()
+                        .branch(branchRepository.findById(data.mainBranchId()).orElseThrow())
+                        .item(item)
+                        .quantity(10000)
+                        .originalQuantity(10000)
+                        .costPrice(new java.math.BigDecimal("20.00"))
+                        .sellingPrice(new java.math.BigDecimal("30.00"))
+                        .sourceType(com.chala.posapp.entity.stock.StockBatchSourceType.PURCHASE)
+                        .batchCode(data.runTag() + "-PFT-BATCH-" + item.getId())
+                        .build()));
+        stockBatchRepository.flush();
+
+        SqlCaptureStatementInspector.clear();
+        JsonNode results = getJson("/items/promotion-search?name=PromotionProbe&branchId=" + data.mainBranchId(),
+                data.tenantId(), data.adminToken());
+
+        assertEquals(50, results.path("items").size());
+        assertFalse(containsItem(results.path("items"), altOnlyId));
+        assertTrue(SqlCaptureStatementInspector.captured().stream()
+                .map(String::toLowerCase)
+                .anyMatch(sql -> sql.contains("match(i.name, i.barcode)") && sql.contains("limit 50")));
+    }
+
+    @Test
+    void purchaseSearchUsesMysqlFulltextOnNameAndBarcodeAndCapsResultsAtFifty() throws Exception {
+        LegacyItemApiFixture.Dataset data = new LegacyItemApiFixture(this).seed("purchase-ft");
+        for (int index = 0; index < 55; index++) {
+            postJson("/items", data.tenantId(), data.adminToken(), """
+                    {
+                      "barcode": "%s",
+                      "name": "PurchaseProbe %d",
+                      "subCategoryId": %d,
+                      "costPrice": 20,
+                      "sellingPrice": 30,
+                      "reorderLevel": 0
+                    }
+                    """.formatted(data.runTag() + "-FT-" + index, index, data.subCategoryId()));
+        }
+        long altOnlyId = postJson("/items", data.tenantId(), data.adminToken(), """
+                {
+                  "barcode": "%s",
+                  "name": "Unrelated FT item",
+                  "altName": "PurchaseProbe alternate",
+                  "subCategoryId": %d,
+                  "costPrice": 20,
+                  "sellingPrice": 30,
+                  "reorderLevel": 0
+                }
+                """.formatted(data.runTag() + "-FT-ALT", data.subCategoryId())).path("id").asLong();
+
+        SqlCaptureStatementInspector.clear();
+        JsonNode results = getJson("/items/purchase-search?name=PurchaseProbe&branchId=" + data.mainBranchId(),
+                data.tenantId(), data.adminToken());
+
+        assertEquals(50, results.size());
+        assertFalse(containsItem(results, altOnlyId));
+        assertTrue(SqlCaptureStatementInspector.captured().stream()
+                .map(String::toLowerCase)
+                .anyMatch(sql -> sql.contains("match(i.name, i.barcode)") && sql.contains("limit 50")));
+    }
+
+    private boolean containsItem(JsonNode rows, long itemId) {
+        for (JsonNode row : rows) {
+            if (row.path("id").asLong() == itemId) return true;
+        }
+        return false;
     }
 
     @Test

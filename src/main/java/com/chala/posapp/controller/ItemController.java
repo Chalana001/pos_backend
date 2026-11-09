@@ -5,9 +5,15 @@ import com.chala.posapp.dto.item.ItemDeleteCheckResponse;
 import com.chala.posapp.dto.item.ItemImportCommitRequest;
 import com.chala.posapp.dto.item.ItemImportResponse;
 import com.chala.posapp.dto.item.ItemResponse;
+import com.chala.posapp.dto.item.PurchaseItemSearchResponse;
+import com.chala.posapp.dto.item.PromotionItemSearchPage;
 import com.chala.posapp.dto.item.ItemUpdateRequest;
 import com.chala.posapp.service.ItemExcelImportService;
 import com.chala.posapp.service.ItemService;
+import com.chala.posapp.service.PosCatalogueAssembler;
+import com.chala.posapp.service.PurchaseSearchAssembler;
+import com.chala.posapp.service.PromotionItemSearchAssembler;
+import com.chala.posapp.util.SecurityUtils;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +37,10 @@ public class ItemController {
 
     private final ItemService itemService;
     private final ItemExcelImportService itemExcelImportService;
+    private final PosCatalogueAssembler posCatalogueAssembler;
+    private final PurchaseSearchAssembler purchaseSearchAssembler;
+    private final PromotionItemSearchAssembler promotionItemSearchAssembler;
+    private final SecurityUtils securityUtils;
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")
     @PostMapping
@@ -163,6 +173,34 @@ public class ItemController {
             @RequestParam(name = "branchId", required = false) Long branchId
     ) {
         return ResponseEntity.ok(itemService.searchForPurchase(name, branchId));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/purchase-search")
+    public ResponseEntity<List<PurchaseItemSearchResponse>> purchaseSearch(
+            @RequestParam(name = "name") String name,
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(purchaseSearchAssembler.search(name, branchId));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/promotion-search")
+    public ResponseEntity<PromotionItemSearchPage> promotionSearch(
+            @RequestParam(name = "name", required = false) String name,
+            @RequestParam(name = "branchId", required = false) Long branchId,
+            @RequestParam(name = "categoryId", required = false) Long categoryId,
+            @RequestParam(name = "subCategoryId", required = false) Long subCategoryId,
+            @RequestParam(name = "cursor", required = false) Long cursor,
+            @RequestParam(name = "pageSize", required = false) Integer pageSize) {
+        return ResponseEntity.ok(promotionItemSearchAssembler.search(
+                name, branchId, categoryId, subCategoryId, cursor, pageSize));
+    }
+
+    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @GetMapping("/pos/catalogue")
+    public ResponseEntity<List<ItemResponse>> getPosCatalogue(
+            @RequestParam(name = "branchId", required = false) Long branchId) {
+        return ResponseEntity.ok(posCatalogueAssembler.assemble(securityUtils.enforceBranchAccess(branchId)));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
