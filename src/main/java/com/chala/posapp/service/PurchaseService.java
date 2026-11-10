@@ -29,6 +29,7 @@ import com.chala.posapp.entity.stock.StockBatchSourceType;
 import com.chala.posapp.entity.supplier.Supplier;
 import com.chala.posapp.exception.AlreadyExistsException;
 import com.chala.posapp.exception.BadRequestException;
+import com.chala.posapp.exception.DuplicatePurchaseRowsException;
 import com.chala.posapp.exception.NotAssignedException;
 import com.chala.posapp.exception.ResourceNotFoundException;
 import com.chala.posapp.repository.BranchRepository;
@@ -207,6 +208,8 @@ public class PurchaseService {
     public PurchaseResponse createPurchase(CreatePurchaseRequest request, Long supersedesId) {
         User user = securityUtils.getCurrentUser();
         ensureCreateAccess(user, request.getBranches());
+        List<DuplicatePurchaseRowsException.Duplicate> duplicates = PurchaseDuplicateValidator.findDuplicates(request.getBranches());
+        if (!duplicates.isEmpty()) throw new DuplicatePurchaseRowsException(duplicates);
         BigDecimal requestedPaidAmount = normalizeMoney(request.getPaidAmount());
         if (requestedPaidAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new BadRequestException("Paid amount cannot be negative");
@@ -224,6 +227,15 @@ public class PurchaseService {
 
         String paymentMethod = normalizePaymentMethod(request.getPaymentMethod());
 
+        List<PreparedPurchaseLine> preparedLines = preparePurchaseLines(request);
+        BigDecimal grossTotal = preparedLines.stream()
+                .map(PreparedPurchaseLine::grossLineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (discountAmount.compareTo(grossTotal) > 0) {
+            throw new BadRequestException("Discount amount cannot exceed purchase total");
+        }
+        applyDiscountAllocation(preparedLines, grossTotal, discountAmount);
+
         Purchase purchase = Purchase.builder()
                 .supplier(supplier)
                 .invoiceNo(invoiceNo)
@@ -234,15 +246,6 @@ public class PurchaseService {
                 .status(PurchaseStatus.COMPLETED)
                 .build();
         Purchase savedPurchase = purchaseRepository.save(purchase);
-
-        List<PreparedPurchaseLine> preparedLines = preparePurchaseLines(request);
-        BigDecimal grossTotal = preparedLines.stream()
-                .map(PreparedPurchaseLine::grossLineTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (discountAmount.compareTo(grossTotal) > 0) {
-            throw new BadRequestException("Discount amount cannot exceed purchase total");
-        }
-        applyDiscountAllocation(preparedLines, grossTotal, discountAmount);
         Map<GrnItemRequest, PreparedPurchaseLine> preparedLineByRequest = preparedLines.stream()
                 .collect(Collectors.toMap(PreparedPurchaseLine::request, Function.identity()));
 
