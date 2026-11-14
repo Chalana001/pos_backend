@@ -7,6 +7,7 @@ import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
+import com.chala.posapp.rbac.shadow.ShadowRequestAttributes;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -51,6 +52,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "NO_TOKEN");
             filterChain.doFilter(request, response);
             return;
         }
@@ -63,6 +66,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             // Logged out on this device: the token is still well-formed and unexpired, so
             // only the deny-list can tell us it is finished.
             if (tokenDenyList.isRevoked(jwtService.extractTokenId(token))) {
+                request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+                request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "TOKEN_REVOKED");
                 handleException(response, "Session ended. Please login again.",
                         HttpServletResponse.SC_UNAUTHORIZED);
                 return;
@@ -72,11 +77,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 User account = userService.getByUsername(username);
 
                 if (!account.isEnabled()) {
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "USER_DISABLED");
                     handleException(response, "User disabled.", HttpServletResponse.SC_UNAUTHORIZED);
                     return;
                 }
 
                 if (isIssuedBeforeWatermark(token, account)) {
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "TOKEN_WATERMARK");
                     handleException(response, "Session ended. Please login again.",
                             HttpServletResponse.SC_UNAUTHORIZED);
                     return;
@@ -92,16 +101,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                         );
 
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                request.setAttribute(ShadowRequestAttributes.AUTHENTICATED_USER_ID, account.getId());
                 SecurityContextHolder.getContext().setAuthentication(authToken);
             }
 
             filterChain.doFilter(request, response);
 
         } catch (ExpiredJwtException e) {
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "TOKEN_EXPIRED");
             handleException(response, "Token has expired. Please login again.", HttpServletResponse.SC_UNAUTHORIZED);
         } catch (JwtException e) {
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "TOKEN_INVALID");
             handleException(response, "Invalid token.", HttpServletResponse.SC_UNAUTHORIZED);
         } catch (Exception e) {
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "AUTHENTICATION");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "AUTHENTICATION_FAILED");
             handleException(response, "Authentication failed.", HttpServletResponse.SC_UNAUTHORIZED);
         }
     }

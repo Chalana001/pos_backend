@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -89,6 +90,41 @@ public class TenantDatabaseRegistry {
                 .status(status)
                 .migratedAt(migratedAt)
                 .build();
+    }
+
+    public Optional<TenantDatabase> findByTenantId(String tenantId) {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT tenant_id, db_name, status, created_at, migrated_at
+                    FROM %s.tenant_databases
+                    WHERE tenant_id = ?
+                    """.formatted(qualifiedMasterSchema()),
+                    rs -> rs.next()
+                            ? Optional.of(TenantDatabase.builder()
+                            .tenantId(rs.getString("tenant_id"))
+                            .dbName(rs.getString("db_name"))
+                            .status(MigrationStatus.valueOf(rs.getString("status")))
+                            .createdAt(rs.getTimestamp("created_at") == null ? null :
+                                    rs.getTimestamp("created_at").toLocalDateTime())
+                            .migratedAt(rs.getTimestamp("migrated_at") == null ? null :
+                                    rs.getTimestamp("migrated_at").toLocalDateTime())
+                            .build())
+                            : Optional.empty(), tenantId);
+        } catch (DataAccessException ex) {
+            throw new IllegalStateException("Could not read tenant database registry", ex);
+        }
+    }
+
+    public void promoteCopiedToMigrated(String tenantId, String expectedDbName) {
+        int updated = jdbcTemplate.update("""
+                UPDATE %s.tenant_databases
+                SET status = 'MIGRATED', migrated_at = CURRENT_TIMESTAMP(6)
+                WHERE tenant_id = ? AND db_name = ? AND status = 'COPIED'
+                """.formatted(qualifiedMasterSchema()), tenantId, expectedDbName);
+        if (updated != 1) {
+            throw new IllegalStateException("Tenant is not COPIED or database mapping changed: " + tenantId);
+        }
+        cache.put(tenantId, expectedDbName);
     }
 
     public void evict(String tenantId) {

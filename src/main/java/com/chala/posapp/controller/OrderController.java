@@ -2,6 +2,7 @@ package com.chala.posapp.controller;
 
 import com.chala.posapp.dto.order.CancelOrderRequest;
 import com.chala.posapp.dto.order.CreateOrderRequest;
+import com.chala.posapp.rbac.enforcement.DynamicPermission;
 import com.chala.posapp.dto.order.LegacySalesImportCommitResponse;
 import com.chala.posapp.dto.order.LegacySalesImportPreviewResponse;
 import com.chala.posapp.dto.order.OfflineSaleImportRequest;
@@ -34,7 +35,7 @@ public class OrderController {
     private final InvoicePdfService invoicePdfService;
     private final LegacySalesImportService legacySalesImportService;
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @DynamicPermission(permissionKey = "orders.create", legacyRoles = {"ADMIN", "MANAGER", "CASHIER"})
     @PostMapping
     public ResponseEntity<OrderResponse> create(@Valid @RequestBody CreateOrderRequest request) {
         return ResponseEntity.ok(orderService.createOrder(request));
@@ -86,7 +87,7 @@ public class OrderController {
         return ResponseEntity.ok(Map.of("updatedOrders", updated));
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @DynamicPermission(permissionKey = "orders.view", legacyRoles = {"ADMIN", "MANAGER", "CASHIER"})
     @GetMapping("/{invoiceNo}")
     public ResponseEntity<OrderResponse> get(@PathVariable("invoiceNo") String invoiceNo) {
         return ResponseEntity.ok(orderService.getOrder(invoiceNo));
@@ -111,7 +112,7 @@ public class OrderController {
                 .body(pdfBytes);
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN','MANAGER','CASHIER')")
+    @DynamicPermission(permissionKey = "orders.cancel", legacyRoles = {"ADMIN", "MANAGER", "CASHIER"})
     @PostMapping("/{invoiceNo}/cancel")
     public ResponseEntity<OrderResponse> cancel(
             @PathVariable("invoiceNo") String invoiceNo,

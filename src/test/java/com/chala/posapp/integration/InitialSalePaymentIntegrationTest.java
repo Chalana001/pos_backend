@@ -212,6 +212,40 @@ class InitialSalePaymentIntegrationTest extends ApiIntegrationTestSupport {
     }
 
     @Test
+    void cashierCanCancelEligibleCashSaleAndPersistsCanceledState() throws Exception {
+        JsonNode order = sale("CASH", ",\n                \"tenderedAmount\": 100");
+
+        JsonNode canceled = postJson(
+                "/orders/" + order.path("invoiceNo").asText() + "/cancel",
+                tenantId,
+                cashierToken,
+                "{\"reason\":\"Customer cancelled\"}");
+
+        assertEquals("CANCELED", canceled.path("status").asText());
+        assertEquals("CANCELED", orderRepository.findById(order.path("id").asLong()).orElseThrow().getStatus().name());
+    }
+
+    @Test
+    void managerAndAdminCanCancelEligibleCashSales() throws Exception {
+        String managerToken = login(tenantId, fixture.manager().getUsername(), DEFAULT_PASSWORD);
+        String managerOrder = sale("CASH", ",\n                \"tenderedAmount\": 100,\n                \"note\": \"Manager cancellation fixture\"").path("invoiceNo").asText();
+        JsonNode managerCanceled = postJson(
+                "/orders/" + managerOrder + "/cancel",
+                tenantId,
+                managerToken,
+                "{\"reason\":\"Manager cancellation\"}");
+        assertEquals("CANCELED", managerCanceled.path("status").asText());
+
+        String adminOrder = sale("CASH", ",\n                \"tenderedAmount\": 100,\n                \"note\": \"Admin cancellation fixture\"").path("invoiceNo").asText();
+        JsonNode adminCanceled = postJson(
+                "/orders/" + adminOrder + "/cancel",
+                tenantId,
+                adminToken,
+                "{\"reason\":\"Admin cancellation\"}");
+        assertEquals("CANCELED", adminCanceled.path("status").asText());
+    }
+
+    @Test
     void partialCashBecomesCreditWithoutCreditPaymentLedgerRow() throws Exception {
         JsonNode order = sale("CASH", """
                 ,

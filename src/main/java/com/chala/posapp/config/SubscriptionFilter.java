@@ -7,6 +7,7 @@ import com.chala.posapp.module.ModuleRouteResolver;
 import com.chala.posapp.repository.TenantSubscriptionRepository;
 import com.chala.posapp.service.ModuleAccessService;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.rbac.shadow.ShadowRequestAttributes;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -77,6 +78,8 @@ public class SubscriptionFilter extends OncePerRequestFilter {
         if (subscriptionOpt.isPresent() && subscriptionOpt.get().isMaintenanceMode()) {
             String maintenanceMessage = subscriptionOpt.get().getMaintenanceMessage();
             log.info("Maintenance mode active for tenant: {}", tenantId);
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "MODULE_OR_SUBSCRIPTION_CONSTRAINT");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "MAINTENANCE_MODE");
             writeJson(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "MAINTENANCE_MODE",
                     maintenanceMessage == null || maintenanceMessage.isBlank()
                             ? "This shop is temporarily unavailable while we carry out maintenance."
@@ -94,6 +97,8 @@ public class SubscriptionFilter extends OncePerRequestFilter {
                 || subscriptionOpt.get().getAccessEndsAt().isBefore(LocalDateTime.now())) {
 
             log.warn("Subscription blocked for tenant: {}", tenantId);
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "MODULE_OR_SUBSCRIPTION_CONSTRAINT");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "SUBSCRIPTION_INACTIVE");
             writeJson(response, HttpServletResponse.SC_PAYMENT_REQUIRED,
                     "SUBSCRIPTION_INACTIVE",
                     "Subscription expired or inactive. Please contact support or renew your plan.",
@@ -123,6 +128,8 @@ public class SubscriptionFilter extends OncePerRequestFilter {
             String label = definition != null ? definition.name() : moduleKey;
 
             log.warn("Module disabled. tenant={}, module={}, path={} {}", tenantId, moduleKey, method, path);
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "MODULE_OR_SUBSCRIPTION_CONSTRAINT");
+            request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "MODULE_DISABLED");
             writeJson(response, HttpServletResponse.SC_FORBIDDEN,
                     "MODULE_DISABLED",
                     label + " is not included in your package. Please contact support to enable it.",

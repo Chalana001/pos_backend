@@ -37,6 +37,11 @@ public class SuperAdminSaasController {
         return ResponseEntity.ok(superAdminSaasService.onboardShop(request));
     }
 
+    @PostMapping("/shops/{tenantId}/cutover")
+    public ResponseEntity<String> cutoverCopiedTenant(@PathVariable String tenantId) {
+        return ResponseEntity.ok(superAdminSaasService.promoteCopiedTenant(tenantId));
+    }
+
     @PatchMapping("/shops/{tenantId}/block")
     public ResponseEntity<ShopSummaryResponse> blockOrUnblock(
             @PathVariable String tenantId,

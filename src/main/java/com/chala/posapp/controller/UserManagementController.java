@@ -6,6 +6,8 @@ import com.chala.posapp.dto.user.ResetPasswordRequest;
 import com.chala.posapp.dto.user.UpdateUserStatusRequest;
 import com.chala.posapp.dto.user.UserResponse;
 import com.chala.posapp.service.UserManagementService;
+import com.chala.posapp.rbac.RbacAuthorizationService;
+import com.chala.posapp.util.SecurityUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,16 +22,20 @@ import java.util.List;
 public class UserManagementController {
 
     private final UserManagementService userManagementService;
+    private final RbacAuthorizationService rbacAuthorizationService;
+    private final SecurityUtils securityUtils;
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @PostMapping
     public ResponseEntity<UserResponse> create(@Valid @RequestBody CreateUserRequest request) {
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.createUser(request));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @GetMapping
     public ResponseEntity<List<UserResponse>> list() {
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.listUsers());
     }
 
@@ -41,34 +47,42 @@ public class UserManagementController {
         return ResponseEntity.ok(userManagementService.getSalesFilterUsers(branchId));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> get(@PathVariable("id") Long id) { // Noma danna
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.getUser(id));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/{userId}/assign-branch")
     public ResponseEntity<?> assignBranch(
             @PathVariable("userId") Long userId, // Noma danna
             @Valid @RequestBody AssignBranchRequest request) {
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.assignBranch(userId, request));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/{userId}/status")
     public ResponseEntity<?> updateStatus(
             @PathVariable("userId") Long userId, // Noma danna
             @Valid @RequestBody UpdateUserStatusRequest request) {
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.updateUserStatus(userId, request));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     @PutMapping("/{userId}/reset-password")
     public ResponseEntity<?> resetPassword(
             @PathVariable("userId") Long userId, // Noma danna
             @Valid @RequestBody ResetPasswordRequest request) {
+        requireOperationalManager();
         return ResponseEntity.ok(userManagementService.resetPassword(userId, request));
+    }
+
+    private void requireOperationalManager() {
+        rbacAuthorizationService.requireOperationalRoleManager(securityUtils.getCurrentUser());
     }
 
     @PreAuthorize("hasAnyRole('ADMIN','MANAGER')")

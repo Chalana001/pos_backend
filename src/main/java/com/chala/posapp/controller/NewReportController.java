@@ -4,6 +4,7 @@ import com.chala.posapp.dto.PageResponse;
 import com.chala.posapp.dto.report.*;
 import com.chala.posapp.service.NewReportService;
 import com.chala.posapp.service.ForecastAccuracyService;
+import com.chala.posapp.rbac.enforcement.DynamicPermission;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -77,7 +78,7 @@ public class NewReportController {
 
     // RPT-04: GRN / Purchase Report
     @GetMapping("/profit-loss")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN','MANAGER')")
+    @DynamicPermission(permissionKey = "reports.profit_loss.view", legacyRoles = {"ADMIN", "SUPER_ADMIN", "MANAGER"}, legacySuperAdmin = true)
     public ResponseEntity<ProfitAndLossResponse> profitAndLoss(
             @RequestParam(required = false) Long branchId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,

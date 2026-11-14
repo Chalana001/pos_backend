@@ -113,6 +113,7 @@ public class AppConfigurationService {
             case ADMIN -> configuration.isAdminStockOverrideAllowed();
             case MANAGER -> configuration.isManagerStockOverrideAllowed();
             case CASHIER -> configuration.isCashierStockOverrideAllowed();
+            case CUSTOM -> false;
             case SUPER_ADMIN -> true;
         };
     }
@@ -134,6 +135,7 @@ public class AppConfigurationService {
             case ADMIN -> configuration.isAdminWarrantyAllowed();
             case MANAGER -> configuration.isManagerWarrantyAllowed();
             case CASHIER -> configuration.isCashierWarrantyAllowed();
+            case CUSTOM -> false;
             case SUPER_ADMIN -> true;
         };
     }

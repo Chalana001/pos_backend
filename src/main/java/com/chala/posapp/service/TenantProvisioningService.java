@@ -1,6 +1,9 @@
 package com.chala.posapp.service;
 
+import com.chala.posapp.entity.TenantDatabase;
 import com.chala.posapp.entity.TenantDatabase.MigrationStatus;
+import com.chala.posapp.exception.ConflictException;
+import com.chala.posapp.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
@@ -20,6 +23,8 @@ public class TenantProvisioningService {
     private final DataSource dataSource;
     private final JdbcTemplate jdbcTemplate;
     private final TenantDatabaseRegistry registry;
+    private final TenantRbacMigrationService rbacMigrationService;
+    private final TenantRbacBaselineService rbacBaselineService;
 
     @Value("${app.tenant.provisioning.enabled:false}")
     private boolean provisioningEnabled;
@@ -33,6 +38,9 @@ public class TenantProvisioningService {
         registry.register(tenantId, dbName, MigrationStatus.PENDING);
         try {
             provisionSchema(dbName);
+            rbacMigrationService.migrateAndVerify(dbName);
+            rbacMigrationService.requireReady(dbName);
+            rbacBaselineService.seedAndBackfill(dbName);
             registry.register(tenantId, dbName, MigrationStatus.MIGRATED);
             log.info("Provisioned tenant database. tenantId={}, dbName={}", tenantId, dbName);
             return dbName;
@@ -40,6 +48,23 @@ public class TenantProvisioningService {
             registry.register(tenantId, dbName, MigrationStatus.FAILED);
             throw ex;
         }
+    }
+
+    public String promoteCopiedToMigrated(String tenantId) {
+        TenantDatabase copied = registry.findByTenantId(tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tenant not found: " + tenantId));
+        if (copied.getStatus() != MigrationStatus.COPIED) {
+            throw new ConflictException("Tenant must be COPIED before cutover: " + tenantId);
+        }
+        try {
+            rbacMigrationService.migrateAndVerify(copied.getDbName());
+            rbacMigrationService.requireReady(copied.getDbName());
+            rbacBaselineService.seedAndBackfill(copied.getDbName());
+        } catch (TenantRbacMigrationService.RbacMigrationException | TenantRbacBaselineService.BaselineException ex) {
+            throw new ConflictException("Tenant RBAC baseline is not ready for cutover: " + tenantId);
+        }
+        registry.promoteCopiedToMigrated(tenantId, copied.getDbName());
+        return copied.getDbName();
     }
 
     public void provisionSchema(String dbName) {

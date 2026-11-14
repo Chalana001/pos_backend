@@ -18,6 +18,8 @@ import com.chala.posapp.repository.UserRepository;
 import com.chala.posapp.tenant.TenantContext;
 import com.chala.posapp.audit.Audited;
 import com.chala.posapp.util.SecurityUtils;
+import com.chala.posapp.rbac.TenantAdminFloorService;
+import com.chala.posapp.rbac.TenantRbacJdbcService;
 import org.jspecify.annotations.Nullable;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,7 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,6 +45,8 @@ public class UserManagementService {
     private final TenantSubscriptionRepository tenantSubscriptionRepository;
     private final PlatformTransactionManager transactionManager;
     private final SecurityUtils securityUtils;
+    private final TenantAdminFloorService adminFloorService;
+    private final TenantRbacJdbcService tenantRbacJdbcService;
 
     // BUG-07/08 FIX: Removed duplicate securityUtils.getCurrentUser(). Use SecurityUtils instead
 
@@ -56,6 +60,9 @@ public class UserManagementService {
             throw new AlreadyExistsException("Username already exists");
 
         Role role = request.getRole();
+        if (role == Role.CUSTOM || role == Role.SUPER_ADMIN) {
+            throw new BadRequestException("Tenant user creation cannot create platform or custom roles");
+        }
         validateUserLimit(role);
 
         if ((role == Role.MANAGER || role == Role.CASHIER) && request.getBranchId() == null)
@@ -72,14 +79,29 @@ public class UserManagementService {
             branchId = branch.getId();
         }
 
+        String passwordHash = passwordEncoder.encode(request.getPassword());
+        if (tenantRbacJdbcService.readyForCurrentTenant()) {
+            TenantRbacJdbcService.TenantUserCreateResult created = tenantRbacJdbcService.createReadyTenantUser(
+                    username, passwordHash, role.name(), true, branchId);
+            return UserResponse.builder()
+                    .id(created.userId())
+                    .username(username)
+                    .role(role)
+                    .enabled(true)
+                    .branchId(branchId)
+                    .roleId(created.roleId())
+                    .rbacVersion(created.rbacVersion())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+        }
+
         User user = User.builder()
                 .username(username)
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .passwordHash(passwordHash)
                 .role(role)
                 .enabled(true)
                 .branchId(branchId)
                 .build();
-
         return map(userRepository.save(user));
     }
 
@@ -116,14 +138,16 @@ public class UserManagementService {
     @Transactional
     public String updateUserStatus(Long userId, UpdateUserStatusRequest request) {
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        if (userId == 1L || user.getRole() == Role.ADMIN) {
-            throw new BadRequestException("Admin user cannot be disabled");
+        if (tenantRbacJdbcService.readyForCurrentTenant()) {
+            adminFloorService.withAdminFloorLock(jdbc -> {
+                adminFloorService.requireAdminFloorAfterStatusChange(jdbc, userId, request.getEnabled());
+                int updated = jdbc.update("UPDATE users SET enabled = ? WHERE id = ?", request.getEnabled(), userId);
+                if (updated != 1) throw new ResourceNotFoundException("User not found");
+                return null;
+            });
+        } else {
+            tenantRbacJdbcService.updateLegacyUserStatus(userId, request.getEnabled());
         }
-
-        user.setEnabled(request.getEnabled());
         return "User status updated";
     }
 
@@ -143,12 +167,22 @@ public class UserManagementService {
     }
 
     private UserResponse map(User u) {
+        Long roleId = u.getRoleId();
+        Long rbacVersion = u.getRbacVersion();
+        if (tenantRbacJdbcService.readyForCurrentTenant()) {
+            Map<String, Object> state = tenantRbacJdbcService.withTenantJdbc(jdbc -> jdbc.queryForMap(
+                    "SELECT role_id, COALESCE(rbac_version, 0) AS rbac_version FROM users WHERE id = ?", u.getId()));
+            roleId = ((Number) state.get("role_id")).longValue();
+            rbacVersion = ((Number) state.get("rbac_version")).longValue();
+        }
         return UserResponse.builder()
                 .id(u.getId())
                 .username(u.getUsername())
                 .role(u.getRole())
                 .enabled(u.isEnabled())
                 .branchId(u.getBranchId())
+                .roleId(roleId)
+                .rbacVersion(rbacVersion)
                 .createdAt(u.getCreatedAt())
                 .build();
     }

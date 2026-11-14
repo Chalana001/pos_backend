@@ -3,8 +3,12 @@ package com.chala.posapp.integration;
 import com.chala.posapp.entity.BillingCycle;
 import com.chala.posapp.entity.Role;
 import com.chala.posapp.entity.SubscriptionPlan;
+import com.chala.posapp.tenant.TenantContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpMethod;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -43,6 +47,92 @@ class SaasApiIntegrationTest extends ApiIntegrationTestSupport {
         // need server-wide rights the per-database app user does not have.
         registry.add("spring.datasource.username", () -> "root");
         registry.add("spring.datasource.password", mysql::getPassword);
+    }
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Test
+    void nonSuperAdminReceivesForbiddenFromCutoverEndpoint() throws Exception {
+        String tenantId = "cutover-security-" + System.nanoTime();
+        TenantFixture fixture = seedTenantShop(tenantId, 1);
+        String managerToken = login(tenantId, fixture.manager().getUsername(), DEFAULT_PASSWORD);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                        "/api/saas/admin/shops/" + tenantId + "/cutover")
+                        .header("X-Tenant-ID", tenantId)
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
+    }
+
+    @Test
+    void cutoverReturnsExpectedHttpStatusesThroughRealSecurityChain() throws Exception {
+        String superAdminToken = loginViaApiAlias("MASTER", "super-admin", "super-admin");
+
+        assertCutoverStatus("bad tenant", superAdminToken, 400);
+        assertCutoverStatus("legacy", superAdminToken, 400);
+        assertCutoverStatus("missing-cutover-" + System.nanoTime(), superAdminToken, 404);
+
+        String tenantId = "cutover-status-" + System.nanoTime();
+        TenantFixture fixture = seedTenantShop(tenantId, 1);
+        String dbName = "pos_" + tenantId;
+        TenantContext.callWith(com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT, () -> {
+            jdbcTemplate.update("""
+                    INSERT INTO pos_master.tenant_databases
+                        (tenant_id, db_name, status, created_at)
+                    VALUES (?, ?, 'MIGRATED', CURRENT_TIMESTAMP(6))
+                    ON DUPLICATE KEY UPDATE status = 'MIGRATED', db_name = VALUES(db_name)
+                    """, tenantId, dbName);
+            return null;
+        });
+        assertCutoverStatus(tenantId, superAdminToken, 409);
+
+        String pendingTenantId = "cutover-pending-" + System.nanoTime();
+        String failedTenantId = "cutover-failed-" + System.nanoTime();
+        TenantContext.callWith(com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT, () -> {
+            jdbcTemplate.update("""
+                    INSERT INTO pos_master.tenant_databases
+                        (tenant_id, db_name, status, created_at)
+                    VALUES (?, ?, 'PENDING', CURRENT_TIMESTAMP(6))
+                    """, pendingTenantId, "pos_" + pendingTenantId);
+            jdbcTemplate.update("""
+                    INSERT INTO pos_master.tenant_databases
+                        (tenant_id, db_name, status, created_at)
+                    VALUES (?, ?, 'FAILED', CURRENT_TIMESTAMP(6))
+                    """, failedTenantId, "pos_" + failedTenantId);
+            return null;
+        });
+        assertCutoverStatus(pendingTenantId, superAdminToken, 409);
+        assertCutoverStatus(failedTenantId, superAdminToken, 409);
+
+        String failedRbacTenantId = "cutover-rbac-failure-" + System.nanoTime();
+        TenantContext.callWith(com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT, () -> {
+            jdbcTemplate.update("""
+                    INSERT INTO pos_master.tenant_databases
+                        (tenant_id, db_name, status, created_at)
+                    VALUES (?, 'pos_db', 'COPIED', CURRENT_TIMESTAMP(6))
+                    """, failedRbacTenantId);
+            return null;
+        });
+        assertCutoverStatus(failedRbacTenantId, superAdminToken, 409);
+        String status = TenantContext.callWith(
+                com.chala.posapp.tenant.CurrentTenantResolver.MASTER_TENANT,
+                () -> jdbcTemplate.queryForObject(
+                        "SELECT status FROM pos_master.tenant_databases WHERE tenant_id = ?",
+                        String.class, failedRbacTenantId));
+        assertEquals("COPIED", status);
+
+        assertTrue(fixture.admin().getRole() == Role.ADMIN);
+    }
+
+    private void assertCutoverStatus(String tenantId, String token, int expectedStatus) throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                        "/api/saas/admin/shops/" + tenantId + "/cutover")
+                        .header("X-Tenant-ID", "MASTER")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().is(expectedStatus));
     }
 
     @Test

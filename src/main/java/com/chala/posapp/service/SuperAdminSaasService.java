@@ -50,6 +50,7 @@ public class SuperAdminSaasService {
     private final SuperAdminModuleService moduleService;
     private final ModuleAccessService moduleAccessService;
     private final TenantModuleRepository tenantModuleRepository;
+    private final TenantOwnershipService tenantOwnershipService;
     private final DiscountService discountService;
     private final SubscriptionInvoiceService invoiceService;
 
@@ -257,7 +258,8 @@ public class SuperAdminSaasService {
                     .enabled(true)
                     .branchId(null)
                     .build();
-            userRepository.save(adminUser);
+            userRepository.saveAndFlush(adminUser);
+            tenantOwnershipService.resolveForInitialOnboarding(adminUsername, adminUser.getId());
             return null;
         });
 
@@ -298,6 +300,13 @@ public class SuperAdminSaasService {
         } catch (IllegalArgumentException exception) {
             throw new BadRequestException("Business type must be RETAIL, RESTAURANT or HYBRID");
         }
+    }
+
+    @Transactional
+    public String promoteCopiedTenant(String tenantId) {
+        ensureSuperAdmin();
+        String normalizedTenantId = normalizeCutoverTenantId(tenantId);
+        return tenantProvisioningService.promoteCopiedToMigrated(normalizedTenantId);
     }
 
     @Transactional
@@ -654,6 +663,17 @@ public class SuperAdminSaasService {
             case YEARLY -> from.plusYears(cycles);
             case MONTHLY -> from.plusMonths(cycles);
         };
+    }
+
+    private String normalizeCutoverTenantId(String rawTenantId) {
+        String tenantId = rawTenantId == null ? "" : rawTenantId.trim().toLowerCase(Locale.ROOT);
+        if (!tenantId.matches("[a-z0-9]+(?:-[a-z0-9]+)*")) {
+            throw new BadRequestException("Tenant ID contains invalid characters");
+        }
+        if ("legacy".equals(tenantId) || "master".equals(tenantId)) {
+            throw new BadRequestException("Tenant ID cannot be a reserved tenant");
+        }
+        return tenantId;
     }
 
     private String normalizeTenantId(String rawTenantId) {

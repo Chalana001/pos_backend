@@ -15,5 +15,7 @@ public class UserResponse {
     private Role role;
     private boolean enabled;
     private Long branchId;
+    private Long roleId;
+    private Long rbacVersion;
     private LocalDateTime createdAt;
 }

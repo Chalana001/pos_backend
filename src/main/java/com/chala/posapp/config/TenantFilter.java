@@ -2,6 +2,7 @@ package com.chala.posapp.config;
 
 import com.chala.posapp.security.JwtService;
 import com.chala.posapp.tenant.TenantContext;
+import com.chala.posapp.rbac.shadow.ShadowRequestAttributes;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,6 +49,8 @@ public class TenantFilter extends OncePerRequestFilter {
             }
             else {
                 if (tenantFromRequest != null && !tenantFromToken.equals(tenantFromRequest)) {
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_CLASS, "TENANT_BOUNDARY");
+                    request.setAttribute(ShadowRequestAttributes.OUTCOME_REASON, "TENANT_MISMATCH");
                     response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant mismatch! You cannot access this shop.");
                     return;
                 }

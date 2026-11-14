@@ -3,6 +3,8 @@ package com.chala.posapp.repository;
 import com.chala.posapp.entity.User;
 import com.chala.posapp.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,6 +16,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByUsername(String username);
     List<User> findAllByBranchId(Long branchId);
     long countByRoleAndEnabledTrue(Role role);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> findByIdForUpdate(@Param("id") Long id);
 
     @Query(value = "SELECT * FROM users WHERE role = 'ADMIN' ORDER BY id ASC LIMIT 1", nativeQuery = true)
     Optional<User> findFirstAdminNative();

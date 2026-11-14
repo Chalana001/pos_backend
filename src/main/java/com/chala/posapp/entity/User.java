@@ -29,6 +29,14 @@ public class User extends TenantEntity {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    /** Future RBAC role association; tenant JDBC baseline owns persistence in Phase 3. */
+    @Transient
+    private Long roleId;
+
+    /** Future RBAC optimistic version; tenant JDBC baseline owns persistence in Phase 3. */
+    @Transient
+    private Long rbacVersion;
+
     @Column(nullable = false)
     private boolean enabled;
 

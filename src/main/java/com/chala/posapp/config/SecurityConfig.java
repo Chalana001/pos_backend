@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import com.chala.posapp.rbac.shadow.AuthorizationEventPublisherDecorator;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -36,6 +37,7 @@ public class SecurityConfig {
     private final DuplicateRequestFilter duplicateRequestFilter;
     private final ImpersonationFilter impersonationFilter;
     private final Environment environment;
+    private final AuthorizationEventPublisherDecorator shadowAuthorizationPublisher;
 
     private static final String[] SWAGGER_PATHS =
             {"/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html"};
